@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(python:*)",
+      "Bash(sqlite3:*)",
+      "Bash(pip install:*)",
+      "Bash(curl:*)",
+      "Bash(iconv:*)",
+      "Bash(dir:*)",
+      "Bash(timeout 30 python verify_db_integrity.py:*)",
+      "Bash(find:*)",
+      "Bash(timeout 30 python:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

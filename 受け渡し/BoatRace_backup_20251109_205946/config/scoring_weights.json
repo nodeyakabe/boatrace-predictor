@@ -1,0 +1,7 @@
+{
+  "course_weight": 40,
+  "racer_weight": 40,
+  "motor_weight": 20,
+  "total": 100,
+  "description": "Default scoring weights: Course=40, Racer=40, Motor=20"
+}

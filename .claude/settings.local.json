@@ -34,7 +34,9 @@
       "Bash(timeout 35 python:*)",
       "Bash(timeout 240 python:*)",
       "Bash(timeout 90 python:*)",
-      "Bash(timeout 1800 python:*)"
+      "Bash(timeout 1800 python:*)",
+      "Bash(del nul)",
+      "Bash(rm:*)"
     ],
     "deny": [],
     "ask": []
