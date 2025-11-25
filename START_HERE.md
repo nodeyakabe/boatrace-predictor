@@ -1,12 +1,25 @@
 # 🚀 START HERE - 作業を始める前に
 
-**最終更新**: 2025-11-14
+**最終更新**: 2025-11-25
 
 ---
 
 ## ⚠️ 重要：最初に読むこと
 
 このプロジェクトは複雑なシステムです。**デグレ・ロジック破綻を防ぐため**、必ず以下の手順に従ってください。
+
+---
+
+## 🔄 ステップ0: Gitで最新版を取得（必須）
+
+### 作業開始前に必ず実行
+
+```bash
+# 最新版をGitHubから取得
+git pull origin main
+```
+
+**理由**: 別PCで行った変更を反映するため、必ず最初にpullしてください。
 
 ---
 
@@ -112,17 +125,32 @@ tests/test_integration.py PASSED
 
 ---
 
-## 💾 ステップ5: コミット
+## 💾 ステップ5: コミット＆プッシュ（必須）
 
-### テスト合格を確認してからコミット
+### テスト合格を確認してからコミット＆プッシュ
 
 ```bash
-# テスト実行
+# 1. テスト実行
 python run_tests.py
 
-# テスト合格を確認
+# 2. テスト合格を確認してコミット
 git add .
 git commit -m "機能追加（テスト済み）"
+
+# 3. GitHubにプッシュ（必須）
+git push origin main
+```
+
+**重要**: 作業完了後は**必ずプッシュ**してください。プッシュしないと別PCに変更が反映されません。
+
+### プッシュ前の確認
+
+```bash
+# 変更内容を確認
+git status
+
+# コミット履歴を確認
+git log --oneline -3
 ```
 
 ---
@@ -197,24 +225,69 @@ python -m pytest tests/test_core_logic.py -v
 ## 🎯 作業フロー（まとめ）
 
 ```
-1. START_HERE.md を読む（今ここ）
+1. git pull origin main（最新版取得）★必須★
    ↓
-2. README_WORK_GUIDE.md でドキュメントを確認
+2. START_HERE.md を読む（今ここ）
    ↓
-3. WORK_CHECKLIST.md で作業前チェック
+3. README_WORK_GUIDE.md でドキュメントを確認
    ↓
-4. SYSTEM_CONSTRAINTS.md で制約確認
+4. WORK_CHECKLIST.md で作業前チェック
    ↓
-5. コード変更
+5. SYSTEM_CONSTRAINTS.md で制約確認
    ↓
-6. データ検証コード追加
+6. コード変更
    ↓
-7. テスト追加
+7. データ検証コード追加
    ↓
-8. python run_tests.py
+8. テスト追加
    ↓
-9. ✅合格 → コミット
+9. python run_tests.py
+   ↓
+10. ✅合格 → git commit
+   ↓
+11. git push origin main（GitHubに反映）★必須★
 ```
+
+---
+
+## 📝 Git運用の重要ポイント
+
+### 必ず守るルール
+
+```bash
+# 【作業開始時】必ずpull
+git pull origin main
+
+# 【作業完了時】必ずpush
+git add .
+git commit -m "変更内容の説明"
+git push origin main
+```
+
+### コンフリクト（競合）が発生したら
+
+```bash
+# 1. 現在の変更を退避
+git stash
+
+# 2. 最新版を取得
+git pull origin main
+
+# 3. 退避した変更を戻す
+git stash pop
+
+# 4. コンフリクトしたファイルを手動で修正
+# （エディタでファイルを開いて、<<<<<<<, =======, >>>>>>> を削除）
+
+# 5. 修正完了後、コミット＆プッシュ
+git add .
+git commit -m "Resolve conflict: 変更内容"
+git push origin main
+```
+
+### Git設定の詳細
+
+詳細は **[GIT_SETUP_GUIDE.md](GIT_SETUP_GUIDE.md)** を参照
 
 ---
 
@@ -226,4 +299,12 @@ python -m pytest tests/test_core_logic.py -v
 
 ---
 
-**最終更新**: 2025-11-14
+## 🔗 関連ドキュメント
+
+- **[GIT_SETUP_GUIDE.md](GIT_SETUP_GUIDE.md)** - Git設定手順（別PC用）
+- **[README_WORK_GUIDE.md](README_WORK_GUIDE.md)** - 全ドキュメントへのリンク集
+- **[WORK_CHECKLIST.md](WORK_CHECKLIST.md)** - 作業前チェックリスト
+
+---
+
+**最終更新**: 2025-11-25
