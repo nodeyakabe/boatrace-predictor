@@ -1,0 +1,133 @@
+{
+  "racelist": {
+    "url": "https://www.boatrace.jp/owpc/pc/race/racelist",
+    "params": {
+      "jcd": "21",
+      "hd": "20251023"
+    },
+    "status": "success",
+    "has_data": true,
+    "table_count": 0,
+    "classes": []
+  },
+  "raceresult": {
+    "url": "https://www.boatrace.jp/owpc/pc/race/raceresult",
+    "params": {
+      "rno": 1,
+      "jcd": "21",
+      "hd": "20251023"
+    },
+    "status": "success",
+    "has_data": true,
+    "table_count": 7,
+    "classes": [
+      "table1_boatImage1Boat",
+      "is-weather",
+      "is-wave",
+      "numberSet1",
+      "numberSet1_text",
+      "is-windDirection",
+      "table1_boatImage1Number",
+      "table1_boatImage1TimeInner",
+      "table1_boatImage1",
+      "is-wind13"
+    ]
+  },
+  "resultlist": {
+    "url": "https://www.boatrace.jp/owpc/pc/race/resultlist",
+    "params": {
+      "jcd": "21",
+      "hd": "20251023"
+    },
+    "status": "success",
+    "has_data": true,
+    "table_count": 4,
+    "classes": [
+      "numberSet3_name",
+      "numberSet1",
+      "numberSet3_number",
+      "numberSet1_text",
+      "numberSet3",
+      "is-payout1",
+      "table1_progress1Bar",
+      "numberSet1_row",
+      "numberSet1_number",
+      "table1_progress1"
+    ]
+  },
+  "pay": {
+    "url": "https://www.boatrace.jp/owpc/pc/race/pay",
+    "params": {
+      "jcd": "21",
+      "hd": "20251023"
+    },
+    "status": "success",
+    "has_data": true,
+    "table_count": 3,
+    "classes": [
+      "numberSet1",
+      "numberSet1_row",
+      "numberSet1_number",
+      "table1_areaDate",
+      "header_racerSearch2__3rdadd",
+      "table1_areaWomen",
+      "table1_areaTime",
+      "table1_areaType",
+      "table1_area",
+      "is-wAuto"
+    ]
+  },
+  "beforeinfo": {
+    "url": "https://www.boatrace.jp/owpc/pc/race/beforeinfo",
+    "params": {
+      "rno": 1,
+      "jcd": "21",
+      "hd": "20251023"
+    },
+    "status": "success",
+    "has_data": true,
+    "table_count": 3,
+    "classes": [
+      "table1_boatImage1Boat",
+      "is-weather",
+      "is-wave",
+      "is-windDirection",
+      "table1_boatImage1Number",
+      "table1_boatImage1",
+      "is-w748",
+      "is-wind13",
+      "is-waterTemperature",
+      "table1_boatImage1Line"
+    ]
+  },
+  "oddstf": {
+    "url": "https://www.boatrace.jp/owpc/pc/race/oddstf",
+    "params": {
+      "rno": 1,
+      "jcd": "21",
+      "hd": "20251023"
+    },
+    "status": "success",
+    "has_data": true,
+    "table_count": 3,
+    "classes": [
+      "header_racerSearch2__3rdadd",
+      "table1",
+      "is-w495",
+      "oddsPoint"
+    ]
+  },
+  "monthlyschedule": {
+    "url": "https://www.boatrace.jp/owpc/pc/race/monthlyschedule",
+    "params": {
+      "ym": "202510"
+    },
+    "status": "success",
+    "has_data": true,
+    "table_count": 5,
+    "classes": [
+      "header_racerSearch2__3rdadd",
+      "table1"
+    ]
+  }
+}

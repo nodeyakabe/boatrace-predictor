@@ -1,0 +1,54 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# データベース・データファイル
+data/
+*.db
+*.sqlite
+*.csv
+
+# 環境設定
+.env
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/
+
+# Logs
+logs/
+*.log
+*.txt
+
+# Models
+models/
+*.pkl
+*.joblib
+*.h5
+*.pt
+
+# Archives
+*.zip
+*.tar.gz
+
+# HTML debug files
+*.html
+
+# Images
+*.png
+*.jpg
+*.jpeg

@@ -1,0 +1,9 @@
+{
+  "course_weight": 35,
+  "racer_weight": 35,
+  "motor_weight": 20,
+  "kimarite_weight": 5,
+  "grade_weight": 5,
+  "total": 100,
+  "description": "Scoring weights with all 5 components: Course=35, Racer=35, Motor=20, Kimarite=5, Grade=5"
+}

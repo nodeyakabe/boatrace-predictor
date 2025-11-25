@@ -1,0 +1,622 @@
+"""
+データ充足率チェッカー
+機械学習に必要なデータ項目の取得状況を確認
+"""
+import sqlite3
+from typing import Dict, List, Tuple
+from datetime import datetime, timedelta
+
+
+class DataCoverageChecker:
+    """データ充足率チェック"""
+
+    def __init__(self, db_path="data/boatrace.db"):
+        self.db_path = db_path
+
+    def get_coverage_report(self) -> Dict:
+        """
+        データ充足率レポートを生成
+
+        Returns:
+            Dict: カテゴリごとの充足率情報
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        # 総レース数（開催中止を除く - completedのみ対象）
+        cursor.execute("SELECT COUNT(*) FROM races WHERE race_status = 'completed'")
+        total_races = cursor.fetchone()[0]
+
+        report = {
+            "total_races": total_races,
+            "categories": {}
+        }
+
+        # 1. レース基本情報
+        report["categories"]["レース基本情報"] = self._check_race_basic(cursor, total_races)
+
+        # 2. 選手データ
+        report["categories"]["選手データ"] = self._check_racer_data(cursor, total_races)
+
+        # 3. モーター・ボートデータ
+        report["categories"]["モーター・ボート"] = self._check_motor_boat_data(cursor, total_races)
+
+        # 4. 天候・気象データ
+        report["categories"]["天候・気象"] = self._check_weather_data(cursor, total_races)
+
+        # 5. 水面・潮汐データ
+        report["categories"]["水面・潮汐"] = self._check_water_tide_data(cursor, total_races)
+
+        # 6. レース展開データ
+        report["categories"]["レース展開"] = self._check_race_pattern_data(cursor, total_races)
+
+        # 7. オッズ・人気情報
+        report["categories"]["オッズ・人気"] = self._check_odds_data(cursor, total_races)
+
+        # 8. 結果データ
+        report["categories"]["結果データ"] = self._check_result_data(cursor, total_races)
+
+        # 全体スコア計算
+        report["overall_score"] = self._calculate_overall_score(report["categories"])
+
+        conn.close()
+        return report
+
+    def _check_race_basic(self, cursor, total_races) -> Dict:
+        """レース基本情報のチェック"""
+        items = []
+
+        # 開催日
+        cursor.execute("SELECT COUNT(*) FROM races WHERE race_date IS NOT NULL")
+        count = cursor.fetchone()[0]
+        items.append({
+            "name": "開催日",
+            "importance": 3,
+            "status": "取得済み" if count == total_races else "一部欠損",
+            "coverage": count / total_races if total_races > 0 else 0,
+            "count": count,
+            "total": total_races
+        })
+
+        # 開催場
+        cursor.execute("SELECT COUNT(*) FROM races WHERE venue_code IS NOT NULL")
+        count = cursor.fetchone()[0]
+        items.append({
+            "name": "開催場",
+            "importance": 3,
+            "status": "取得済み" if count == total_races else "一部欠損",
+            "coverage": count / total_races if total_races > 0 else 0,
+            "count": count,
+            "total": total_races
+        })
+
+        # レース番号
+        cursor.execute("SELECT COUNT(*) FROM races WHERE race_number IS NOT NULL")
+        count = cursor.fetchone()[0]
+        items.append({
+            "name": "レース番号",
+            "importance": 2,
+            "status": "取得済み" if count == total_races else "一部欠損",
+            "coverage": count / total_races if total_races > 0 else 0,
+            "count": count,
+            "total": total_races
+        })
+
+        # レース時刻
+        cursor.execute("SELECT COUNT(*) FROM races WHERE race_time IS NOT NULL")
+        count = cursor.fetchone()[0]
+        items.append({
+            "name": "レース時刻",
+            "importance": 1,
+            "status": "取得済み" if count == total_races else "一部欠損",
+            "coverage": count / total_races if total_races > 0 else 0,
+            "count": count,
+            "total": total_races
+        })
+
+        return {
+            "items": items,
+            "score": sum(item["coverage"] * item["importance"] for item in items) /
+                    sum(item["importance"] for item in items) if items else 0
+        }
+
+    def _check_racer_data(self, cursor, total_races) -> Dict:
+        """選手データのチェック"""
+        items = []
+
+        # 総出走表数（開催中止レースを除く）
+        cursor.execute("""
+            SELECT COUNT(*) FROM entries e
+            JOIN races r ON e.race_id = r.id
+            WHERE r.race_status = 'completed'
+        """)
+        total_entries = cursor.fetchone()[0]
+
+        # 選手名・登録番号
+        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.race_status = 'completed' AND e.racer_number IS NOT NULL AND racer_name IS NOT NULL")
+        count = cursor.fetchone()[0]
+        items.append({
+            "name": "選手名・登録番号",
+            "importance": 3,
+            "status": "取得済み" if count == total_entries else "一部欠損",
+            "coverage": count / total_entries if total_entries > 0 else 0,
+            "count": count,
+            "total": total_entries
+        })
+
+        # 級別
+        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.race_status = 'completed' AND e.racer_rank IS NOT NULL")
+        count = cursor.fetchone()[0]
+        items.append({
+            "name": "級別（A1/A2/B1/B2）",
+            "importance": 3,
+            "status": "取得済み" if count == total_entries else "一部欠損",
+            "coverage": count / total_entries if total_entries > 0 else 0,
+            "count": count,
+            "total": total_entries
+        })
+
+        # 勝率・連対率（DB内に直接は無いが計算可能）
+        cursor.execute("SELECT COUNT(*) FROM results")
+        result_count = cursor.fetchone()[0]
+        items.append({
+            "name": "勝率・連対率",
+            "importance": 3,
+            "status": "計算可能" if result_count > 0 else "未計算",
+            "coverage": 1.0 if result_count > 0 else 0.0,
+            "count": result_count,
+            "total": total_entries,
+            "note": "結果データから計算可能" if result_count > 0 else "結果データが必要"
+        })
+
+        # コース別成績（結果データから計算可能）
+        cursor.execute("""
+            SELECT COUNT(DISTINCT rd.race_id)
+            FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.race_status = 'completed' AND rd.actual_course IS NOT NULL
+        """)
+        course_count = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM results res JOIN races r ON res.race_id = r.id WHERE r.race_status = 'completed' AND res.rank IS NOT NULL")
+        result_count = cursor.fetchone()[0]
+        can_calculate = course_count > 0 and result_count > 0
+        items.append({
+            "name": "コース別成績",
+            "importance": 5,
+            "status": "計算可能" if can_calculate else "データ不足",
+            "coverage": 1.0 if can_calculate else 0.0,
+            "count": min(course_count, result_count),
+            "total": total_entries,
+            "note": "進入コースと結果データから計算可能" if can_calculate else "進入コースまたは結果データが不足"
+        })
+
+        # チルト角度
+        cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.race_status = 'completed' AND rd.tilt_angle IS NOT NULL")
+        count = cursor.fetchone()[0]
+        items.append({
+            "name": "チルト角度",
+            "importance": 2,
+            "status": "取得済み" if count > 0 else "未取得",
+            "coverage": count / total_entries if total_entries > 0 else 0,
+            "count": count,
+            "total": total_entries
+        })
+
+        return {
+            "items": items,
+            "score": sum(item["coverage"] * item["importance"] for item in items) /
+                    sum(item["importance"] for item in items) if items else 0
+        }
+
+    def _check_motor_boat_data(self, cursor, total_races) -> Dict:
+        """モーター・ボートデータのチェック"""
+        items = []
+
+        cursor.execute("SELECT COUNT(*) FROM entries")
+        total_entries = cursor.fetchone()[0]
+
+        # モーター番号
+        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.race_status = 'completed' AND e.motor_number IS NOT NULL")
+        count = cursor.fetchone()[0]
+        items.append({
+            "name": "モーター番号",
+            "importance": 3,
+            "status": "取得済み" if count == total_entries else "一部欠損",
+            "coverage": count / total_entries if total_entries > 0 else 0,
+            "count": count,
+            "total": total_entries
+        })
+
+        # モーター2連対率（計算必要）
+        cursor.execute("""
+            SELECT COUNT(DISTINCT e.id)
+            FROM entries e JOIN races r ON e.race_id = r.id WHERE r.race_status = 'completed' AND e.motor_number IS NOT NULL
+        """)
+        motor_count = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM results res JOIN races r ON res.race_id = r.id WHERE r.race_status = 'completed' AND res.rank IS NOT NULL")
+        result_count = cursor.fetchone()[0]
+        can_calculate = motor_count > 0 and result_count > 0
+        items.append({
+            "name": "モーター連対率",
+            "importance": 5,
+            "status": "計算可能" if can_calculate else "データ不足",
+            "coverage": 1.0 if can_calculate else 0.0,
+            "count": motor_count,
+            "total": total_entries,
+            "note": "モーター番号と結果データから計算可能" if can_calculate else "モーター番号または結果データが不足"
+        })
+
+        # ボート番号
+        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.race_status = 'completed' AND e.boat_number IS NOT NULL")
+        count = cursor.fetchone()[0]
+        items.append({
+            "name": "ボート番号",
+            "importance": 2,
+            "status": "取得済み" if count == total_entries else "一部欠損",
+            "coverage": count / total_entries if total_entries > 0 else 0,
+            "count": count,
+            "total": total_entries
+        })
+
+        # ボート連対率（計算必要）
+        cursor.execute("""
+            SELECT COUNT(DISTINCT e.id)
+            FROM entries e JOIN races r ON e.race_id = r.id WHERE r.race_status = 'completed' AND e.boat_number IS NOT NULL
+        """)
+        boat_count = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM results res JOIN races r ON res.race_id = r.id WHERE r.race_status = 'completed' AND res.rank IS NOT NULL")
+        result_count = cursor.fetchone()[0]
+        can_calculate = boat_count > 0 and result_count > 0
+        items.append({
+            "name": "ボート連対率",
+            "importance": 3,
+            "status": "計算可能" if can_calculate else "データ不足",
+            "coverage": 1.0 if can_calculate else 0.0,
+            "count": boat_count,
+            "total": total_entries,
+            "note": "ボート番号と結果データから計算可能" if can_calculate else "ボート番号または結果データが不足"
+        })
+
+        return {
+            "items": items,
+            "score": sum(item["coverage"] * item["importance"] for item in items) /
+                    sum(item["importance"] for item in items) if items else 0
+        }
+
+    def _check_weather_data(self, cursor, total_races) -> Dict:
+        """天候・気象データのチェック"""
+        items = []
+
+        # weatherテーブルは日付単位なので、レーステーブルとJOINしてカバレッジを計算
+        cursor.execute("SELECT COUNT(*) FROM weather")
+        total_weather = cursor.fetchone()[0]
+
+        # 気温（開催中止レースを除外）
+        cursor.execute("""
+            SELECT COUNT(DISTINCT r.id)
+            FROM races r
+            JOIN weather w ON r.venue_code = w.venue_code AND r.race_date = w.weather_date
+            WHERE w.temperature IS NOT NULL
+            AND r.race_status = 'completed'
+        """)
+        count = cursor.fetchone()[0]
+        items.append({
+            "name": "気温",
+            "importance": 3,
+            "status": "取得済み" if count > 0 else "未取得",
+            "coverage": count / total_races if total_races > 0 else 0,
+            "count": count,
+            "total": total_races
+        })
+
+        # 風向（開催中止レースを除外）
+        cursor.execute("""
+            SELECT COUNT(DISTINCT r.id)
+            FROM races r
+            JOIN weather w ON r.venue_code = w.venue_code AND r.race_date = w.weather_date
+            WHERE w.wind_direction IS NOT NULL
+            AND r.race_status = 'completed'
+        """)
+        count = cursor.fetchone()[0]
+        items.append({
+            "name": "風向",
+            "importance": 5,
+            "status": "取得済み" if count > 0 else "未取得",
+            "coverage": count / total_races if total_races > 0 else 0,
+            "count": count,
+            "total": total_races
+        })
+
+        # 風速（開催中止レースを除外）
+        cursor.execute("""
+            SELECT COUNT(DISTINCT r.id)
+            FROM races r
+            JOIN weather w ON r.venue_code = w.venue_code AND r.race_date = w.weather_date
+            WHERE w.wind_speed IS NOT NULL
+            AND r.race_status = 'completed'
+        """)
+        count = cursor.fetchone()[0]
+        items.append({
+            "name": "風速",
+            "importance": 5,
+            "status": "取得済み" if count > 0 else "未取得",
+            "coverage": count / total_races if total_races > 0 else 0,
+            "count": count,
+            "total": total_races
+        })
+
+        # 水温（開催中止レースを除外）
+        cursor.execute("""
+            SELECT COUNT(DISTINCT r.id)
+            FROM races r
+            JOIN weather w ON r.venue_code = w.venue_code AND r.race_date = w.weather_date
+            WHERE w.water_temperature IS NOT NULL
+            AND r.race_status = 'completed'
+        """)
+        count = cursor.fetchone()[0]
+        items.append({
+            "name": "水温",
+            "importance": 3,
+            "status": "取得済み" if count > 0 else "未取得",
+            "coverage": count / total_races if total_races > 0 else 0,
+            "count": count,
+            "total": total_races
+        })
+
+        # 波高（開催中止レースを除外）
+        cursor.execute("""
+            SELECT COUNT(DISTINCT r.id)
+            FROM races r
+            JOIN weather w ON r.venue_code = w.venue_code AND r.race_date = w.weather_date
+            WHERE w.wave_height IS NOT NULL
+            AND r.race_status = 'completed'
+        """)
+        count = cursor.fetchone()[0]
+        items.append({
+            "name": "波高",
+            "importance": 5,
+            "status": "取得済み" if count > 0 else "未取得",
+            "coverage": count / total_races if total_races > 0 else 0,
+            "count": count,
+            "total": total_races
+        })
+
+        return {
+            "items": items,
+            "score": sum(item["coverage"] * item["importance"] for item in items) /
+                    sum(item["importance"] for item in items) if items else 0
+        }
+
+    def _check_water_tide_data(self, cursor, total_races) -> Dict:
+        """水面・潮汐データのチェック"""
+        items = []
+
+        # 潮位データ
+        cursor.execute("SELECT COUNT(*) FROM tide")
+        tide_count = cursor.fetchone()[0]
+
+        items.append({
+            "name": "潮位",
+            "importance": 4,
+            "status": "未取得" if tide_count == 0 else "取得済み",
+            "coverage": 0.0 if tide_count == 0 else 0.5,
+            "count": tide_count,
+            "total": total_races,
+            "note": "潮汐APIの実装が必要"
+        })
+
+        items.append({
+            "name": "潮流方向・速度",
+            "importance": 4,
+            "status": "未取得",
+            "coverage": 0.0,
+            "count": 0,
+            "total": total_races,
+            "note": "潮汐APIの実装が必要"
+        })
+
+        return {
+            "items": items,
+            "score": sum(item["coverage"] * item["importance"] for item in items) /
+                    sum(item["importance"] for item in items) if items else 0
+        }
+
+    def _check_race_pattern_data(self, cursor, total_races) -> Dict:
+        """レース展開データのチェック"""
+        items = []
+
+        cursor.execute("SELECT COUNT(*) FROM entries")
+        total_entries = cursor.fetchone()[0]
+
+        # 実際の進入コース
+        cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.race_status = 'completed' AND rd.actual_course IS NOT NULL")
+        count = cursor.fetchone()[0]
+        items.append({
+            "name": "進入コース",
+            "importance": 4,
+            "status": "取得済み" if count > 0 else "未取得",
+            "coverage": count / total_entries if total_entries > 0 else 0,
+            "count": count,
+            "total": total_entries
+        })
+
+        # 展示タイム
+        cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.race_status = 'completed' AND rd.exhibition_time IS NOT NULL")
+        count = cursor.fetchone()[0]
+        items.append({
+            "name": "展示タイム",
+            "importance": 3,
+            "status": "取得済み" if count > 0 else "未取得",
+            "coverage": count / total_entries if total_entries > 0 else 0,
+            "count": count,
+            "total": total_entries
+        })
+
+        # STタイム
+        cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.race_status = 'completed' AND rd.st_time IS NOT NULL")
+        count = cursor.fetchone()[0]
+        items.append({
+            "name": "STタイム",
+            "importance": 3,
+            "status": "取得済み" if count > 0 else "未取得",
+            "coverage": count / total_entries if total_entries > 0 else 0,
+            "count": count,
+            "total": total_entries,
+            "note": "未実装" if count == 0 else None
+        })
+
+        # イン逃げ成功率（計算可能）
+        cursor.execute("""
+            SELECT COUNT(*)
+            FROM race_details rd
+            JOIN results r ON rd.race_id = r.race_id AND rd.pit_number = r.pit_number
+            WHERE rd.actual_course = 1 AND r.rank IS NOT NULL
+        """)
+        course1_count = cursor.fetchone()[0]
+        can_calculate = course1_count > 0
+        items.append({
+            "name": "イン逃げ成功率",
+            "importance": 5,
+            "status": "計算可能" if can_calculate else "データ不足",
+            "coverage": 1.0 if can_calculate else 0.0,
+            "count": course1_count,
+            "total": total_races,
+            "note": "1コース進入と結果データから計算可能" if can_calculate else "進入コースまたは結果データが不足"
+        })
+
+        return {
+            "items": items,
+            "score": sum(item["coverage"] * item["importance"] for item in items) /
+                    sum(item["importance"] for item in items) if items else 0
+        }
+
+    def _check_odds_data(self, cursor, total_races) -> Dict:
+        """オッズ・人気情報のチェック"""
+        items = []
+
+        # オッズデータ（payoutsテーブル確認）
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='payouts'")
+        has_payouts_table = cursor.fetchone() is not None
+
+        if has_payouts_table:
+            cursor.execute("SELECT COUNT(DISTINCT p.race_id) FROM payouts p JOIN races r ON p.race_id = r.id WHERE r.race_status = 'completed'")
+            count = cursor.fetchone()[0]
+        else:
+            count = 0
+
+        items.append({
+            "name": "三連単オッズ",
+            "importance": 3,
+            "status": "未取得" if count == 0 else "取得済み",
+            "coverage": count / total_races if total_races > 0 else 0,
+            "count": count,
+            "total": total_races,
+            "note": "未実装" if count == 0 else None
+        })
+
+        return {
+            "items": items,
+            "score": sum(item["coverage"] * item["importance"] for item in items) /
+                    sum(item["importance"] for item in items) if items else 0
+        }
+
+    def _check_result_data(self, cursor, total_races) -> Dict:
+        """結果データのチェック"""
+        items = []
+
+        cursor.execute("SELECT COUNT(*) FROM entries")
+        total_entries = cursor.fetchone()[0]
+
+        # 着順
+        cursor.execute("SELECT COUNT(*) FROM results res JOIN races r ON res.race_id = r.id WHERE r.race_status = 'completed' AND res.rank IS NOT NULL")
+        count = cursor.fetchone()[0]
+        items.append({
+            "name": "着順",
+            "importance": 5,
+            "status": "取得済み" if count > 0 else "未取得",
+            "coverage": count / total_entries if total_entries > 0 else 0,
+            "count": count,
+            "total": total_entries
+        })
+
+        # 決まり手（1着艇のみカウント - 決まり手は1着艇にのみ記録される）
+        cursor.execute("PRAGMA table_info(results)")
+        columns = [col[1] for col in cursor.fetchall()]
+        has_kimarite = 'kimarite' in columns
+
+        if has_kimarite:
+            # 1着艇のみでカウント
+            cursor.execute("""
+                SELECT COUNT(*)
+                FROM results res
+                JOIN races r ON res.race_id = r.id
+                WHERE r.race_status = 'completed'
+                AND res.rank = '1'
+                AND (res.kimarite IS NOT NULL OR res.winning_technique IS NOT NULL)
+            """)
+            count = cursor.fetchone()[0]
+
+            # 総1着艇数を取得
+            cursor.execute("""
+                SELECT COUNT(*)
+                FROM results res
+                JOIN races r ON res.race_id = r.id
+                WHERE r.race_status = 'completed'
+                AND res.rank = '1'
+            """)
+            total_first_place = cursor.fetchone()[0]
+        else:
+            count = 0
+            total_first_place = total_races
+
+        items.append({
+            "name": "決まり手",
+            "importance": 4,
+            "status": "未取得" if count == 0 else "取得済み",
+            "coverage": count / total_first_place if total_first_place > 0 else 0,
+            "count": count,
+            "total": total_first_place,
+            "note": "1着艇のみ（決まり手は1着艇にのみ記録される）" if count > 0 else "未実装"
+        })
+
+        return {
+            "items": items,
+            "score": sum(item["coverage"] * item["importance"] for item in items) /
+                    sum(item["importance"] for item in items) if items else 0
+        }
+
+    def _calculate_overall_score(self, categories: Dict) -> float:
+        """全体スコアを計算"""
+        total_score = 0
+        count = 0
+
+        for category_data in categories.values():
+            if "score" in category_data:
+                total_score += category_data["score"]
+                count += 1
+
+        return total_score / count if count > 0 else 0
+
+    def get_missing_items(self) -> List[Dict]:
+        """
+        不足しているデータ項目のリストを取得
+
+        Returns:
+            List[Dict]: 不足項目のリスト（重要度順）
+        """
+        report = self.get_coverage_report()
+        missing = []
+
+        for category_name, category_data in report["categories"].items():
+            for item in category_data["items"]:
+                if item["coverage"] < 0.9:  # 90%未満を不足とみなす
+                    missing.append({
+                        "category": category_name,
+                        "name": item["name"],
+                        "importance": item["importance"],
+                        "status": item["status"],
+                        "coverage": item["coverage"],
+                        "note": item.get("note", "")
+                    })
+
+        # 重要度順にソート
+        missing.sort(key=lambda x: x["importance"], reverse=True)
+        return missing
