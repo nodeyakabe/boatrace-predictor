@@ -434,6 +434,9 @@ class RacerAnalyzer:
         """
         選手の総合スコアを計算（最大40点）
 
+        データ不足時はベイズ推定的アプローチで全国平均を事前分布として使用。
+        レース数に応じて段階的に個人データの重みを上げる。
+
         Args:
             racer_analysis: analyze_race_entries()の各選手データ
 
@@ -442,35 +445,85 @@ class RacerAnalyzer:
         """
         score = 0.0
 
+        # 全国平均値（事前分布）
+        NATIONAL_AVG_WIN_RATE = 0.167  # 1/6 = 16.7%
+        NATIONAL_AVG_PLACE_RATE = 0.50  # 50%程度
+
         # 1. 全国勝率（0-15点）
         overall_stats = racer_analysis['overall_stats']
-        if overall_stats['total_races'] >= 20:
+        total_races = overall_stats['total_races']
+
+        if total_races > 0:
+            # データ信頼度（20レースで50%, 50レースで80%, 100レースで95%）
+            data_weight = min(total_races / 100.0, 1.0)
+
+            # ベイズ推定: 個人勝率とデータ信頼度を組み合わせ
             win_rate = overall_stats['win_rate']
-            score += min(win_rate * 50, 15.0)  # 30%で15点満点
+            smoothed_win_rate = (win_rate * data_weight +
+                                NATIONAL_AVG_WIN_RATE * (1 - data_weight))
+
+            score += min(smoothed_win_rate * 50, 15.0)  # 30%で15点満点
+        else:
+            # データが全くない場合は全国平均を使用
+            score += NATIONAL_AVG_WIN_RATE * 50
 
         # 2. コース別勝率（0-10点）
         course_stats = racer_analysis['course_stats']
-        if course_stats['total_races'] >= 5:
+        course_races = course_stats['total_races']
+
+        if course_races > 0:
+            # コースデータは少なくても評価（5レースで50%, 15レースで90%）
+            course_weight = min(course_races / 15.0, 1.0)
+
             course_win_rate = course_stats['win_rate']
-            score += min(course_win_rate * 40, 10.0)  # 25%で10点満点
+            smoothed_course_rate = (course_win_rate * course_weight +
+                                   NATIONAL_AVG_WIN_RATE * (1 - course_weight))
+
+            score += min(smoothed_course_rate * 40, 10.0)  # 25%で10点満点
+        else:
+            # データなしでも全国平均で最低限のスコア
+            score += NATIONAL_AVG_WIN_RATE * 40 * 0.5  # 半分の重み
 
         # 3. 当地成績（0-8点）
         venue_stats = racer_analysis['venue_stats']
-        if venue_stats['total_races'] >= 5:
+        venue_races = venue_stats['total_races']
+
+        if venue_races > 0:
+            # 当地データは少なくても評価（3レースで40%, 10レースで85%）
+            venue_weight = min(venue_races / 10.0, 1.0)
+
             venue_win_rate = venue_stats['win_rate']
-            score += min(venue_win_rate * 32, 8.0)  # 25%で8点満点
+            smoothed_venue_rate = (venue_win_rate * venue_weight +
+                                  NATIONAL_AVG_WIN_RATE * (1 - venue_weight))
+
+            score += min(smoothed_venue_rate * 32, 8.0)  # 25%で8点満点
+        else:
+            # データなしでも全国平均で最低限のスコア
+            score += NATIONAL_AVG_WIN_RATE * 32 * 0.3  # 30%の重み
 
         # 4. 直近調子（0-5点）
         recent_form = racer_analysis['recent_form']
         if recent_form['recent_races']:
-            recent_win_rate = recent_form['recent_win_rate']
-            score += min(recent_win_rate * 20, 5.0)  # 25%で5点満点
+            recent_count = len(recent_form['recent_races'])
+            # 直近データは3レース以上で評価開始
+            if recent_count >= 3:
+                recent_weight = min(recent_count / 10.0, 1.0)
 
-            # 調子の傾向でボーナス/ペナルティ
-            if recent_form['form_trend'] == 'up':
-                score += 1.0
-            elif recent_form['form_trend'] == 'down':
-                score -= 1.0
+                recent_win_rate = recent_form['recent_win_rate']
+                smoothed_recent_rate = (recent_win_rate * recent_weight +
+                                       NATIONAL_AVG_WIN_RATE * (1 - recent_weight))
+
+                score += min(smoothed_recent_rate * 20, 5.0)  # 25%で5点満点
+
+                # 調子の傾向でボーナス/ペナルティ（データが十分な場合のみ）
+                if recent_count >= 5:
+                    if recent_form['form_trend'] == 'up':
+                        score += 1.0
+                    elif recent_form['form_trend'] == 'down':
+                        score -= 1.0
+        else:
+            # 直近データなしでも最低限のスコア
+            score += NATIONAL_AVG_WIN_RATE * 20 * 0.3
 
         # 5. ST評価（0-2点）
         st_stats = racer_analysis['st_stats']
@@ -480,6 +533,9 @@ class RacerAnalyzer:
                 score += 2.0
             elif st_stats['avg_st'] <= 0.18:
                 score += 1.0
+            # ST 0.20秒以下でも最低0.5点は付与
+            elif st_stats['avg_st'] <= 0.20:
+                score += 0.5
 
         return min(score, 40.0)
 

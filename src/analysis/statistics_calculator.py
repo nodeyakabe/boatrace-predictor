@@ -8,6 +8,7 @@
 from typing import Dict, List, Tuple, Optional
 from datetime import datetime, timedelta
 import sqlite3
+from src.analysis.smoothing import LaplaceSmoothing
 
 
 class StatisticsCalculator:
@@ -15,6 +16,7 @@ class StatisticsCalculator:
 
     def __init__(self, db_path="data/boatrace.db"):
         self.db_path = db_path
+        self.smoother = LaplaceSmoothing()
 
     def _connect(self):
         """データベース接続"""
@@ -96,11 +98,17 @@ class StatisticsCalculator:
             total = row['total_races']
 
             if total > 0:
+                # Laplace平滑化を適用
+                wins = row['first_place']
+                smoothed_win_rate = self.smoother.smooth_win_rate(wins, total, k=2)
+
                 stats[course] = {
                     'total_races': total,
-                    'win_rate': row['first_place'] / total,
+                    'win_rate': smoothed_win_rate,
+                    'raw_win_rate': row['first_place'] / total,  # 元の勝率も保存
                     'place_rate_2': row['second_place'] / total,
-                    'place_rate_3': row['third_place'] / total
+                    'place_rate_3': row['third_place'] / total,
+                    'smoothing_applied': self.smoother.enabled
                 }
 
         return stats

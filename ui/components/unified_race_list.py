@@ -81,7 +81,7 @@ def _render_accuracy_focused():
 
         if not race_rows:
             st.warning(f"{target_date_str} のレース予想が見つかりませんでした")
-            st.info("「データ準備」タブで「今日の予想を準備」を実行してください")
+            st.info("「データ準備」タブで「今日の予測を生成」を実行してください")
             conn.close()
             return
 
@@ -141,9 +141,18 @@ def _render_accuracy_focused():
                 main_bet = '-'.join([str(p['pit_number']) for p in top3])
                 bet_display = main_bet
 
-            # 平均スコアを信頼度に変換（0-100スケール）
-            # スコアが高いほど信頼度が高い
-            confidence = min(100, max(0, avg_score * 10))  # 仮の変換式
+            # 信頼度の計算: 上位3艇の信頼度レベルから算出
+            # A=100%, B=80%, C=60%, D=40%, E=20%
+            confidence_map = {'A': 100, 'B': 80, 'C': 60, 'D': 40, 'E': 20}
+            top3_confidences = [confidence_map.get(p['confidence'], 50) for p in top3 if 'confidence' in p]
+
+            if top3_confidences:
+                # 上位3艇の信頼度の加重平均（1着重視）
+                weights = [0.5, 0.3, 0.2]
+                confidence = sum(c * w for c, w in zip(top3_confidences, weights[:len(top3_confidences)]))
+            else:
+                # フォールバック: スコアベース
+                confidence = min(100, max(20, avg_score * 8))
 
             recommended_races.append({
                 '会場': venue_name_map.get(venue_code, f'会場{venue_code}'),

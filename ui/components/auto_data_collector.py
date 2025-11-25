@@ -45,13 +45,15 @@ def render_auto_data_collector():
     with col1:
         start_date = st.date_input(
             "開始日",
-            datetime.now() - timedelta(days=7)
+            datetime.now() - timedelta(days=7),
+            key="auto_collector_start_date"
         )
 
     with col2:
         end_date = st.date_input(
             "終了日",
-            datetime.now()
+            datetime.now(),
+            key="auto_collector_end_date"
         )
 
     # 会場選択

@@ -1,0 +1,58 @@
+{
+  "description": "予測精度改善のための設定ファイル",
+  "version": "1.0.0",
+
+  "laplace_smoothing": {
+    "enabled": true,
+    "alpha": 2.0,
+    "description": "Laplace平滑化パラメータ（外枠ゼロ化対策）"
+  },
+
+  "first_place_lock": {
+    "enabled": true,
+    "win_rate_threshold": 0.55,
+    "min_data_completeness": 60,
+    "description": "1着固定ルール（1号艇の勝率が閾値以上かつデータ充実度が基準以上の場合）"
+  },
+
+  "confidence_filter": {
+    "enabled": true,
+    "exclude_e_level": true,
+    "min_display_level": "D",
+    "min_data_completeness_for_e": 20,
+    "description": "信頼度フィルタ（E判定を除外）"
+  },
+
+  "evaluation_metrics": {
+    "enabled": true,
+    "compute_brier_score": true,
+    "compute_log_loss": true,
+    "compute_calibration": true,
+    "calibration_bins": 10,
+    "description": "評価指標の計算設定"
+  },
+
+  "course_change_prediction": {
+    "enabled": false,
+    "min_races_for_tendency": 30,
+    "description": "進入予想（前付け傾向）- 今後実装予定"
+  },
+
+  "tide_adjustment": {
+    "enabled": false,
+    "data_source": "weather_api",
+    "description": "潮位補正 - 今後実装予定"
+  },
+
+  "motor_ewma": {
+    "enabled": false,
+    "alpha": 0.3,
+    "description": "モーター指数加重移動平均 - 今後実装予定"
+  },
+
+  "probability_calibration": {
+    "enabled": false,
+    "method": "isotonic",
+    "description": "確率較正（Isotonic Regression） - 今後実装予定"
+  }
+}

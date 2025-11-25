@@ -76,6 +76,11 @@ def render_data_quality_badge(quality_score):
 
 def render_confidence_badge(confidence):
     """信頼度バッジを表示"""
+    # 文字列の信頼度レベル（A/B/C/D/E）を数値に変換
+    if isinstance(confidence, str):
+        confidence_map = {'A': 100, 'B': 80, 'C': 60, 'D': 40, 'E': 20}
+        confidence = confidence_map.get(confidence, 50)
+
     if confidence >= 80:
         return "🟢 高信頼度"
     elif confidence >= 60:

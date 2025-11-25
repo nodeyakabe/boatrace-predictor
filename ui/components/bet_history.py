@@ -73,9 +73,9 @@ def render_statistics_tab(tracker: BetTracker):
         start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
     elif period == "カスタム":
         with col_f2:
-            start_date = st.date_input("開始日").strftime("%Y-%m-%d")
+            start_date = st.date_input("開始日", key="bet_history_custom_start_date").strftime("%Y-%m-%d")
         with col_f3:
-            end_date = st.date_input("終了日").strftime("%Y-%m-%d")
+            end_date = st.date_input("終了日", key="bet_history_custom_end_date").strftime("%Y-%m-%d")
 
     # 統計情報取得
     stats = tracker.calculate_statistics(start_date=start_date, end_date=end_date)

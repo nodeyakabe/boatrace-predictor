@@ -25,7 +25,7 @@ def render_workflow_manager():
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("🎯 今日の予想を準備", type="primary", use_container_width=True):
+        if st.button("🎯 今日の予測を生成", type="primary", use_container_width=True):
             run_today_preparation_workflow()
 
     with col2:
@@ -55,33 +55,41 @@ def render_workflow_manager():
 
 
 def run_today_preparation_workflow():
-    """今日の予想準備ワークフロー"""
-    st.info("🚀 今日の予想準備を開始します...")
+    """今日の予測生成ワークフロー"""
+    st.info("🚀 今日の予測を生成します...")
 
     progress_bar = st.progress(0)
     status_text = st.empty()
 
     # Step 1: データ取得
-    status_text.text("Step 1/3: 本日のデータを取得中...")
+    status_text.text("Step 1/4: 本日のデータを取得中...")
     progress_bar.progress(0.1)
 
-    success = fetch_today_data()
-    if not success:
+    today_schedule = fetch_today_data()
+    if not today_schedule:
         st.error("データ取得に失敗しました")
+        progress_bar.empty()
+        status_text.empty()
         return
 
-    progress_bar.progress(0.4)
+    progress_bar.progress(0.3)
 
     # Step 2: 法則再解析
-    status_text.text("Step 2/3: 法則を再解析中...")
+    status_text.text("Step 2/4: 法則を再解析中...")
     reanalyze_rules()
-    progress_bar.progress(0.7)
+    progress_bar.progress(0.5)
 
-    # Step 3: 予想生成準備完了
-    status_text.text("Step 3/3: 予想生成準備完了")
-    progress_bar.progress(1.0)
+    # Step 3: 予測生成
+    status_text.text("Step 3/4: 予測を生成中...")
+    progress_bar.progress(0.6)
 
-    st.success("✅ 今日の予想準備が完了しました！「レース予想」タブで確認できます")
+    # 進捗バーとステータステキストを削除して、generate_and_save_predictions内で新しいものを使用
+    progress_bar.empty()
+    status_text.empty()
+
+    generate_and_save_predictions(today_schedule)
+
+    # generate_and_save_predictions内で完了メッセージが表示されるため、ここでは何もしない
 
 
 def run_training_workflow():
@@ -153,9 +161,8 @@ def fetch_today_data():
         completion_rate = existing_count / expected_races if expected_races > 0 else 0
 
         if existing_count >= expected_races:
-            # データ取得スキップ - 予想生成へ
-            generate_and_save_predictions(today_schedule)
-            return True
+            # データ取得スキップ - スケジュールを返す
+            return today_schedule
 
         # データ取得が必要な場合
         progress_placeholder = st.empty()
@@ -242,21 +249,19 @@ def fetch_today_data():
                 scraper.close()
                 fetch_progress.empty()
 
-                # 予想を生成して保存
-                generate_and_save_predictions(today_schedule)
-
-                return True
+                # スケジュールを返す（予測生成は呼び出し元で行う）
+                return today_schedule
             else:
                 scraper.close()
                 st.warning("本日開催のレースが見つかりませんでした")
-                return False
+                return None
 
     except Exception as e:
         import traceback
         error_detail = traceback.format_exc()
         st.error(f"❌ データ取得エラー: {e}")
         st.code(error_detail)
-        return False
+        return None
 
 
 def check_data_quality():
@@ -388,7 +393,7 @@ def generate_and_save_predictions(today_schedule):
     if not races_to_predict:
         progress_bar.empty()
         status_text.empty()
-        st.success(f"✅ 今日の予想準備が完了しました！「レース予想」タブで確認できます（{skipped_count}レース）")
+        st.success(f"✅ 今日の予測が完了しました！「レース予想」タブで確認できます（{skipped_count}レース）")
         return
 
     success_count = 0
@@ -425,7 +430,7 @@ def generate_and_save_predictions(today_schedule):
     # 最終結果のみ表示
     total_races = success_count + error_count + skipped_count
     if error_count > 0:
-        st.success(f"✅ 今日の予想準備が完了しました！「レース予想」タブで確認できます")
+        st.success(f"✅ 今日の予測が完了しました！「レース予想」タブで確認できます")
         st.caption(f"📊 {total_races}レース（成功: {success_count}, スキップ: {skipped_count}, エラー: {error_count}）")
     else:
-        st.success(f"✅ 今日の予想準備が完了しました！「レース予想」タブで確認できます（{total_races}レース）")
+        st.success(f"✅ 今日の予測が完了しました！「レース予想」タブで確認できます（{total_races}レース）")

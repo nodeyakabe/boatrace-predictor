@@ -1,5 +1,5 @@
 """
-競艇予想システム - 新UI (v2)
+コンドル - 競艇予想システム
 4タブ構成: データ参照、レース予想、データ準備、設定・管理
 """
 
@@ -45,8 +45,8 @@ from ui.components.system_monitor import render_system_monitor
 
 def main():
     st.set_page_config(
-        page_title="競艇予想システム v2",
-        page_icon="🚤",
+        page_title="コンドル - 競艇予想システム",
+        page_icon="🦅",
         layout="wide",
         initial_sidebar_state="expanded"
     )
@@ -57,7 +57,7 @@ def main():
     except Exception as e:
         st.warning(f"ビュー初期化エラー: {e}")
 
-    st.title("🚤 競艇予想システム v2")
+    st.title("🦅 コンドル")
 
     # サイドバー
     with st.sidebar:
@@ -186,10 +186,14 @@ def main():
 
         settings_mode = st.selectbox(
             "管理内容を選択",
-            ["システム設定", "データ管理", "法則管理", "システム監視"]
+            ["予測精度改善", "システム設定", "データ管理", "法則管理", "システム監視"]
         )
 
-        if settings_mode == "システム設定":
+        if settings_mode == "予測精度改善":
+            from ui.components.improvements_display import render_improvements_summary_page
+            render_improvements_summary_page()
+
+        elif settings_mode == "システム設定":
             render_system_settings()
 
         elif settings_mode == "データ管理":

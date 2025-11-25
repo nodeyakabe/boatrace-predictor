@@ -11,11 +11,13 @@ from .racer_analyzer import RacerAnalyzer
 from .motor_analyzer import MotorAnalyzer
 from .kimarite_scorer import KimariteScorer
 from .grade_scorer import GradeScorer
+from .first_place_lock import FirstPlaceLockAnalyzer
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from src.utils.scoring_config import ScoringConfig
 from src.prediction.rule_based_engine import RuleBasedEngine
+from config.venue_characteristics import get_venue_adjustment
 
 
 class RacePredictor:
@@ -27,6 +29,7 @@ class RacePredictor:
         self.racer_analyzer = RacerAnalyzer(db_path)
         self.motor_analyzer = MotorAnalyzer(db_path)
         self.kimarite_scorer = KimariteScorer(db_path)
+        self.first_place_lock_analyzer = FirstPlaceLockAnalyzer()
         self.grade_scorer = GradeScorer(db_path)
         self.rule_engine = RuleBasedEngine(db_path)
 
@@ -89,6 +92,11 @@ class RacePredictor:
         # 勝率をそのままスコアに反映（0-100%を0-max_scoreに変換）
         # これにより1コース(55%)が高スコア、6コース(3%)が低スコアになる
         score = win_rate * max_score
+
+        # 会場特性による補正を適用（1号艇のみ）
+        if course == 1:
+            venue_adjustment = get_venue_adjustment(venue_code)
+            score = score * venue_adjustment
 
         return score
 
@@ -384,25 +392,36 @@ class RacePredictor:
             base_probs_dict,
             race_info,
             entries,
-            damping_factor=0.7
+            damping_factor=0.5  # 法則の影響を調整（0.3は弱すぎ、0.7は強すぎ）
         )
 
-        # 補正後の確率をスコアに反映
+        # 補正後の確率をスコアに反映（加算方式で影響を限定）
+        # 法則補正の影響を最大±10点程度に抑える
+        MAX_RULE_ADJUSTMENT = 10.0  # スコアへの最大影響
+
         for i, pred in enumerate(predictions):
             pit_number = pred['pit_number']
             original_score = pred['total_score']
             original_prob = base_probs_dict[pit_number]
             adjusted_prob = adjusted_probs[pit_number]
 
-            # 確率の変化率をスコアに適用
-            if original_prob > 0:
-                prob_boost = adjusted_prob / original_prob
-                adjusted_score = original_score * prob_boost
-            else:
-                adjusted_score = original_score
+            # 確率の差分をスコアの補正値に変換
+            # 確率差 ±0.1 (10%) → スコア補正 ±10点
+            prob_diff = adjusted_prob - original_prob
+            score_adjustment = prob_diff * 100.0  # 0.1 * 100 = 10点
+
+            # 補正値を制限
+            score_adjustment = max(-MAX_RULE_ADJUSTMENT,
+                                  min(score_adjustment, MAX_RULE_ADJUSTMENT))
+
+            # スコアを補正（加算方式）
+            adjusted_score = original_score + score_adjustment
+
+            # スコアを0-100範囲に制限
+            adjusted_score = max(0.0, min(adjusted_score, 100.0))
 
             pred['total_score'] = round(adjusted_score, 1)
-            pred['rule_adjustment'] = round((adjusted_prob - original_prob) * 100, 1)  # パーセント表示用
+            pred['rule_adjustment'] = round(score_adjustment, 1)  # 実際の調整値
 
         return predictions
 
@@ -468,6 +487,9 @@ class RacePredictor:
         """
         信頼度を判定（A-E）
 
+        データ量に応じて段階的に信頼度上限を設定。
+        データが豊富なほど高い信頼度を許可。
+
         Args:
             total_score: 総合スコア
             racer_analysis: 選手分析データ
@@ -476,31 +498,86 @@ class RacePredictor:
         Returns:
             信頼度（'A', 'B', 'C', 'D', 'E'）
         """
-        # データ量チェック
-        racer_total_races = racer_analysis['overall_stats']['total_races']
-        motor_total_races = motor_analysis['motor_stats']['total_races']
+        # データ量を多角的に評価
+        racer_overall = racer_analysis['overall_stats']['total_races']
+        racer_course = racer_analysis['course_stats']['total_races']
+        racer_venue = racer_analysis['venue_stats']['total_races']
+        motor_total = motor_analysis['motor_stats']['total_races']
 
-        # データが少ない場合は信頼度を下げる
-        if racer_total_races < 20 or motor_total_races < 10:
-            max_confidence = 'C'
+        # データ充実度スコア（0-100点）
+        data_quality = 0.0
+
+        # 選手全国成績（0-40点）
+        if racer_overall >= 100:
+            data_quality += 40.0
+        elif racer_overall >= 50:
+            data_quality += 30.0
+        elif racer_overall >= 20:
+            data_quality += 20.0
+        elif racer_overall >= 10:
+            data_quality += 10.0
         else:
-            max_confidence = 'A'
+            data_quality += racer_overall  # 10未満は数値そのまま
+
+        # 選手コース別成績（0-25点）
+        if racer_course >= 15:
+            data_quality += 25.0
+        elif racer_course >= 10:
+            data_quality += 20.0
+        elif racer_course >= 5:
+            data_quality += 15.0
+        else:
+            data_quality += racer_course * 2  # 5未満は×2
+
+        # 選手当地成績（0-15点）
+        if racer_venue >= 10:
+            data_quality += 15.0
+        elif racer_venue >= 5:
+            data_quality += 10.0
+        elif racer_venue >= 3:
+            data_quality += 7.0
+        else:
+            data_quality += racer_venue * 2  # 3未満は×2
+
+        # モーター成績（0-20点）
+        if motor_total >= 30:
+            data_quality += 20.0
+        elif motor_total >= 20:
+            data_quality += 15.0
+        elif motor_total >= 10:
+            data_quality += 10.0
+        else:
+            data_quality += motor_total * 0.5  # 10未満は×0.5
+
+        # データ充実度に基づく信頼度上限
+        if data_quality >= 80:
+            max_confidence = 'A'  # 十分なデータ
+        elif data_quality >= 60:
+            max_confidence = 'B'  # やや十分
+        elif data_quality >= 40:
+            max_confidence = 'C'  # 標準的
+        elif data_quality >= 20:
+            max_confidence = 'D'  # 不足気味
+        else:
+            max_confidence = 'E'  # 大幅に不足
 
         # スコアに基づく判定
-        if total_score >= 80:
+        # 信頼度Bを増やすため基準を緩和（70→65）
+        if total_score >= 75:
             confidence = 'A'
-        elif total_score >= 70:
+        elif total_score >= 65:
             confidence = 'B'
-        elif total_score >= 60:
+        elif total_score >= 55:
             confidence = 'C'
-        elif total_score >= 50:
+        elif total_score >= 45:
             confidence = 'D'
         else:
             confidence = 'E'
 
-        # データ量による制限
-        if max_confidence == 'C' and confidence in ['A', 'B']:
-            confidence = 'C'
+        # データ量による制限（より厳密に）
+        confidence_levels = {'A': 5, 'B': 4, 'C': 3, 'D': 2, 'E': 1}
+        if confidence_levels[confidence] > confidence_levels[max_confidence]:
+            confidence = max_confidence
 
         return confidence
 

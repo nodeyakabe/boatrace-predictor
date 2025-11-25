@@ -294,6 +294,9 @@ class MotorAnalyzer:
         """
         モーター・ボートの総合スコアを計算（最大20点）
 
+        全国平均を基準に、相対的な性能で評価。
+        データ不足時は平滑化を適用。
+
         Args:
             motor_analysis: analyze_race_motors()の各モーターデータ
 
@@ -302,26 +305,78 @@ class MotorAnalyzer:
         """
         score = 0.0
 
+        # 全国平均値（基準値）
+        NATIONAL_AVG_PLACE_RATE_2 = 0.45  # 2連対率45%
+        NATIONAL_AVG_PLACE_RATE_3 = 0.60  # 3連対率60%
+
         # 1. モーター2連対率（0-10点）
         motor_stats = motor_analysis['motor_stats']
-        if motor_stats['total_races'] >= 10:
+        motor_races = motor_stats['total_races']
+
+        if motor_races > 0:
+            # データ信頼度（10レースで60%, 30レースで95%）
+            motor_weight = min(motor_races / 30.0, 1.0)
+
             place_rate_2 = motor_stats['place_rate_2']
-            # 2連対率40%で満点
-            score += min(place_rate_2 * 25, 10.0)
+            # データ不足時は全国平均で平滑化
+            smoothed_rate = (place_rate_2 * motor_weight +
+                           NATIONAL_AVG_PLACE_RATE_2 * (1 - motor_weight))
+
+            # 全国平均45%を5点（中央値）とし、60%以上で10点満点
+            # 式: (rate - 0.45) / (0.60 - 0.45) * 5 + 5
+            #   = (rate - 0.45) / 0.15 * 5 + 5
+            #   = (rate - 0.45) * 33.33 + 5
+            relative_score = (smoothed_rate - NATIONAL_AVG_PLACE_RATE_2) * 33.33 + 5.0
+            score += max(0.0, min(relative_score, 10.0))
+        else:
+            # データなしは平均値（5点）
+            score += 5.0
 
         # 2. モーター直近成績（0-5点）
         motor_recent = motor_analysis['motor_recent_form']
         if motor_recent['recent_races']:
-            recent_place_3 = motor_recent['recent_place_rate_3']
-            # 直近3連対率60%で満点
-            score += min(recent_place_3 * 8.33, 5.0)
+            recent_count = len(motor_recent['recent_races'])
+            # 直近データは5レース以上で評価
+            if recent_count >= 5:
+                recent_weight = min(recent_count / 15.0, 1.0)
+
+                recent_place_3 = motor_recent['recent_place_rate_3']
+                smoothed_recent = (recent_place_3 * recent_weight +
+                                 NATIONAL_AVG_PLACE_RATE_3 * (1 - recent_weight))
+
+                # 全国平均60%を2.5点（中央値）とし、75%以上で5点満点
+                # 式: (rate - 0.60) / (0.75 - 0.60) * 2.5 + 2.5
+                #   = (rate - 0.60) / 0.15 * 2.5 + 2.5
+                #   = (rate - 0.60) * 16.67 + 2.5
+                relative_score = (smoothed_recent - NATIONAL_AVG_PLACE_RATE_3) * 16.67 + 2.5
+                score += max(0.0, min(relative_score, 5.0))
+            else:
+                # データ不足は平均値（2.5点）
+                score += 2.5
+        else:
+            # データなしは平均値（2.5点）
+            score += 2.5
 
         # 3. ボート2連対率（0-5点）
         boat_stats = motor_analysis['boat_stats']
-        if boat_stats['total_races'] >= 10:
+        boat_races = boat_stats['total_races']
+
+        if boat_races > 0:
+            # データ信頼度（10レースで60%, 30レースで95%）
+            boat_weight = min(boat_races / 30.0, 1.0)
+
             boat_place_rate_2 = boat_stats['place_rate_2']
-            # 2連対率40%で満点
-            score += min(boat_place_rate_2 * 12.5, 5.0)
+            smoothed_boat = (boat_place_rate_2 * boat_weight +
+                           NATIONAL_AVG_PLACE_RATE_2 * (1 - boat_weight))
+
+            # 全国平均45%を2.5点（中央値）とし、60%以上で5点満点
+            # 式: (rate - 0.45) / 0.15 * 2.5 + 2.5
+            #   = (rate - 0.45) * 16.67 + 2.5
+            relative_score = (smoothed_boat - NATIONAL_AVG_PLACE_RATE_2) * 16.67 + 2.5
+            score += max(0.0, min(relative_score, 5.0))
+        else:
+            # データなしは平均値（2.5点）
+            score += 2.5
 
         return min(score, 20.0)
 

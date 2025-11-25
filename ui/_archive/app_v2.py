@@ -186,10 +186,14 @@ def main():
 
         settings_mode = st.selectbox(
             "管理内容を選択",
-            ["システム設定", "データ管理", "法則管理", "システム監視"]
+            ["予測精度改善", "システム設定", "データ管理", "法則管理", "システム監視"]
         )
 
-        if settings_mode == "システム設定":
+        if settings_mode == "予測精度改善":
+            from ui.components.improvements_display import render_improvements_summary_page
+            render_improvements_summary_page()
+
+        elif settings_mode == "システム設定":
             render_system_settings()
 
         elif settings_mode == "データ管理":

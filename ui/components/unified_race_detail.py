@@ -181,11 +181,12 @@ def _render_ai_prediction(race_id, race_date_str, venue_code, race_number, racer
                 st.markdown(f"{racer_name}")
 
             with col3:
-                st.metric("スコア", f"{pred['total_score']:.1f}")
+                score = pred.get('total_score', pred.get('score', 0))
+                st.metric("スコア", f"{score:.1f}")
 
             with col4:
-                confidence = pred['total_score']
-                badge = render_confidence_badge(confidence)
+                confidence_level = pred.get('confidence', 'C')
+                badge = render_confidence_badge(confidence_level)
                 st.markdown(f"**{badge}**")
 
             st.markdown("---")
@@ -230,6 +231,23 @@ def _render_ai_prediction(race_id, race_date_str, venue_code, race_number, racer
 
     except Exception as e:
         st.warning(f"法則取得エラー: {e}")
+
+    # 改善機能の効果を表示
+    st.markdown("---")
+    st.markdown("### ⚙️ 適用された改善機能")
+
+    from ui.components.improvements_display import (
+        render_improvement_badges,
+        render_smoothing_details,
+        render_first_place_lock_details
+    )
+
+    # 改善バッジを表示
+    with st.expander("🔧 Laplace平滑化の効果", expanded=False):
+        render_smoothing_details(predictions)
+
+    with st.expander("🔒 1着固定ルールの判定", expanded=False):
+        render_first_place_lock_details(predictions)
 
     # セッションに保存（他のタブで使用）
     st.session_state.current_predictions = predictions

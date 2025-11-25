@@ -941,8 +941,9 @@ class DataManager:
                 cursor.execute("""
                     INSERT INTO race_predictions (
                         race_id, pit_number, rank_prediction, total_score,
-                        confidence, racer_name, racer_number, applied_rules
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        confidence, racer_name, racer_number, applied_rules,
+                        course_score, racer_score, motor_score, kimarite_score, grade_score
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     race_id,
                     pred.get('pit_number'),
@@ -951,7 +952,12 @@ class DataManager:
                     pred.get('confidence'),
                     pred.get('racer_name'),
                     pred.get('racer_number'),
-                    pred.get('applied_rules')
+                    pred.get('applied_rules'),
+                    pred.get('course_score', 0),
+                    pred.get('racer_score', 0),
+                    pred.get('motor_score', 0),
+                    pred.get('kimarite_score', 0),
+                    pred.get('grade_score', 0)
                 ))
 
             conn.commit()

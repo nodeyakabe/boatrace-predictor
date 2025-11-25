@@ -161,12 +161,28 @@ def render_bulk_data_collector(target_date, selected_venues):
                     from src.scraper.bulk_scraper import BulkScraper
                     scraper = BulkScraper()
 
-                    result = scraper.fetch_date_range(
-                        start_date.strftime("%Y-%m-%d"),
-                        end_date.strftime("%Y-%m-%d")
-                    )
+                    # 日付範囲をループ
+                    current_date = start_date
+                    total_races = 0
+                    while current_date <= end_date:
+                        date_str = current_date.strftime("%Y%m%d")
+                        add_log(f"  {current_date.strftime('%Y-%m-%d')} のデータを取得中...")
 
-                    add_log(f"✅ レース基本情報・結果: 取得完了")
+                        # 全24会場を試行
+                        venue_codes = [f"{i:02d}" for i in range(1, 25)]
+                        result = scraper.fetch_multiple_venues(
+                            venue_codes=venue_codes,
+                            race_date=date_str,
+                            race_count=12
+                        )
+
+                        # 取得件数をカウント
+                        for venue_code, races in result.items():
+                            total_races += len(races)
+
+                        current_date += timedelta(days=1)
+
+                    add_log(f"✅ レース基本情報・結果: 取得完了 ({total_races}レース)")
                 except Exception as e:
                     add_log(f"❌ レース基本情報・結果: エラー - {str(e)[:100]}")
 
@@ -182,7 +198,8 @@ def render_bulk_data_collector(target_date, selected_venues):
                 add_log(f"{task_name}の処理を開始")
 
                 try:
-                    python_exe = os.path.join(PROJECT_ROOT, 'venv', 'Scripts', 'python.exe')
+                    # 現在実行中のPythonインタープリタを使用
+                    python_exe = sys.executable
                     script_path = os.path.join(PROJECT_ROOT, task_info["script"])
 
                     result = subprocess.run(
