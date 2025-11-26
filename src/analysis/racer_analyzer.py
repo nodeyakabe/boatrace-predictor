@@ -10,6 +10,30 @@ import sqlite3
 from datetime import datetime, timedelta
 
 
+def laplace_smoothing(wins: int, trials: int, alpha: float = 2.0, k: int = 6) -> float:
+    """
+    ラプラス平滑化による勝率推定
+
+    外枠の0%問題（データ不足による勝率0%）を解消する。
+
+    Args:
+        wins: 勝利数
+        trials: 総試行数（レース数）
+        alpha: 平滑化パラメータ（デフォルト2.0）
+        k: カテゴリ数（ボートレースは6艇なのでデフォルト6）
+
+    Returns:
+        平滑化された勝率 (wins + alpha) / (trials + alpha * k)
+
+    例:
+        - 0勝/0レース → 2/(0+12) = 0.167 (全国平均相当)
+        - 0勝/5レース → 2/(5+12) = 0.118
+        - 1勝/5レース → 3/(5+12) = 0.176
+        - 5勝/20レース → 7/(20+12) = 0.219
+    """
+    return (wins + alpha) / (trials + alpha * k)
+
+
 class RacerAnalyzer:
     """選手分析クラス"""
 
@@ -432,98 +456,83 @@ class RacerAnalyzer:
 
     def calculate_racer_score(self, racer_analysis: Dict) -> float:
         """
-        選手の総合スコアを計算（最大40点）
+        選手の総合スコアを計算（最大40点、最低12点保証）
 
-        データ不足時はベイズ推定的アプローチで全国平均を事前分布として使用。
+        ラプラス平滑化を使用してデータ不足時の0%問題を解消。
         レース数に応じて段階的に個人データの重みを上げる。
+
+        改善点:
+        - ラプラス平滑化で外枠0%問題を解消
+        - 基礎点を追加して最低限のスコアを保証
+        - スコアの分布を広げて差別化を強化
 
         Args:
             racer_analysis: analyze_race_entries()の各選手データ
 
         Returns:
-            選手スコア（0-40点）
+            選手スコア（12-40点）
         """
-        score = 0.0
+        # 基礎点: 12点（30%）を保証
+        BASE_SCORE = 12.0
 
-        # 全国平均値（事前分布）
-        NATIONAL_AVG_WIN_RATE = 0.167  # 1/6 = 16.7%
-        NATIONAL_AVG_PLACE_RATE = 0.50  # 50%程度
+        score = BASE_SCORE
 
-        # 1. 全国勝率（0-15点）
+        # 1. 全国勝率（0-10点）- ラプラス平滑化を使用
         overall_stats = racer_analysis['overall_stats']
         total_races = overall_stats['total_races']
+        win_count = overall_stats['win_count']
 
-        if total_races > 0:
-            # データ信頼度（20レースで50%, 50レースで80%, 100レースで95%）
-            data_weight = min(total_races / 100.0, 1.0)
+        # ラプラス平滑化で勝率を計算（データなしでも16.7%相当になる）
+        smoothed_win_rate = laplace_smoothing(win_count, total_races, alpha=2.0, k=6)
 
-            # ベイズ推定: 個人勝率とデータ信頼度を組み合わせ
-            win_rate = overall_stats['win_rate']
-            smoothed_win_rate = (win_rate * data_weight +
-                                NATIONAL_AVG_WIN_RATE * (1 - data_weight))
+        # 勝率30%で10点満点（全国平均16.7%で約5.6点）
+        score += min(smoothed_win_rate * 33.3, 10.0)
 
-            score += min(smoothed_win_rate * 50, 15.0)  # 30%で15点満点
-        else:
-            # データが全くない場合は全国平均を使用
-            score += NATIONAL_AVG_WIN_RATE * 50
-
-        # 2. コース別勝率（0-10点）
+        # 2. コース別勝率（0-10点）- ラプラス平滑化を使用
         course_stats = racer_analysis['course_stats']
         course_races = course_stats['total_races']
+        course_wins = course_stats['win_count']
 
-        if course_races > 0:
-            # コースデータは少なくても評価（5レースで50%, 15レースで90%）
-            course_weight = min(course_races / 15.0, 1.0)
+        # ラプラス平滑化（コースデータは少ないのでalphaを小さめに）
+        smoothed_course_rate = laplace_smoothing(course_wins, course_races, alpha=1.5, k=6)
 
-            course_win_rate = course_stats['win_rate']
-            smoothed_course_rate = (course_win_rate * course_weight +
-                                   NATIONAL_AVG_WIN_RATE * (1 - course_weight))
+        # 25%で10点満点
+        score += min(smoothed_course_rate * 40, 10.0)
 
-            score += min(smoothed_course_rate * 40, 10.0)  # 25%で10点満点
-        else:
-            # データなしでも全国平均で最低限のスコア
-            score += NATIONAL_AVG_WIN_RATE * 40 * 0.5  # 半分の重み
-
-        # 3. 当地成績（0-8点）
+        # 3. 当地成績（0-8点）- ラプラス平滑化を使用
         venue_stats = racer_analysis['venue_stats']
         venue_races = venue_stats['total_races']
+        # venue_statsにwin_countがない場合は計算
+        venue_wins = int(venue_stats.get('win_rate', 0) * venue_races) if venue_races > 0 else 0
 
-        if venue_races > 0:
-            # 当地データは少なくても評価（3レースで40%, 10レースで85%）
-            venue_weight = min(venue_races / 10.0, 1.0)
+        # ラプラス平滑化（当地データも少ないのでalphaを小さめに）
+        smoothed_venue_rate = laplace_smoothing(venue_wins, venue_races, alpha=1.0, k=6)
 
-            venue_win_rate = venue_stats['win_rate']
-            smoothed_venue_rate = (venue_win_rate * venue_weight +
-                                  NATIONAL_AVG_WIN_RATE * (1 - venue_weight))
-
-            score += min(smoothed_venue_rate * 32, 8.0)  # 25%で8点満点
-        else:
-            # データなしでも全国平均で最低限のスコア
-            score += NATIONAL_AVG_WIN_RATE * 32 * 0.3  # 30%の重み
+        # 25%で8点満点
+        score += min(smoothed_venue_rate * 32, 8.0)
 
         # 4. 直近調子（0-5点）
         recent_form = racer_analysis['recent_form']
         if recent_form['recent_races']:
             recent_count = len(recent_form['recent_races'])
-            # 直近データは3レース以上で評価開始
-            if recent_count >= 3:
-                recent_weight = min(recent_count / 10.0, 1.0)
+            recent_wins = sum(1 for r in recent_form['recent_races'] if r == 1)
 
-                recent_win_rate = recent_form['recent_win_rate']
-                smoothed_recent_rate = (recent_win_rate * recent_weight +
-                                       NATIONAL_AVG_WIN_RATE * (1 - recent_weight))
+            # ラプラス平滑化
+            smoothed_recent_rate = laplace_smoothing(recent_wins, recent_count, alpha=1.0, k=6)
 
-                score += min(smoothed_recent_rate * 20, 5.0)  # 25%で5点満点
+            # 25%で5点満点
+            score += min(smoothed_recent_rate * 20, 5.0)
 
-                # 調子の傾向でボーナス/ペナルティ（データが十分な場合のみ）
-                if recent_count >= 5:
-                    if recent_form['form_trend'] == 'up':
-                        score += 1.0
-                    elif recent_form['form_trend'] == 'down':
-                        score -= 1.0
+            # 調子の傾向でボーナス/ペナルティ（データが十分な場合のみ）
+            if recent_count >= 5:
+                if recent_form['form_trend'] == 'up':
+                    score += 1.0
+                elif recent_form['form_trend'] == 'down':
+                    score -= 0.5  # ペナルティは軽減
         else:
-            # 直近データなしでも最低限のスコア
-            score += NATIONAL_AVG_WIN_RATE * 20 * 0.3
+            # 直近データなしでもラプラス平滑化で最低限のスコア
+            smoothed_recent_rate = laplace_smoothing(0, 0, alpha=1.0, k=6)
+            score += min(smoothed_recent_rate * 20 * 0.5, 2.5)
 
         # 5. ST評価（0-2点）
         st_stats = racer_analysis['st_stats']

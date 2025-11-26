@@ -142,20 +142,23 @@ class RDMDBTideParser:
         tide_data = []
 
         try:
-            # エンコーディング自動検出: UTF-16, shift-jis, UTF-8の順に試行
-            # shift-jisを先に試すことで、日本語ファイルの正しいパースを保証
+            # エンコーディング自動検出: shift-jisを優先
+            # RDMDBのファイルは基本的にshift-jis
             lines = None
-            for encoding in ['utf-16', 'utf-16-le', 'shift-jis', 'utf-8']:
+            for encoding in ['shift-jis', 'utf-8', 'utf-16', 'utf-16-le']:
                 try:
                     with open(file_path, 'r', encoding=encoding, errors='strict') as f:
                         lines = f.readlines()
-                    break
+                    # データ行が含まれているか簡易チェック
+                    has_data = any('/' in line and ',' in line for line in lines[:50])
+                    if has_data:
+                        break
                 except (UnicodeDecodeError, UnicodeError):
                     continue
 
             if lines is None:
                 # どのエンコーディングも失敗した場合、errorsを使用
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                with open(file_path, 'r', encoding='shift-jis', errors='ignore') as f:
                     lines = f.readlines()
 
             # デバッグ: ファイルの最初の数行を確認

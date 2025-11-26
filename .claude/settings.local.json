@@ -36,7 +36,15 @@
       "Bash(timeout 90 python:*)",
       "Bash(timeout 1800 python:*)",
       "Bash(del nul)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(git restore:*)",
+      "Bash(del uicomponentsunified_race_detail.py.tmp.12212.1764056376833 2)",
+      "Bash(del commit_msg.txt)",
+      "Bash(timeout 3600 python:*)",
+      "Bash(timeout 10800 python:*)",
+      "Bash(timeout 20 python:*)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)"
     ],
     "deny": [],
     "ask": []

@@ -8,6 +8,22 @@ from typing import Dict, Optional
 from datetime import datetime, timedelta
 
 
+def laplace_smoothing(wins: int, trials: int, alpha: float = 1.5, k: int = 6) -> float:
+    """
+    ラプラス平滑化による確率推定
+
+    Args:
+        wins: 成功数（勝利数、複勝数など）
+        trials: 総試行数（レース数）
+        alpha: 平滑化パラメータ（デフォルト1.5）
+        k: カテゴリ数（着順なので6）
+
+    Returns:
+        平滑化された確率
+    """
+    return (wins + alpha) / (trials + alpha * k)
+
+
 class GradeScorer:
     """グレード適性スコア計算クラス"""
 
@@ -123,16 +139,21 @@ class GradeScorer:
                 'reason': 'no_experience'
             }
 
-        # 成績指標を計算
+        # 成績指標を計算（ラプラス平滑化を適用）
+        # データが少ない場合でも安定した推定値を得る
+        smoothed_win_rate = laplace_smoothing(wins, total_races, alpha=1.5, k=6) * 100
+        smoothed_top3_rate = laplace_smoothing(top3, total_races, alpha=1.5, k=2) * 100
+
+        # 表示用は生の値
         win_rate = wins / total_races * 100
         top3_rate = top3 / total_races * 100
 
-        # スコア計算ロジック
+        # スコア計算ロジック（平滑化した値を使用）
         # 1. 勝率ベーススコア（0-60%）
-        win_score = min(win_rate / 20 * max_score * 0.6, max_score * 0.6)
+        win_score = min(smoothed_win_rate / 20 * max_score * 0.6, max_score * 0.6)
 
         # 2. 複勝率ベーススコア（0-30%）
-        top3_score = min(top3_rate / 50 * max_score * 0.3, max_score * 0.3)
+        top3_score = min(smoothed_top3_rate / 50 * max_score * 0.3, max_score * 0.3)
 
         # 3. 平均着順ベーススコア（0-10%）
         # 平均着順が良いほど高得点（1着=満点、6着=0点）

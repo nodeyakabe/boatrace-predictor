@@ -53,10 +53,11 @@ UNIQUE_STATIONS = {
     'Tokuyama': '30s_Tokuyama_JP'
 }
 
-# 収集期間: 2022年11月～2025年9月（36ヶ月）
+# 収集期間: 2024年1月～2025年9月（21ヶ月）
+# レースデータと重複する期間のみ収集
 # 2025年10月は除外（データ未公開のため）
-START_YEAR = 2022
-START_MONTH = 11
+START_YEAR = 2024
+START_MONTH = 1
 END_YEAR = 2025
 END_MONTH = 9  # 10月を除外
 

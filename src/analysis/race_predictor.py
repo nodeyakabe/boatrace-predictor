@@ -5,19 +5,23 @@
 総合予想スコアと買い目推奨を提供
 """
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from .statistics_calculator import StatisticsCalculator
 from .racer_analyzer import RacerAnalyzer
 from .motor_analyzer import MotorAnalyzer
 from .kimarite_scorer import KimariteScorer
 from .grade_scorer import GradeScorer
 from .first_place_lock import FirstPlaceLockAnalyzer
+from .weather_adjuster import WeatherAdjuster
+from .tide_adjuster import TideAdjuster
+from .exhibition_analyzer import ExhibitionAnalyzer
+from .extended_scorer import ExtendedScorer
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from src.utils.scoring_config import ScoringConfig
 from src.prediction.rule_based_engine import RuleBasedEngine
-from config.venue_characteristics import get_venue_adjustment
+from config.venue_characteristics import get_venue_adjustment, get_venue_course_adjustment
 
 
 class RacePredictor:
@@ -32,6 +36,10 @@ class RacePredictor:
         self.first_place_lock_analyzer = FirstPlaceLockAnalyzer()
         self.grade_scorer = GradeScorer(db_path)
         self.rule_engine = RuleBasedEngine(db_path)
+        self.weather_adjuster = WeatherAdjuster()
+        self.tide_adjuster = TideAdjuster(db_path)
+        self.exhibition_analyzer = ExhibitionAnalyzer()
+        self.extended_scorer = ExtendedScorer(db_path)
 
         # 重み設定をロード
         if custom_weights:
@@ -54,49 +62,192 @@ class RacePredictor:
             logging.warning(f"重みの合計が100ではありません: {total_weight}")
 
     # ========================================
+    # 動的重み調整（回収率改善のため）
+    # ========================================
+
+    # インが非常に強い会場（1コース勝率60%以上）
+    HIGH_IN_VENUES = ['24', '18', '13', '17', '07', '08']  # 大村、徳山、尼崎、宮島、蒲郡、常滑
+
+    # インが弱い会場（1コース勝率50%未満）
+    LOW_IN_VENUES = ['02', '01', '03', '04', '14']  # 戸田、桐生、江戸川、平和島、鳴門
+
+    def _adjust_weights_dynamically(
+        self,
+        venue_code: str,
+        race_grade: str,
+        data_quality: float
+    ) -> Dict[str, float]:
+        """
+        会場・グレード・データ充実度に応じて重みを動的に調整
+
+        回収率改善のため、固定配点の限界を補完する。
+
+        Args:
+            venue_code: 会場コード
+            race_grade: レースグレード（SG, G1, G2, G3, 一般）
+            data_quality: データ充実度（0-100）
+
+        Returns:
+            調整後の重み辞書
+        """
+        weights = self.weights.copy()
+
+        # === 会場別調整 ===
+        if venue_code in self.HIGH_IN_VENUES:
+            # インが強い会場: コース重視、モーター軽視
+            weights['course_weight'] = weights.get('course_weight', 35) + 3
+            weights['motor_weight'] = weights.get('motor_weight', 20) - 2
+            weights['racer_weight'] = weights.get('racer_weight', 35) - 1
+
+        elif venue_code in self.LOW_IN_VENUES:
+            # インが弱い会場: モーター・選手重視、コース軽視
+            weights['course_weight'] = weights.get('course_weight', 35) - 3
+            weights['motor_weight'] = weights.get('motor_weight', 20) + 2
+            weights['racer_weight'] = weights.get('racer_weight', 35) + 1
+
+        # === グレード別調整 ===
+        if race_grade in ['SG', 'G1']:
+            # 重賞レース: グレード適性・選手実力重視
+            weights['grade_weight'] = weights.get('grade_weight', 5) + 3
+            weights['racer_weight'] = weights.get('racer_weight', 35) + 2
+            weights['kimarite_weight'] = weights.get('kimarite_weight', 5) - 3
+            weights['motor_weight'] = weights.get('motor_weight', 20) - 2
+
+        elif race_grade in ['G2', 'G3']:
+            # 準重賞: グレード適性をやや重視
+            weights['grade_weight'] = weights.get('grade_weight', 5) + 2
+            weights['kimarite_weight'] = weights.get('kimarite_weight', 5) - 2
+
+        # === データ充実度による調整 ===
+        if data_quality < 50:
+            # データ不足時: モーター重視（選手データが信頼できない）
+            weights['motor_weight'] = weights.get('motor_weight', 20) + 3
+            weights['racer_weight'] = weights.get('racer_weight', 35) - 3
+
+        # 重みの合計を100に正規化
+        total = sum(weights.values())
+        if total > 0 and abs(total - 100.0) > 0.1:
+            factor = 100.0 / total
+            for key in weights:
+                weights[key] = weights[key] * factor
+
+        return weights
+
+    def _calculate_data_quality(self, racer_analyses: List[Dict], motor_analyses: List[Dict]) -> float:
+        """
+        レース全体のデータ充実度を計算
+
+        Args:
+            racer_analyses: 選手分析データリスト
+            motor_analyses: モーター分析データリスト
+
+        Returns:
+            データ充実度（0-100）
+        """
+        if not racer_analyses or not motor_analyses:
+            return 0.0
+
+        total_quality = 0.0
+
+        for racer, motor in zip(racer_analyses, motor_analyses):
+            # 選手データの充実度
+            racer_races = racer.get('overall_stats', {}).get('total_races', 0)
+            racer_quality = min(racer_races / 50.0, 1.0) * 50  # 50レースで満点
+
+            # モーターデータの充実度
+            motor_races = motor.get('motor_stats', {}).get('total_races', 0)
+            motor_quality = min(motor_races / 30.0, 1.0) * 50  # 30レースで満点
+
+            total_quality += (racer_quality + motor_quality) / 6  # 6艇で平均
+
+        return total_quality
+
+    # ========================================
     # コーススコア計算
     # ========================================
 
+    # 全国平均コース別勝率（正規化の基準）
+    NATIONAL_AVG_WIN_RATES = {
+        1: 0.55,  # 1コース: 約55%
+        2: 0.14,  # 2コース: 約14%
+        3: 0.12,  # 3コース: 約12%
+        4: 0.10,  # 4コース: 約10%
+        5: 0.06,  # 5コース: 約6%
+        6: 0.03,  # 6コース: 約3%
+    }
+
     def calculate_course_score(self, venue_code: str, course: int) -> float:
         """
-        コース別スコアを計算（設定された重みに基づく）
+        コース別スコアを計算（正規化版）
+
+        改善点:
+        - 全国平均との相対評価で正規化
+        - 各コースが理論上の最大スコアに到達可能
+        - 会場特性を適切に反映
 
         Args:
             venue_code: 競艇場コード
             course: コース番号（1-6）
 
         Returns:
-            コーススコア
+            コーススコア（0〜course_weight）
         """
         # コース別勝率を取得
         course_stats = self.stats_calc.calculate_course_stats(venue_code)
+        national_avg = self.NATIONAL_AVG_WIN_RATES.get(course, 0.10)
 
         if course not in course_stats:
-            # データがない場合、コース別の全国平均勝率を使用
-            default_win_rates = {
-                1: 0.55,  # 1コース: 約55%
-                2: 0.14,  # 2コース: 約14%
-                3: 0.12,  # 3コース: 約12%
-                4: 0.10,  # 4コース: 約10%
-                5: 0.06,  # 5コース: 約6%
-                6: 0.03,  # 6コース: 約3%
-            }
-            win_rate = default_win_rates.get(course, 0.10)
+            win_rate = national_avg
         else:
             stats = course_stats[course]
             win_rate = stats['win_rate']
 
         max_score = self.weights['course_weight']
 
-        # 実際の勝率分布に基づいてスコアを計算
-        # 勝率をそのままスコアに反映（0-100%を0-max_scoreに変換）
-        # これにより1コース(55%)が高スコア、6コース(3%)が低スコアになる
-        score = win_rate * max_score
+        # === 正規化ロジック（改良版） ===
+        # 方針:
+        #   1. 絶対的な勝率で基礎点を計算（実力を反映）
+        #   2. 会場平均との比較でボーナス/ペナルティを付与
+        #
+        # これにより:
+        #   - 1コース（勝率55%）は基本的に高スコア
+        #   - 6コース（勝率3%）は基本的に低スコア
+        #   - 会場特性で微調整
 
-        # 会場特性による補正を適用（1号艇のみ）
+        # 1. 絶対的な勝率スコア（60%の配分）
+        # 勝率をシグモイド風に正規化して0-1にマッピング
+        # 中央値を約16.7%（1/6）として、勝率が高いほど高スコア
+        # max勝率70%を想定して設計
+        win_rate_normalized = min(win_rate / 0.70, 1.0)  # 70%で1.0に到達
+        absolute_score = max_score * 0.60 * win_rate_normalized
+
+        # 2. 会場特性スコア（40%の配分）
+        # 全国平均との比較で、その会場でそのコースがどれだけ有利/不利か
+        if national_avg > 0:
+            ratio = win_rate / national_avg
+        else:
+            ratio = 1.0
+
+        # ratioを0.7〜1.3の範囲に制限し、0〜1にマッピング
+        # ratio=0.7 → 0, ratio=1.0 → 0.5, ratio=1.3 → 1.0
+        ratio_clamped = max(0.7, min(1.3, ratio))
+        venue_factor = (ratio_clamped - 0.7) / 0.6  # 0〜1
+
+        venue_score = max_score * 0.40 * venue_factor
+
+        score = absolute_score + venue_score
+
+        # 会場・コース別補正（全コースに適用）
+        # 1コース用の特別補正も適用維持
         if course == 1:
             venue_adjustment = get_venue_adjustment(venue_code)
             score = score * venue_adjustment
+
+        # 全コースに会場別勝率補正を適用
+        course_adjustment = get_venue_course_adjustment(venue_code, course)
+        # 補正係数が極端にならないよう制限（0.85〜1.15）
+        course_adjustment = max(0.85, min(1.15, course_adjustment))
+        score = score * course_adjustment
 
         return score
 
@@ -195,19 +346,84 @@ class RacePredictor:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        cursor.execute("SELECT venue_code, race_grade FROM races WHERE id = ?", (race_id,))
+        cursor.execute("SELECT venue_code, race_grade, race_date, race_time FROM races WHERE id = ?", (race_id,))
         race_info = cursor.fetchone()
-        conn.close()
 
         if not race_info:
+            conn.close()
             return []
 
         venue_code = race_info['venue_code']
         race_grade = race_info['race_grade'] if race_info['race_grade'] else '一般'
+        race_date = race_info['race_date']
+        race_time = race_info['race_time']
+
+        # 拡張スコア用にエントリー情報を取得（racer_rank, f_count, l_count）
+        cursor.execute("""
+            SELECT pit_number, racer_number, racer_name, racer_rank,
+                   f_count, l_count, motor_number, win_rate
+            FROM entries
+            WHERE race_id = ?
+            ORDER BY pit_number
+        """, (race_id,))
+        entry_rows = cursor.fetchall()
+        entry_data = {}
+        race_entries_for_matchup = []
+        for row in entry_rows:
+            entry_dict = {
+                'pit_number': row['pit_number'],
+                'racer_number': row['racer_number'],
+                'racer_name': row['racer_name'],
+                'racer_rank': row['racer_rank'],
+                'f_count': row['f_count'],
+                'l_count': row['l_count'],
+                'motor_number': row['motor_number'],
+                'win_rate': row['win_rate']
+            }
+            entry_data[row['pit_number']] = entry_dict
+            race_entries_for_matchup.append(entry_dict)
+
+        # 天候データを取得（race_conditions または weather テーブルから）
+        wind_speed = None
+        wave_height = None
+        wind_direction = None
+
+        # まず race_conditions から取得を試みる（風向データを含む）
+        cursor.execute("""
+            SELECT wind_speed, wave_height, wind_direction FROM race_conditions WHERE race_id = ?
+        """, (race_id,))
+        weather_row = cursor.fetchone()
+
+        if weather_row and weather_row['wind_speed'] is not None:
+            wind_speed = weather_row['wind_speed']
+            wave_height = weather_row['wave_height']
+            wind_direction = weather_row['wind_direction']
+        else:
+            # weather テーブルから取得（wind_directionは未対応の場合あり）
+            cursor.execute("""
+                SELECT wind_speed, wave_height FROM weather
+                WHERE venue_code = ? AND weather_date = ?
+            """, (venue_code, race_date))
+            weather_row = cursor.fetchone()
+            if weather_row:
+                wind_speed = weather_row['wind_speed']
+                wave_height = weather_row['wave_height']
+
+        conn.close()
 
         # 選手・モーター分析
         racer_analyses = self.racer_analyzer.analyze_race_entries(race_id)
         motor_analyses = self.motor_analyzer.analyze_race_motors(race_id)
+
+        # データ充実度を計算
+        data_quality = self._calculate_data_quality(racer_analyses, motor_analyses)
+
+        # 動的重み調整（会場・グレード・データ充実度に応じて）
+        adjusted_weights = self._adjust_weights_dynamically(
+            venue_code,
+            race_grade,
+            data_quality
+        )
 
         # 各艇のスコア計算
         predictions = []
@@ -221,46 +437,86 @@ class RacePredictor:
             # 予測時は枠番をコースとして使用（ボートレースでは枠番=進入コースが多い）
             course = pit_number
 
-            # 各スコア計算
+            # 各スコア計算（動的調整後の重みを使用）
             # course_scoreは既に重みが反映されている（勝率 * max_score）
+            # 一時的にweightsを差し替えてcourse_scoreを計算
+            original_course_weight = self.weights['course_weight']
+            self.weights['course_weight'] = adjusted_weights['course_weight']
             course_score = self.calculate_course_score(venue_code, course)
+            self.weights['course_weight'] = original_course_weight  # 元に戻す
 
-            # 選手・モーターは固定値(40/20)で計算されるので、重み設定に応じて変換
+            # 選手・モーターは固定値(40/20)で計算されるので、動的調整後の重み設定に応じて変換
             racer_score_raw = self.racer_analyzer.calculate_racer_score(racer_analysis)
             motor_score_raw = self.motor_analyzer.calculate_motor_score(motor_analysis)
-            racer_score = racer_score_raw * (self.weights['racer_weight'] / 40.0)
-            motor_score = motor_score_raw * (self.weights['motor_weight'] / 20.0)
+            racer_score = racer_score_raw * (adjusted_weights['racer_weight'] / 40.0)
+            motor_score = motor_score_raw * (adjusted_weights['motor_weight'] / 20.0)
 
-            # 決まり手適性スコアを計算
+            # 決まり手適性スコアを計算（動的調整後の重みを使用）
             kimarite_result = self.kimarite_scorer.calculate_kimarite_affinity_score(
                 racer_analysis['racer_number'],
                 venue_code,
                 course,
                 days=180,
-                max_score=self.weights['kimarite_weight']
+                max_score=adjusted_weights['kimarite_weight']
             )
             kimarite_score = kimarite_result['score']
 
-            # グレード適性スコアを計算
+            # グレード適性スコアを計算（動的調整後の重みを使用）
             grade_result = self.grade_scorer.calculate_grade_affinity_score(
                 racer_analysis['racer_number'],
                 race_grade,
                 days=365,
-                max_score=self.weights['grade_weight']
+                max_score=adjusted_weights['grade_weight']
             )
             grade_score = grade_result['score']
 
-            # 総合スコア計算
-            raw_total = course_score + racer_score + motor_score + kimarite_score + grade_score
+            # ========================================
+            # 拡張スコア計算（新規追加）
+            # ========================================
+            extended_score_detail = None
+            extended_score = 0.0
+            EXTENDED_WEIGHT = 15.0  # 拡張スコアの総合重み
 
-            # スコアを0-100範囲に正規化
-            # 最大可能スコア = course_weight + racer_weight + motor_weight + kimarite_weight + grade_weight
+            if pit_number in entry_data:
+                entry = entry_data[pit_number]
+                extended_result = self.extended_scorer.get_comprehensive_score(
+                    entry,
+                    venue_code,
+                    race_date,
+                    race_entries_for_matchup
+                )
+                extended_score_detail = extended_result
+
+                # 拡張スコアの構成要素：
+                # - 級別スコア: 0-10点
+                # - F/Lペナルティ: -10～0点
+                # - 節間成績: 0-5点
+                # - 前走レベル: 0-5点
+                # - 選手間相性: 0-5点
+                # - モーター特性: 0-5点
+                # 最大合計: 30点、最小: -10点
+                # これを EXTENDED_WEIGHT (15点) に正規化
+
+                raw_extended = extended_result['total_extended_score']
+                # -10～30 を 0～15 に正規化
+                normalized_extended = ((raw_extended + 10) / 40) * EXTENDED_WEIGHT
+                extended_score = max(0, min(EXTENDED_WEIGHT, normalized_extended))
+
+            # 総合スコア計算（拡張スコアを含む）
+            raw_total = (
+                course_score + racer_score + motor_score +
+                kimarite_score + grade_score + extended_score
+            )
+
+            # スコアを0-100範囲に正規化（動的調整後の重みを使用）
+            # 最大可能スコア = 既存スコア + 拡張スコア
             max_possible_score = (
-                self.weights['course_weight'] +
-                self.weights['racer_weight'] +
-                self.weights['motor_weight'] +
-                self.weights['kimarite_weight'] +
-                self.weights['grade_weight']
+                adjusted_weights['course_weight'] +
+                adjusted_weights['racer_weight'] +
+                adjusted_weights['motor_weight'] +
+                adjusted_weights['kimarite_weight'] +
+                adjusted_weights['grade_weight'] +
+                EXTENDED_WEIGHT
             )
             if max_possible_score > 0:
                 total_score = (raw_total / max_possible_score) * 100.0
@@ -270,7 +526,7 @@ class RacePredictor:
             # 信頼度判定（A-E）
             confidence = self._calculate_confidence(total_score, racer_analysis, motor_analysis)
 
-            predictions.append({
+            prediction_entry = {
                 'pit_number': pit_number,
                 'racer_name': racer_name,
                 'racer_number': racer_analysis['racer_number'],
@@ -281,12 +537,33 @@ class RacePredictor:
                 'motor_score': round(motor_score, 1),
                 'kimarite_score': round(kimarite_score, 1),
                 'grade_score': round(grade_score, 1),
+                'extended_score': round(extended_score, 1),
                 'total_score': round(total_score, 1),
                 'confidence': confidence,
                 # 詳細情報
                 'kimarite_detail': kimarite_result,
-                'grade_detail': grade_result
-            })
+                'grade_detail': grade_result,
+            }
+
+            # 拡張スコア詳細を追加（存在する場合）
+            if extended_score_detail:
+                prediction_entry['extended_detail'] = {
+                    'class': extended_score_detail['class'],
+                    'fl_penalty': extended_score_detail['fl_penalty'],
+                    'session': extended_score_detail['session'],
+                    'prev_race': extended_score_detail['prev_race'],
+                    'matchup': extended_score_detail['matchup'],
+                    'motor_extended': extended_score_detail['motor'],
+                    'course_prediction': extended_score_detail['course_prediction']
+                }
+
+            predictions.append(prediction_entry)
+
+        # 展示データ補正を適用
+        predictions = self._apply_exhibition_adjustment(
+            predictions,
+            race_id
+        )
 
         # 法則ベース補正を適用
         predictions = self._apply_rule_based_adjustment(
@@ -294,6 +571,23 @@ class RacePredictor:
             race_id,
             venue_code,
             racer_analyses
+        )
+
+        # 天候補正を適用（風速・波高・風向データがある場合）
+        predictions = self._apply_weather_adjustment(
+            predictions,
+            venue_code,
+            wind_speed,
+            wave_height,
+            wind_direction
+        )
+
+        # 潮位補正を適用（海水会場のみ）
+        predictions = self._apply_tide_adjustment(
+            predictions,
+            venue_code,
+            race_date,
+            race_time
         )
 
         # スコア順にソート
@@ -687,6 +981,230 @@ class RacePredictor:
             'combination': combination,
             'confidence': confidence
         }]
+
+    def _apply_weather_adjustment(
+        self,
+        predictions: List[Dict],
+        venue_code: str,
+        wind_speed: Optional[float],
+        wave_height: Optional[float],
+        wind_direction: Optional[str] = None
+    ) -> List[Dict]:
+        """
+        天候に基づくスコア補正を適用
+
+        強風時（6m以上）は1コースにペナルティ、外コースにボーナスを付与。
+        風向による補正（向い風は1コース有利、追い風はまくり有利）。
+        会場別の特性を考慮（常滑は強風の影響が特に大きい）。
+
+        Args:
+            predictions: 予測結果リスト
+            venue_code: 会場コード
+            wind_speed: 風速（m/s）
+            wave_height: 波高（cm）
+            wind_direction: 風向（16方位 例: 北、南西、など）
+
+        Returns:
+            天候補正後の予測結果
+        """
+        # 風速・波高・風向データがない場合は補正なし
+        if wind_speed is None and wave_height is None and wind_direction is None:
+            return predictions
+
+        # 天候補正の最大影響を制限（過補正防止のため縮小）
+        # 改善提案: 15→5 に縮小（回収率改善のため）
+        MAX_WEATHER_ADJUSTMENT = 5.0  # スコアへの最大影響
+
+        for pred in predictions:
+            pit_number = pred['pit_number']
+            original_score = pred['total_score']
+
+            # 天候補正を計算（風向も含む）
+            adj_result = self.weather_adjuster.calculate_adjustment(
+                venue_code,
+                pit_number,  # pit_number = コース番号として使用
+                wind_speed,
+                wave_height,
+                wind_direction
+            )
+
+            # 補正値を取得（パーセント → スコア補正値に変換）
+            # adjustment は -0.3 ~ +0.05 の範囲
+            adjustment_percent = adj_result['adjustment']
+            score_adjustment = original_score * adjustment_percent
+
+            # 補正値を制限
+            score_adjustment = max(-MAX_WEATHER_ADJUSTMENT,
+                                  min(score_adjustment, MAX_WEATHER_ADJUSTMENT))
+
+            # スコアを補正
+            adjusted_score = original_score + score_adjustment
+
+            # スコアを0-100範囲に制限
+            adjusted_score = max(0.0, min(adjusted_score, 100.0))
+
+            pred['total_score'] = round(adjusted_score, 1)
+
+            # 補正があった場合は情報を追加
+            if adjustment_percent != 0:
+                pred['weather_adjustment'] = round(score_adjustment, 1)
+                pred['weather_reason'] = adj_result['reason']
+                pred['wind_category'] = adj_result['wind_category']
+                pred['wave_category'] = adj_result['wave_category']
+                pred['wind_direction_category'] = adj_result['wind_direction_category']
+
+        return predictions
+
+    def _apply_tide_adjustment(
+        self,
+        predictions: List[Dict],
+        venue_code: str,
+        race_date: str,
+        race_time: Optional[str]
+    ) -> List[Dict]:
+        """
+        潮位に基づくスコア補正を適用
+
+        満潮時は1コース有利、干潮時は荒れやすい。
+        海水・汽水会場のみに適用。
+
+        Args:
+            predictions: 予測結果リスト
+            venue_code: 会場コード
+            race_date: レース日付（YYYY-MM-DD）
+            race_time: レース時刻（HH:MM）
+
+        Returns:
+            潮位補正後の予測結果
+        """
+        from datetime import datetime
+
+        # 海水会場でない場合は補正なし
+        if venue_code not in self.tide_adjuster.SEAWATER_VENUES:
+            return predictions
+
+        # 潮位データがない会場は補正なし
+        if venue_code not in self.tide_adjuster.TIDE_DATA_VENUES:
+            return predictions
+
+        # レース日時を構築
+        race_datetime = None
+        if race_date:
+            try:
+                if race_time:
+                    race_datetime = datetime.strptime(f"{race_date} {race_time}", "%Y-%m-%d %H:%M")
+                else:
+                    # 時刻がない場合は12:00を仮定
+                    race_datetime = datetime.strptime(f"{race_date} 12:00", "%Y-%m-%d %H:%M")
+            except ValueError:
+                pass
+
+        if race_datetime is None:
+            return predictions
+
+        # 潮位データを取得
+        tide_data = self.tide_adjuster.get_tide_level(venue_code, race_datetime)
+        if tide_data is None:
+            return predictions
+
+        # 潮位補正の最大影響を制限
+        MAX_TIDE_ADJUSTMENT = 5.0  # スコアへの最大影響
+
+        for pred in predictions:
+            pit_number = pred['pit_number']
+            original_score = pred['total_score']
+
+            # 潮位補正を計算
+            adj_result = self.tide_adjuster.calculate_adjustment(
+                venue_code,
+                pit_number,
+                tide_data=tide_data
+            )
+
+            # 補正値を取得（パーセント → スコア補正値に変換）
+            adjustment_percent = adj_result['adjustment']
+            if adjustment_percent != 0:
+                score_adjustment = original_score * adjustment_percent
+
+                # 補正値を制限
+                score_adjustment = max(-MAX_TIDE_ADJUSTMENT,
+                                      min(score_adjustment, MAX_TIDE_ADJUSTMENT))
+
+                # スコアを補正
+                adjusted_score = original_score + score_adjustment
+
+                # スコアを0-100範囲に制限
+                adjusted_score = max(0.0, min(adjusted_score, 100.0))
+
+                pred['total_score'] = round(adjusted_score, 1)
+
+                # 補正情報を追加
+                pred['tide_adjustment'] = round(score_adjustment, 1)
+                pred['tide_reason'] = adj_result['reason']
+                pred['tide_phase'] = adj_result['tide_phase']
+
+        return predictions
+
+    def _apply_exhibition_adjustment(
+        self,
+        predictions: List[Dict],
+        race_id: int
+    ) -> List[Dict]:
+        """
+        展示データに基づくスコア補正を適用
+
+        展示タイム、スタート展示、ターン評価などを考慮して
+        モーター・選手スコアを補正する。
+
+        Args:
+            predictions: 予測結果リスト
+            race_id: レースID
+
+        Returns:
+            展示補正後の予測結果
+        """
+        # 展示補正の最大影響を制限
+        MAX_EXHIBITION_ADJUSTMENT = 10.0  # スコアへの最大影響
+
+        for pred in predictions:
+            pit_number = pred['pit_number']
+            original_score = pred['total_score']
+
+            try:
+                # 展示補正を計算
+                adj_result = self.exhibition_analyzer.calculate_exhibition_adjustment(
+                    race_id,
+                    pit_number
+                )
+
+                # モーター補正と選手補正を合算
+                total_adjustment = (
+                    adj_result['motor_adjustment'] +
+                    adj_result['racer_adjustment']
+                )
+
+                if total_adjustment != 0:
+                    # 補正値を制限
+                    score_adjustment = max(-MAX_EXHIBITION_ADJUSTMENT,
+                                          min(total_adjustment, MAX_EXHIBITION_ADJUSTMENT))
+
+                    # スコアを補正
+                    adjusted_score = original_score + score_adjustment
+
+                    # スコアを0-100範囲に制限
+                    adjusted_score = max(0.0, min(adjusted_score, 100.0))
+
+                    pred['total_score'] = round(adjusted_score, 1)
+
+                    # 補正情報を追加
+                    pred['exhibition_adjustment'] = round(score_adjustment, 1)
+                    pred['exhibition_reason'] = adj_result['reason']
+
+            except Exception:
+                # 展示データがない場合は補正なしで続行
+                pass
+
+        return predictions
 
 
 if __name__ == "__main__":
