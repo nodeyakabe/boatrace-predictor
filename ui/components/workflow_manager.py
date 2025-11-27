@@ -323,114 +323,64 @@ def reanalyze_rules():
 
 def generate_and_save_predictions(today_schedule):
     """
-    本日の全レースの予想を生成してデータベースに保存
+    本日の全レースの予想を生成してデータベースに保存（高速版）
 
     Args:
         today_schedule: {venue_code: race_date} の辞書
     """
-    from src.analysis.race_predictor import RacePredictor
-    from src.database.data_manager import DataManager
+    import os
+    import sys
     from src.utils.date_utils import to_iso_format
-    import sqlite3
-    from config.settings import DATABASE_PATH
 
-    # 進捗表示用のプレースホルダー
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-
-    data_manager = DataManager()
-    race_predictor = RacePredictor()
-
-    # 全レースリストを取得
-    conn = sqlite3.connect(DATABASE_PATH)
-    cursor = conn.cursor()
-
-    # 会場名を取得するためのマッピング
-    from config.settings import VENUES
-    venue_name_map = {}
-    for venue_id, venue_info in VENUES.items():
-        venue_name_map[venue_info['code']] = venue_info['name']
-
-    all_races = []
-    for venue_code, race_date in today_schedule.items():
-        race_date_formatted = to_iso_format(race_date)
-
-        cursor.execute("""
-            SELECT id, venue_code, race_number
-            FROM races
-            WHERE venue_code = ? AND race_date = ?
-            ORDER BY race_number
-        """, (venue_code, race_date_formatted))
-
-        for row in cursor.fetchall():
-            all_races.append({
-                'race_id': row[0],
-                'venue_code': row[1],
-                'venue_name': venue_name_map.get(row[1], f"会場{row[1]}"),
-                'race_number': row[2],
-                'race_date': race_date_formatted
-            })
-
-    conn.close()
-
-    if not all_races:
-        progress_bar.empty()
-        status_text.empty()
+    # 対象日を取得（最初の会場の日付を使用）
+    if not today_schedule:
         st.warning("予想対象のレースが見つかりませんでした")
         return
 
-    # 既に予想が存在するレースをチェック
-    races_to_predict = []
-    skipped_count = 0
+    target_date = to_iso_format(list(today_schedule.values())[0])
 
-    for race in all_races:
-        existing_predictions = data_manager.get_race_predictions(race['race_id'])
-        if existing_predictions:
-            skipped_count += 1
-        else:
-            races_to_predict.append(race)
+    # プロジェクトルート
+    PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 
-    if not races_to_predict:
-        progress_bar.empty()
-        status_text.empty()
-        st.success(f"✅ 今日の予測が完了しました！「レース予想」タブで確認できます（{skipped_count}レース）")
+    # 高速予想生成スクリプトのパス
+    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'fast_prediction_generator.py')
+
+    if not os.path.exists(script_path):
+        st.error("高速予想生成スクリプトが見つかりません")
         return
 
-    success_count = 0
-    error_count = 0
-
-    for idx, race in enumerate(races_to_predict):
+    with st.spinner(f"予想を高速生成中... ({target_date})"):
         try:
-            # 進捗表示を更新
-            progress_percentage = (idx + 1) / len(races_to_predict)
-            progress_bar.progress(progress_percentage)
-            status_text.text(f"予想生成中: {race['venue_name']} {race['race_number']}R ({idx + 1}/{len(races_to_predict)})")
+            result = subprocess.run(
+                [sys.executable, script_path, '--date', target_date],
+                capture_output=True,
+                text=True,
+                timeout=600,  # 10分タイムアウト
+                cwd=PROJECT_ROOT,
+                encoding='utf-8'
+            )
 
-            # 予想生成
-            predictions = race_predictor.predict_race(race['race_id'])
+            if result.returncode == 0:
+                # 成功メッセージを抽出
+                output_lines = result.stdout.split('\n')
+                success_info = []
+                for line in output_lines:
+                    if '生成成功:' in line or '総処理時間:' in line or '平均処理時間:' in line:
+                        success_info.append(line.strip())
 
-            if predictions and len(predictions) > 0:
-                # データベースに保存
-                if data_manager.save_race_predictions(race['race_id'], predictions):
-                    success_count += 1
-                else:
-                    error_count += 1
+                st.success("予想生成が完了しました！")
+                if success_info:
+                    st.info('\n'.join(success_info))
+
+                # 出力の最後の部分を表示
+                with st.expander("詳細ログを表示"):
+                    st.code(result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout)
             else:
-                error_count += 1
+                st.error("予想生成中にエラーが発生しました")
+                with st.expander("エラー詳細"):
+                    st.code(result.stderr if result.stderr else result.stdout)
 
+        except subprocess.TimeoutExpired:
+            st.error("予想生成がタイムアウトしました（10分経過）")
         except Exception as e:
-            import logging
-            logging.warning(f"予想生成エラー (race_id={race['race_id']}): {e}")
-            error_count += 1
-            continue
-
-    progress_bar.empty()
-    status_text.empty()
-
-    # 最終結果のみ表示
-    total_races = success_count + error_count + skipped_count
-    if error_count > 0:
-        st.success(f"✅ 今日の予測が完了しました！「レース予想」タブで確認できます")
-        st.caption(f"📊 {total_races}レース（成功: {success_count}, スキップ: {skipped_count}, エラー: {error_count}）")
-    else:
-        st.success(f"✅ 今日の予測が完了しました！「レース予想」タブで確認できます（{total_races}レース）")
+            st.error(f"予想生成エラー: {e}")
