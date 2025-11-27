@@ -44,9 +44,16 @@
       "Bash(timeout 10800 python:*)",
       "Bash(timeout 20 python:*)",
       "Bash(git pull:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(powershell -Command \"Expand-Archive -Path ''BoatRace_full_export_20251126_180620.zip'' -DestinationPath ''temp_extract'' -Force\")",
+      "Bash(powershell -Command:*)",
+      "Bash(timeout:*)",
+      "Bash(chcp:*)",
+      "Bash(find:*)",
+      "Bash(tasklist:*)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "model": "sonnet"
 }

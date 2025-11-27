@@ -22,6 +22,11 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from src.utils.scoring_config import ScoringConfig
 from src.prediction.rule_based_engine import RuleBasedEngine
 from config.venue_characteristics import get_venue_adjustment, get_venue_course_adjustment
+from config.settings import (
+    get_dynamic_weights, get_venue_type, VENUE_IN1_RATES,
+    HIGH_IN_VENUES, LOW_IN_VENUES, EXTENDED_SCORE_WEIGHTS,
+    EXTENDED_SCORE_MAX, EXTENDED_SCORE_MIN
+)
 
 
 class RacePredictor:
@@ -64,12 +69,7 @@ class RacePredictor:
     # ========================================
     # 動的重み調整（回収率改善のため）
     # ========================================
-
-    # インが非常に強い会場（1コース勝率60%以上）
-    HIGH_IN_VENUES = ['24', '18', '13', '17', '07', '08']  # 大村、徳山、尼崎、宮島、蒲郡、常滑
-
-    # インが弱い会場（1コース勝率50%未満）
-    LOW_IN_VENUES = ['02', '01', '03', '04', '14']  # 戸田、桐生、江戸川、平和島、鳴門
+    # 注: 会場分類は config/settings.py から読み込み
 
     def _adjust_weights_dynamically(
         self,
@@ -80,7 +80,7 @@ class RacePredictor:
         """
         会場・グレード・データ充実度に応じて重みを動的に調整
 
-        回収率改善のため、固定配点の限界を補完する。
+        2024年11月27日更新: config/settings.pyの動的配点設定を使用
 
         Args:
             venue_code: 会場コード
@@ -90,20 +90,18 @@ class RacePredictor:
         Returns:
             調整後の重み辞書
         """
-        weights = self.weights.copy()
+        # settings.pyの動的配点を基にする
+        dynamic_weights = get_dynamic_weights(venue_code)
+        venue_type = get_venue_type(venue_code)
 
-        # === 会場別調整 ===
-        if venue_code in self.HIGH_IN_VENUES:
-            # インが強い会場: コース重視、モーター軽視
-            weights['course_weight'] = weights.get('course_weight', 35) + 3
-            weights['motor_weight'] = weights.get('motor_weight', 20) - 2
-            weights['racer_weight'] = weights.get('racer_weight', 35) - 1
-
-        elif venue_code in self.LOW_IN_VENUES:
-            # インが弱い会場: モーター・選手重視、コース軽視
-            weights['course_weight'] = weights.get('course_weight', 35) - 3
-            weights['motor_weight'] = weights.get('motor_weight', 20) + 2
-            weights['racer_weight'] = weights.get('racer_weight', 35) + 1
+        weights = {
+            'course_weight': dynamic_weights['course'],
+            'racer_weight': dynamic_weights['racer'],
+            'motor_weight': dynamic_weights['motor'],
+            'rank_weight': dynamic_weights['rank'],
+            'kimarite_weight': self.weights.get('kimarite_weight', 5.0),
+            'grade_weight': self.weights.get('grade_weight', 5.0),
+        }
 
         # === グレード別調整 ===
         if race_grade in ['SG', 'G1']:
@@ -132,6 +130,28 @@ class RacePredictor:
                 weights[key] = weights[key] * factor
 
         return weights
+
+    def _get_venue_info(self, venue_code: str) -> Dict:
+        """
+        会場情報を取得
+
+        Args:
+            venue_code: 会場コード
+
+        Returns:
+            {
+                'type': 会場タイプ（solid/chaotic/normal）,
+                'in1_rate': 1コース勝率,
+                'is_high_in': 堅い会場か,
+                'is_low_in': 荒れ会場か
+            }
+        """
+        return {
+            'type': get_venue_type(venue_code),
+            'in1_rate': VENUE_IN1_RATES.get(venue_code, 57.0),
+            'is_high_in': venue_code in HIGH_IN_VENUES,
+            'is_low_in': venue_code in LOW_IN_VENUES,
+        }
 
     def _calculate_data_quality(self, racer_analyses: List[Dict], motor_analyses: List[Dict]) -> float:
         """
@@ -358,10 +378,10 @@ class RacePredictor:
         race_date = race_info['race_date']
         race_time = race_info['race_time']
 
-        # 拡張スコア用にエントリー情報を取得（racer_rank, f_count, l_count）
+        # 拡張スコア用にエントリー情報を取得（racer_rank, f_count, l_count, avg_st）
         cursor.execute("""
             SELECT pit_number, racer_number, racer_name, racer_rank,
-                   f_count, l_count, motor_number, win_rate
+                   f_count, l_count, motor_number, win_rate, avg_st
             FROM entries
             WHERE race_id = ?
             ORDER BY pit_number
@@ -378,7 +398,8 @@ class RacePredictor:
                 'f_count': row['f_count'],
                 'l_count': row['l_count'],
                 'motor_number': row['motor_number'],
-                'win_rate': row['win_rate']
+                'win_rate': row['win_rate'],
+                'avg_st': row['avg_st']  # 平均STを追加
             }
             entry_data[row['pit_number']] = entry_dict
             race_entries_for_matchup.append(entry_dict)
@@ -475,7 +496,7 @@ class RacePredictor:
             # ========================================
             extended_score_detail = None
             extended_score = 0.0
-            EXTENDED_WEIGHT = 15.0  # 拡張スコアの総合重み
+            EXTENDED_WEIGHT = 20.0  # 拡張スコアの総合重み（新要素追加により増加）
 
             if pit_number in entry_data:
                 entry = entry_data[pit_number]
@@ -483,23 +504,30 @@ class RacePredictor:
                     entry,
                     venue_code,
                     race_date,
-                    race_entries_for_matchup
+                    race_entries_for_matchup,
+                    race_id=race_id  # 展示タイム・チルト取得用
                 )
                 extended_score_detail = extended_result
 
-                # 拡張スコアの構成要素：
+                # 拡張スコアの構成要素（更新版）：
                 # - 級別スコア: 0-10点
                 # - F/Lペナルティ: -10～0点
                 # - 節間成績: 0-5点
                 # - 前走レベル: 0-5点
+                # - 進入傾向: 0-5点（新規）
                 # - 選手間相性: 0-5点
                 # - モーター特性: 0-5点
-                # 最大合計: 30点、最小: -10点
-                # これを EXTENDED_WEIGHT (15点) に正規化
+                # - 平均ST: 0-8点
+                # - 展示タイム: 0-8点（新規）
+                # - チルト角度: 0-3点（新規）
+                # - 直近成績: 0-8点（新規）
+                # 最大合計: 62点、最小: -10点
+                # これを EXTENDED_WEIGHT (20点) に正規化
 
                 raw_extended = extended_result['total_extended_score']
-                # -10～30 を 0～15 に正規化
-                normalized_extended = ((raw_extended + 10) / 40) * EXTENDED_WEIGHT
+                max_possible = extended_result.get('max_possible_score', 62)
+                # -10～62 を 0～20 に正規化
+                normalized_extended = ((raw_extended + 10) / (max_possible + 10)) * EXTENDED_WEIGHT
                 extended_score = max(0, min(EXTENDED_WEIGHT, normalized_extended))
 
             # 総合スコア計算（拡張スコアを含む）
@@ -554,7 +582,14 @@ class RacePredictor:
                     'prev_race': extended_score_detail['prev_race'],
                     'matchup': extended_score_detail['matchup'],
                     'motor_extended': extended_score_detail['motor'],
-                    'course_prediction': extended_score_detail['course_prediction']
+                    'course_prediction': extended_score_detail['course_prediction'],
+                    'course_entry': extended_score_detail.get('course_entry', {}),  # 進入傾向（新規）
+                    'start_timing': extended_score_detail.get('start_timing', {}),
+                    'exhibition': extended_score_detail.get('exhibition', {}),  # 展示タイム（新規）
+                    'tilt': extended_score_detail.get('tilt', {}),  # チルト角度（新規）
+                    'recent_form': extended_score_detail.get('recent_form', {}),  # 直近成績（新規）
+                    'venue_affinity': extended_score_detail.get('venue_affinity', {}),  # 会場別勝率（新規）
+                    'place_rate': extended_score_detail.get('place_rate', {})  # 連対率（新規）
                 }
 
             predictions.append(prediction_entry)

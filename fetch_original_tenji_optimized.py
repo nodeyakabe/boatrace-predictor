@@ -1,16 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-オリジナル展示データ日次収集スクリプト（最適化版）
+オリジナル展示データ収集スクリプト（最適化版）
 
-毎日実行して翌日のレースデータを取得し、DBに保存する
-実行タイミング: 毎日20:00（翌日のデータが公開された後）
-
-最適化内容:
-- データベースから開催レースのみを対象にする
-- タイムアウト時間を短縮（30秒→15秒）
-- 進捗表示の改善
-- 処理時間の大幅短縮（80%削減）
+改善点:
+1. データベースから開催レースのみを対象にする
+2. タイムアウト時間を短縮
+3. 並列処理オプション（オプション）
+4. 進捗表示の改善
 """
 import sys
 import os
@@ -28,87 +25,9 @@ from src.scraper.original_tenji_browser import OriginalTenjiBrowserScraper
 DB_PATH = os.path.join(os.path.dirname(__file__), 'data', 'boatrace.db')
 
 
-def save_original_tenji_to_db(venue_code, date_str, race_number, tenji_data):
-    """
-    オリジナル展示データをデータベースに保存
-
-    Args:
-        venue_code: 会場コード（例: "20"）
-        date_str: 日付文字列（例: "2025-11-13"）
-        race_number: レース番号（1-12）
-        tenji_data: オリジナル展示データ dict
-
-    Returns:
-        bool: 保存成功ならTrue
-    """
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-
-        # race_details テーブルを更新
-        update_count = 0
-        for boat_num, data in tenji_data.items():
-            # race_idを取得
-            cursor.execute('''
-                SELECT id FROM races
-                WHERE venue_code = ? AND date = ? AND race_number = ?
-            ''', (venue_code, date_str, race_number))
-
-            race_result = cursor.fetchone()
-            if not race_result:
-                continue
-
-            race_id = race_result[0]
-
-            # race_details に該当レコードがあるか確認
-            cursor.execute('''
-                SELECT id FROM race_details
-                WHERE race_id = ? AND waku = ?
-            ''', (race_id, boat_num))
-
-            detail_result = cursor.fetchone()
-
-            if detail_result:
-                # 既存レコードを更新
-                cursor.execute('''
-                    UPDATE race_details
-                    SET chikusen_time = ?, isshu_time = ?, mawariashi_time = ?
-                    WHERE race_id = ? AND waku = ?
-                ''', (
-                    data.get('chikusen_time'),
-                    data.get('isshu_time'),
-                    data.get('mawariashi_time'),
-                    race_id,
-                    boat_num
-                ))
-                update_count += 1
-            else:
-                # 新規レコードを挿入
-                cursor.execute('''
-                    INSERT INTO race_details (race_id, waku, chikusen_time, isshu_time, mawariashi_time)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (
-                    race_id,
-                    boat_num,
-                    data.get('chikusen_time'),
-                    data.get('isshu_time'),
-                    data.get('mawariashi_time')
-                ))
-                update_count += 1
-
-        conn.commit()
-        conn.close()
-
-        return update_count > 0
-
-    except Exception as e:
-        print(f"  [DB保存エラー] {e}")
-        return False
-
-
 def get_scheduled_races(target_date: str) -> List[Tuple]:
     """
-    指定日に開催予定のレース一覧を取得（最適化の鍵）
+    指定日に開催予定のレース一覧を取得
 
     Args:
         target_date: 対象日（YYYY-MM-DD）
@@ -133,9 +52,78 @@ def get_scheduled_races(target_date: str) -> List[Tuple]:
     return races
 
 
-def fetch_tomorrow_tenji(target_date=None, test_mode=False, limit_races=None, timeout=15, delay=0.3):
+def save_original_tenji_to_db(venue_code, date_str, race_number, tenji_data):
     """
-    指定日のオリジナル展示データを取得してDBに保存（最適化版）
+    オリジナル展示データをデータベースに保存
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        # race_idを取得
+        cursor.execute("""
+            SELECT id FROM races
+            WHERE venue_code = ? AND race_date = ? AND race_number = ?
+        """, (venue_code, date_str, race_number))
+
+        race_result = cursor.fetchone()
+        if not race_result:
+            conn.close()
+            return False
+
+        race_id = race_result[0]
+        update_count = 0
+
+        # race_details テーブルを更新
+        for boat_num, data in tenji_data.items():
+            cursor.execute("""
+                SELECT id FROM race_details
+                WHERE race_id = ? AND waku = ?
+            """, (race_id, boat_num))
+
+            detail_result = cursor.fetchone()
+
+            if detail_result:
+                # 既存レコードを更新
+                cursor.execute("""
+                    UPDATE race_details
+                    SET chikusen_time = ?, isshu_time = ?, mawariashi_time = ?
+                    WHERE race_id = ? AND waku = ?
+                """, (
+                    data.get('chikusen_time'),
+                    data.get('isshu_time'),
+                    data.get('mawariashi_time'),
+                    race_id,
+                    boat_num
+                ))
+            else:
+                # 新規レコードを挿入
+                cursor.execute("""
+                    INSERT INTO race_details (race_id, waku, chikusen_time, isshu_time, mawariashi_time)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (
+                    race_id,
+                    boat_num,
+                    data.get('chikusen_time'),
+                    data.get('isshu_time'),
+                    data.get('mawariashi_time')
+                ))
+            update_count += 1
+
+        conn.commit()
+        conn.close()
+
+        return update_count > 0
+
+    except Exception as e:
+        print(f"  [DB保存エラー] {e}")
+        return False
+
+
+def fetch_tenji_optimized(target_date=None, test_mode=False, limit_races=None,
+                         timeout=15, delay=0.3):
+    """
+    開催レースのみを対象にオリジナル展示データを取得（最適化版）
 
     Args:
         target_date: 対象日（datetime or str）。Noneの場合は翌日
@@ -168,11 +156,11 @@ def fetch_tomorrow_tenji(target_date=None, test_mode=False, limit_races=None, ti
         print(f'取得上限: {limit_races}レース')
     print()
 
-    # 開催予定レースを取得（最適化のポイント）
+    # 開催予定レースを取得
     scheduled_races = get_scheduled_races(target_str)
 
     if not scheduled_races:
-        print(f'[!] {target_str} の開催予定レースが見つかりませんでした')
+        print(f'❌ {target_str} の開催予定レースが見つかりませんでした')
         print('データベースにレース情報が登録されていない可能性があります')
         return {
             'total_attempts': 0,
@@ -182,7 +170,7 @@ def fetch_tomorrow_tenji(target_date=None, test_mode=False, limit_races=None, ti
             'db_saved': 0
         }
 
-    print(f'[OK] 開催予定レース: {len(scheduled_races)}件')
+    print(f'✅ 開催予定レース: {len(scheduled_races)}件')
 
     # 上限適用
     if limit_races:
@@ -208,7 +196,7 @@ def fetch_tomorrow_tenji(target_date=None, test_mode=False, limit_races=None, ti
         # タイムアウト時間を短縮して初期化
         print('ブラウザを起動中...')
         scraper = OriginalTenjiBrowserScraper(headless=True, timeout=timeout)
-        print('[OK] ブラウザ起動完了\n')
+        print('✅ ブラウザ起動完了\n')
 
         for idx, (venue_code, race_number, venue_name) in enumerate(scheduled_races, 1):
             elapsed = time.time() - start_time
@@ -225,23 +213,23 @@ def fetch_tomorrow_tenji(target_date=None, test_mode=False, limit_races=None, ti
                     stats['success_races'] += 1
                     stats['success_boats'] += len(data)
 
-                    print(f'  [OK] 取得成功: {len(data)}艇')
+                    print(f'  ✅ 取得成功: {len(data)}艇')
 
                     # DB保存
                     if not test_mode:
                         if save_original_tenji_to_db(venue_code, target_str, race_number, data):
                             stats['db_saved'] += 1
-                            print(f'  [DB] 保存完了')
+                            print(f'  💾 DB保存完了')
                 else:
                     stats['skipped'] += 1
-                    print(f'  [!] データなし（未発売または終了済み）')
+                    print(f'  ⚠️  データなし（未発売または終了済み）')
 
             except KeyboardInterrupt:
-                print('\n\n[!] ユーザーによる中断')
+                print('\n\n⚠️  ユーザーによる中断')
                 raise
             except Exception as e:
                 stats['failed_races'] += 1
-                print(f'  [X] エラー: {str(e)[:50]}')
+                print(f'  ❌ エラー: {str(e)[:50]}')
 
             # レート制限
             if idx < len(scheduled_races):
@@ -251,7 +239,7 @@ def fetch_tomorrow_tenji(target_date=None, test_mode=False, limit_races=None, ti
         if scraper:
             print('\nブラウザを終了中...')
             scraper.close()
-            print('[OK] ブラウザ終了完了')
+            print('✅ ブラウザ終了完了')
 
     total_time = time.time() - start_time
 
@@ -276,11 +264,13 @@ def main():
     """メイン処理"""
     import argparse
 
-    parser = argparse.ArgumentParser(description='オリジナル展示データ日次収集')
+    parser = argparse.ArgumentParser(description='オリジナル展示データ収集（最適化版）')
     parser.add_argument('--date', type=str, help='対象日（YYYY-MM-DD）。未指定の場合は翌日')
     parser.add_argument('--test', action='store_true', help='テストモード（DB保存なし）')
     parser.add_argument('--limit', type=int, help='取得するレース数の上限（テスト用）')
     parser.add_argument('--today', action='store_true', help='当日のデータを取得')
+    parser.add_argument('--timeout', type=int, default=15, help='ブラウザタイムアウト（秒）デフォルト: 15')
+    parser.add_argument('--delay', type=float, default=0.3, help='リクエスト間隔（秒）デフォルト: 0.3')
 
     args = parser.parse_args()
 
@@ -293,10 +283,12 @@ def main():
         target_date = None  # 翌日
 
     try:
-        fetch_tomorrow_tenji(
+        fetch_tenji_optimized(
             target_date=target_date,
             test_mode=args.test,
-            limit_races=args.limit
+            limit_races=args.limit,
+            timeout=args.timeout,
+            delay=args.delay
         )
     except KeyboardInterrupt:
         print('\n処理を中断しました')

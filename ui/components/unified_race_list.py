@@ -207,21 +207,328 @@ def _render_accuracy_focused():
 
 
 def _render_value_focused():
-    """期待値重視タブ"""
+    """期待値重視タブ - オッズベースの期待値計算"""
     st.subheader("💰 期待値重視のおすすめレース")
-    st.caption("オッズと予測確率の乖離があり、期待値が高いレースを推奨します")
+    st.caption("オッズと予測確率から期待値を計算し、高期待値レースを推奨します")
 
-    st.info("🚧 この機能は開発中です")
-    st.markdown("""
-    **今後実装予定の機能:**
-    - オッズデータの自動取得
-    - 期待値の自動計算
-    - 期待値ランキング表示
-    - 穴狙い推奨レース抽出
-    """)
+    # 日付選択
+    target_date = st.date_input(
+        "対象日",
+        value=datetime.now().date(),
+        key="value_date"
+    )
 
-    # 暫定的に的中率重視と同じデータを表示（将来的に期待値計算を追加）
-    st.caption("暫定的に的中率重視と同じ推奨を表示しています")
+    # 期待値閾値設定
+    col1, col2 = st.columns(2)
+    with col1:
+        min_ev = st.slider(
+            "最小期待値 (%)",
+            min_value=-50,
+            max_value=50,
+            value=5,
+            step=5,
+            help="期待値がこの値以上のレースのみ表示"
+        )
+    with col2:
+        min_confidence = st.slider(
+            "最小信頼度 (%)",
+            min_value=0,
+            max_value=100,
+            value=50,
+            step=10,
+            help="予測信頼度がこの値以上のレースのみ表示"
+        )
+
+    try:
+        import sqlite3
+        from config.settings import DATABASE_PATH, VENUES
+
+        conn = sqlite3.connect(DATABASE_PATH)
+        cursor = conn.cursor()
+
+        target_date_str = target_date.strftime('%Y-%m-%d')
+
+        # オッズデータの有無を確認
+        cursor.execute("""
+            SELECT COUNT(*) FROM trifecta_odds
+            WHERE race_id IN (
+                SELECT id FROM races WHERE race_date = ?
+            )
+        """, (target_date_str,))
+        odds_count = cursor.fetchone()[0]
+
+        has_odds = odds_count > 0
+
+        if not has_odds:
+            st.warning("⚠️ オッズデータが未収集です")
+            st.info("""
+            **期待値計算にはオッズデータが必要です**
+
+            オッズデータを収集するには:
+            1. 「データ準備」タブ → 「オッズ自動取得」
+            2. または、手動でオッズ収集スクリプトを実行
+
+            現在は **推定オッズ** を使用して期待値を計算します。
+            """)
+
+        # 会場名マッピング
+        venue_name_map = {}
+        for venue_id, venue_info in VENUES.items():
+            venue_name_map[venue_info['code']] = venue_info['name']
+
+        # レース情報と予想スコアを取得
+        cursor.execute("""
+            SELECT
+                r.id as race_id,
+                r.venue_code,
+                r.race_number,
+                r.race_time,
+                r.race_date,
+                AVG(rp.total_score) as avg_score,
+                GROUP_CONCAT(rp.pit_number || ':' || rp.rank_prediction || ':' || rp.total_score || ':' || rp.confidence, '|') as predictions_data
+            FROM races r
+            JOIN race_predictions rp ON r.id = rp.race_id
+            WHERE r.race_date = ?
+            GROUP BY r.id
+        """, (target_date_str,))
+
+        race_rows = cursor.fetchall()
+
+        if not race_rows:
+            st.warning(f"{target_date_str} のレース予想が見つかりませんでした")
+            st.info("「データ準備」タブで「今日の予測を生成」を実行してください")
+            conn.close()
+            return
+
+        # 期待値計算
+        value_races = []
+
+        for row in race_rows:
+            race_id, venue_code, race_number, race_time, race_date, avg_score, predictions_data = row
+
+            # 予想データをパース
+            predictions = []
+            for pred_str in predictions_data.split('|'):
+                parts = pred_str.split(':')
+                if len(parts) == 4:
+                    pit_number, rank_pred, score, confidence = parts
+                    predictions.append({
+                        'pit_number': int(pit_number),
+                        'rank': int(rank_pred),
+                        'score': float(score),
+                        'confidence': confidence
+                    })
+
+            # 予想を順位でソート
+            predictions.sort(key=lambda x: x['rank'])
+
+            # 上位3艇
+            top3 = predictions[:3]
+            if len(top3) < 3:
+                continue
+
+            # 信頼度の計算
+            confidence_map = {'A': 100, 'B': 80, 'C': 60, 'D': 40, 'E': 20}
+            top3_confidences = [confidence_map.get(p['confidence'], 50) for p in top3]
+            weights = [0.5, 0.3, 0.2]
+            confidence = sum(c * w for c, w in zip(top3_confidences, weights))
+
+            # 信頼度フィルター
+            if confidence < min_confidence:
+                continue
+
+            # オッズ取得または推定
+            first = top3[0]['pit_number']
+            second = top3[1]['pit_number']
+            third = top3[2]['pit_number']
+            combination = f"{first}-{second}-{third}"
+
+            if has_odds:
+                # 実際のオッズを取得
+                cursor.execute("""
+                    SELECT odds FROM trifecta_odds
+                    WHERE race_id = ? AND combination = ?
+                """, (race_id, combination))
+                odds_row = cursor.fetchone()
+                odds = odds_row[0] if odds_row else None
+            else:
+                odds = None
+
+            # オッズ推定（データがない場合）
+            if odds is None:
+                # スコアベースの簡易推定
+                # 1着確率を簡易計算（スコア正規化）
+                total_score = sum(p['score'] for p in predictions)
+                first_prob = top3[0]['score'] / total_score if total_score > 0 else 0.2
+
+                # 3連単確率の推定（独立性を仮定）
+                trifecta_prob = first_prob * 0.2 * 0.15  # 1着 × 2着 × 3着（簡易）
+
+                # 控除率25%を考慮した推定オッズ
+                if trifecta_prob > 0:
+                    odds = (1 / trifecta_prob) * 0.75  # 控除率考慮
+                else:
+                    odds = 100.0
+
+                odds_type = "推定"
+            else:
+                odds_type = "実測"
+
+            # 期待値計算
+            # 的中確率の推定（スコアベース）
+            total_score = sum(p['score'] for p in predictions)
+            win_prob = (top3[0]['score'] / total_score) if total_score > 0 else 0.1
+
+            # 期待値 = 的中確率 × オッズ - 1
+            expected_value = (win_prob * odds) - 1.0
+            expected_value_pct = expected_value * 100
+
+            # 期待値フィルター
+            if expected_value_pct < min_ev:
+                continue
+
+            # ROI推定
+            roi = expected_value_pct
+
+            # Kelly基準による推奨賭け金率
+            if odds > 1:
+                kelly_fraction = max(0, (win_prob * odds - 1) / (odds - 1))
+                kelly_pct = kelly_fraction * 100 * 0.25  # フラクショナルKelly (25%)
+            else:
+                kelly_pct = 0
+
+            value_races.append({
+                '会場': venue_name_map.get(venue_code, f'会場{venue_code}'),
+                'レース': f"{race_number}R",
+                '時刻': race_time or '未定',
+                '本命': f"{first}号艇",
+                '買い目': combination,
+                'オッズ': odds,
+                'オッズ種別': odds_type,
+                '期待値': expected_value_pct,
+                'ROI': roi,
+                'Kelly': kelly_pct,
+                '信頼度': confidence,
+                '的中確率': win_prob * 100,
+                'race_id': race_id,
+                'race_date': race_date,
+                'venue_code': venue_code,
+                'race_number': race_number,
+                'predictions': predictions
+            })
+
+        conn.close()
+
+        # 期待値でソート
+        value_races.sort(key=lambda x: x['期待値'], reverse=True)
+
+        if not value_races:
+            st.warning(f"期待値 {min_ev}% 以上のレースが見つかりませんでした")
+            st.info("期待値の閾値を下げるか、信頼度の閾値を調整してください")
+            return
+
+        st.success(f"💰 期待値上位レース {len(value_races)}件を表示中")
+
+        # サマリー統計
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            avg_ev = sum(r['期待値'] for r in value_races) / len(value_races)
+            st.metric("平均期待値", f"{avg_ev:.1f}%")
+        with col2:
+            max_ev = max(r['期待値'] for r in value_races)
+            st.metric("最大期待値", f"{max_ev:.1f}%")
+        with col3:
+            avg_odds = sum(r['オッズ'] for r in value_races) / len(value_races)
+            st.metric("平均オッズ", f"{avg_odds:.1f}倍")
+        with col4:
+            real_odds_count = sum(1 for r in value_races if r['オッズ種別'] == '実測')
+            st.metric("実測オッズ", f"{real_odds_count}/{len(value_races)}")
+
+        # レースカード表示
+        _render_value_race_cards(value_races)
+
+        # 全レース一覧テーブル
+        st.markdown("---")
+        st.subheader("📋 全レース一覧")
+
+        df_data = []
+        for i, r in enumerate(value_races, 1):
+            df_data.append({
+                '順位': i,
+                '会場': r['会場'],
+                'レース': r['レース'],
+                '時刻': r['時刻'],
+                '買い目': r['買い目'],
+                'オッズ': f"{r['オッズ']:.1f}倍 ({r['オッズ種別']})",
+                '期待値': f"{r['期待値']:.1f}%",
+                'Kelly': f"{r['Kelly']:.1f}%",
+                '信頼度': f"{r['信頼度']:.1f}%",
+                '的中確率': f"{r['的中確率']:.1f}%"
+            })
+
+        df = pd.DataFrame(df_data)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+
+    except Exception as e:
+        st.error(f"エラーが発生しました: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+
+
+def _render_value_race_cards(race_list: List[Dict]):
+    """期待値重視レースカードを表示"""
+
+    for idx, race in enumerate(race_list, 1):
+        ev = race['期待値']
+
+        # 期待値に応じた背景色
+        if ev >= 20:
+            border_color = "#ff6b6b"  # 赤（最高）
+            bg_color = "#ffe0e0"
+        elif ev >= 10:
+            border_color = "#ffa500"  # オレンジ（高）
+            bg_color = "#fff4e0"
+        elif ev >= 5:
+            border_color = "#4ecdc4"  # 青緑（中）
+            bg_color = "#e0f4f4"
+        else:
+            border_color = "#95a5a6"  # グレー（低）
+            bg_color = "#f0f0f0"
+
+        # カードのスタイル
+        with st.container():
+            col1, col2, col3, col4, col5 = st.columns([0.5, 1.5, 2.5, 2.5, 1])
+
+            with col1:
+                st.markdown(f"### {idx}")
+
+            with col2:
+                st.markdown(f"**{race['会場']} {race['レース']}**")
+                st.caption(f"⏰ {race['時刻']}")
+
+            with col3:
+                st.markdown(f"🎯 **買い目: {race['買い目']}**")
+                st.caption(f"オッズ: {race['オッズ']:.1f}倍 ({race['オッズ種別']})")
+
+            with col4:
+                # 期待値とKelly情報
+                st.markdown(f"💰 **期待値: {ev:+.1f}%**")
+                st.caption(f"Kelly: {race['Kelly']:.1f}% | 信頼度: {race['信頼度']:.1f}%")
+
+            with col5:
+                # 詳細ボタン
+                if st.button("詳細 →", key=f"value_detail_{idx}", use_container_width=True):
+                    # セッションステートに選択レース情報を保存
+                    st.session_state.selected_race = {
+                        'race_date': race['race_date'],
+                        'venue_code': race['venue_code'],
+                        'race_number': race['race_number'],
+                        'predictions': race.get('predictions')
+                    }
+                    st.session_state.show_detail = True
+                    st.rerun()
+
+            st.markdown("---")
 
 
 def _render_race_cards_v2(race_list: List[Dict]):

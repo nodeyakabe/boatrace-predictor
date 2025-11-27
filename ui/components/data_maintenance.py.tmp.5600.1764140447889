@@ -5,128 +5,94 @@
 - 不足データの検出
 - 過去データの再取得
 - オリジナル展示の定期収集
-
-バックグラウンドジョブ対応版:
-- タブ移動しても処理継続
-- 重複実行防止
-- 進捗ポーリング
 """
 import streamlit as st
 import subprocess
 import os
 import sys
-import json
 from datetime import datetime, timedelta
 import sqlite3
 from typing import List, Dict, Tuple
-import time
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 sys.path.insert(0, PROJECT_ROOT)
 
 from config.settings import DATABASE_PATH
-from src.utils.job_manager import (
-    is_job_running, start_job, get_job_progress,
-    cancel_job, get_all_jobs
-)
-
-# ジョブ名定数
-JOB_TENJI = 'tenji_collection'
-JOB_MISSING_DATA = 'missing_data_fetch'
 
 
 def render_data_maintenance():
     """データメンテナンスUIのメインレンダリング"""
     st.header("🔧 データメンテナンス")
 
-    # 実行中ジョブの状況表示
-    _render_job_status_bar()
-
     st.markdown("""
     データ取得作業を一元管理します。タブで作業を選択してください。
     """)
 
-    tab1, tab2, tab3 = st.tabs([
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📊 データ状況",
         "🔍 不足データ検出・取得",
         "🎯 オリジナル展示",
         "📥 一括取得"
     ])
 
     with tab1:
-        _render_missing_data_detector()
+        _render_data_status()
 
     with tab2:
-        _render_original_tenji()
+        _render_missing_data_detector()
 
     with tab3:
+        _render_original_tenji()
+
+    with tab4:
         _render_bulk_collector()
 
 
-def _render_job_status_bar():
-    """実行中ジョブのステータスバーを表示"""
-    jobs = get_all_jobs()
-    running_jobs = {k: v for k, v in jobs.items() if v.get('is_running')}
+def _render_data_status():
+    """データ状況の表示"""
+    st.subheader("現在のデータ状況")
 
-    if running_jobs:
-        st.info("🔄 **バックグラウンドジョブ実行中** - タブを移動しても処理は継続します")
-
-        for job_name, progress in running_jobs.items():
-            col1, col2, col3 = st.columns([3, 1, 1])
-
-            with col1:
-                job_label = {
-                    JOB_TENJI: 'オリジナル展示収集',
-                    JOB_MISSING_DATA: '不足データ取得'
-                }.get(job_name, job_name)
-
-                progress_val = progress.get('progress', 0)
-                message = progress.get('message', '処理中...')
-
-                st.progress(progress_val / 100, text=f"{job_label}: {message}")
-
-            with col2:
-                st.caption(f"進捗: {progress_val}%")
-
-            with col3:
-                if st.button("キャンセル", key=f"cancel_{job_name}"):
-                    cancel_job(job_name)
-                    st.rerun()
-
-        # 自動更新ボタン
-        if st.button("🔄 状況を更新", key="refresh_jobs"):
-            st.rerun()
-
-        st.markdown("---")
-
-    # 完了したジョブの通知
-    recent_completed = {k: v for k, v in jobs.items()
-                        if v.get('status') in ['completed', 'failed', 'cancelled']
-                        and not v.get('is_running')}
-
-    for job_name, progress in recent_completed.items():
-        status = progress.get('status')
-        message = progress.get('message', '')
-        completed_at = progress.get('completed_at', '')
-
-        # 5分以内に完了したジョブのみ表示
-        if completed_at:
-            try:
-                completed_time = datetime.fromisoformat(completed_at)
-                if (datetime.now() - completed_time).seconds < 300:
-                    if status == 'completed':
-                        st.success(f"✅ {message}")
-                    elif status == 'failed':
-                        st.error(f"❌ {message}")
-                    elif status == 'cancelled':
-                        st.warning(f"⚠️ {message}")
-            except:
-                pass
-
-
-def _render_recent_data_status():
-    """直近7日間のデータ状況を表示"""
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
+
+    # 基本統計
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        cursor.execute("SELECT MIN(race_date), MAX(race_date) FROM races")
+        result = cursor.fetchone()
+        if result[0]:
+            st.metric("データ期間", f"{result[0]} ～")
+            st.caption(f"～ {result[1]}")
+        else:
+            st.metric("データ期間", "なし")
+
+    with col2:
+        cursor.execute("SELECT COUNT(*) FROM races")
+        total_races = cursor.fetchone()[0]
+        st.metric("総レース数", f"{total_races:,}")
+
+    with col3:
+        cursor.execute("""
+            SELECT COUNT(DISTINCT race_date) FROM races
+        """)
+        total_days = cursor.fetchone()[0]
+        st.metric("データ日数", f"{total_days:,}日")
+
+    with col4:
+        try:
+            cursor.execute("""
+                SELECT COUNT(*) FROM original_exhibition
+            """)
+            tenji_count = cursor.fetchone()[0]
+        except:
+            tenji_count = 0
+        st.metric("オリジナル展示", f"{tenji_count:,}")
+
+    st.markdown("---")
+
+    # 最近のデータ状況
+    st.subheader("直近7日間のデータ状況")
 
     today = datetime.now().date()
     data_status = []
@@ -136,7 +102,9 @@ def _render_recent_data_status():
         date_str = target_date.strftime('%Y-%m-%d')
 
         # レース数
-        cursor.execute("SELECT COUNT(*) FROM races WHERE race_date = ?", (date_str,))
+        cursor.execute("""
+            SELECT COUNT(*) FROM races WHERE race_date = ?
+        """, (date_str,))
         race_count = cursor.fetchone()[0]
 
         # 結果データ数
@@ -155,7 +123,7 @@ def _render_recent_data_status():
         """, (date_str,))
         detail_count = cursor.fetchone()[0]
 
-        # オリジナル展示数
+        # オリジナル展示数（テーブルがない場合も考慮）
         tenji_count = 0
         try:
             cursor.execute("""
@@ -170,7 +138,7 @@ def _render_recent_data_status():
         # ステータス判定
         if race_count == 0:
             status = "⚪ 未取得"
-        elif result_count < race_count * 5:
+        elif result_count < race_count * 5:  # 6艇×レース数の約80%
             status = "🟡 結果不足"
         elif detail_count < race_count * 5:
             status = "🟡 詳細不足"
@@ -189,79 +157,24 @@ def _render_recent_data_status():
             'ステータス': status
         })
 
-    conn.close()
-
     import pandas as pd
     df = pd.DataFrame(data_status)
     st.dataframe(df, use_container_width=True, hide_index=True)
+
+    conn.close()
 
 
 def _render_missing_data_detector():
     """不足データ検出・取得"""
     st.subheader("不足データの検出と取得")
 
-    # ジョブ実行中チェック
-    if is_job_running(JOB_MISSING_DATA):
-        progress = get_job_progress(JOB_MISSING_DATA)
-        st.warning("🔄 不足データ取得がバックグラウンドで実行中です")
+    st.markdown("""
+    **最終保存日より前の不足データも検出・取得できます**
 
-        if progress:
-            st.progress(progress.get('progress', 0) / 100)
-            st.text(progress.get('message', '処理中...'))
-
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🔄 状況を更新", key="refresh_missing"):
-                    st.rerun()
-            with col2:
-                if st.button("⏹️ キャンセル", key="cancel_missing"):
-                    cancel_job(JOB_MISSING_DATA)
-                    st.rerun()
-        return
-
-    # データ状況サマリー
-    conn = sqlite3.connect(DATABASE_PATH)
-    cursor = conn.cursor()
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        cursor.execute("SELECT MIN(race_date), MAX(race_date) FROM races")
-        result = cursor.fetchone()
-        if result[0]:
-            st.metric("データ期間", f"{result[0][:10]}")
-            st.caption(f"～ {result[1][:10]}")
-        else:
-            st.metric("データ期間", "なし")
-
-    with col2:
-        cursor.execute("SELECT COUNT(*) FROM races")
-        total_races = cursor.fetchone()[0]
-        st.metric("総レース数", f"{total_races:,}")
-
-    with col3:
-        cursor.execute("SELECT COUNT(DISTINCT race_date) FROM races")
-        total_days = cursor.fetchone()[0]
-        st.metric("データ日数", f"{total_days:,}日")
-
-    with col4:
-        try:
-            cursor.execute("SELECT COUNT(*) FROM original_exhibition")
-            tenji_count = cursor.fetchone()[0]
-        except:
-            tenji_count = 0
-        st.metric("オリジナル展示", f"{tenji_count:,}")
-
-    conn.close()
-
-    st.markdown("---")
-
-    # 直近7日間の状況
-    st.markdown("**直近7日間のデータ状況**")
-    _render_recent_data_status()
-
-    st.markdown("---")
-    st.markdown("**期間指定で不足データを検出・取得**")
+    1. 期間を指定して「不足データを検出」をクリック
+    2. 検出された不足データを確認
+    3. 「取得開始」で補完
+    """)
 
     # 期間選択
     col1, col2 = st.columns(2)
@@ -308,22 +221,9 @@ def _render_missing_data_detector():
             df = pd.DataFrame(missing_dates)
             st.dataframe(df, use_container_width=True, hide_index=True)
 
-        # 取得ボタン（バックグラウンド実行）
-        col1, col2 = st.columns(2)
-
-        with col1:
-            if st.button("📥 バックグラウンドで取得", type="primary"):
-                _start_missing_data_job(
-                    missing_dates,
-                    st.session_state.get('missing_check_types', [])
-                )
-
-        with col2:
-            if st.button("📥 フォアグラウンドで取得"):
-                _fetch_missing_data_foreground(
-                    missing_dates,
-                    st.session_state.get('missing_check_types', [])
-                )
+        # 取得ボタン
+        if st.button("📥 不足データを取得", type="primary"):
+            _fetch_missing_data(missing_dates, st.session_state.get('missing_check_types', []))
 
     elif 'missing_dates' in st.session_state:
         st.success("✅ 不足データはありません！")
@@ -339,6 +239,9 @@ def _detect_missing_data(start_date, end_date, check_types: List[str]) -> List[D
 
     while current_date <= end_date:
         date_str = current_date.strftime('%Y-%m-%d')
+
+        # 曜日判定（レース開催日かどうか）
+        # ボートレースはほぼ毎日開催
 
         # レース数を取得
         cursor.execute("""
@@ -359,7 +262,7 @@ def _detect_missing_data(start_date, end_date, check_types: List[str]) -> List[D
                 WHERE ra.race_date = ?
             """, (date_str,))
             result_count = cursor.fetchone()[0]
-            expected = race_count * 6
+            expected = race_count * 6  # 6艇
             if result_count < expected * 0.8:
                 issues.append(f"結果不足({result_count}/{expected})")
 
@@ -417,46 +320,8 @@ def _detect_missing_data(start_date, end_date, check_types: List[str]) -> List[D
     return missing
 
 
-def _start_missing_data_job(missing_dates: List[Dict], check_types: List[str]):
-    """不足データ取得をバックグラウンドで開始"""
-    # 設定ファイルを作成
-    jobs_dir = os.path.join(PROJECT_ROOT, 'temp', 'jobs')
-    os.makedirs(jobs_dir, exist_ok=True)
-
-    config_path = os.path.join(jobs_dir, f'{JOB_MISSING_DATA}_config.json')
-    config = {
-        'missing_dates': missing_dates,
-        'check_types': check_types
-    }
-
-    with open(config_path, 'w', encoding='utf-8') as f:
-        json.dump(config, f, ensure_ascii=False, indent=2)
-
-    # ワーカースクリプトを起動
-    worker_path = os.path.join(PROJECT_ROOT, 'scripts', 'worker_missing_data.py')
-
-    result = start_job(
-        JOB_MISSING_DATA,
-        worker_path,
-        args=['--config', config_path]
-    )
-
-    if result['success']:
-        st.success(f"✅ {result['message']}")
-        st.info("タブを移動しても処理は継続します。「状況を更新」ボタンで進捗を確認できます。")
-
-        # セッションステートをクリア
-        if 'missing_dates' in st.session_state:
-            del st.session_state['missing_dates']
-
-        time.sleep(1)
-        st.rerun()
-    else:
-        st.error(f"❌ {result['message']}")
-
-
-def _fetch_missing_data_foreground(missing_dates: List[Dict], check_types: List[str]):
-    """不足データを取得（フォアグラウンド）"""
+def _fetch_missing_data(missing_dates: List[Dict], check_types: List[str]):
+    """不足データを取得"""
     progress_bar = st.progress(0)
     status_text = st.empty()
     log_placeholder = st.empty()
@@ -477,7 +342,7 @@ def _fetch_missing_data_foreground(missing_dates: List[Dict], check_types: List[
 
         try:
             # レース基本情報取得
-            if "レース情報なし" in issues:
+            if "レース情報なし" in issues or "レース基本情報" in check_types:
                 add_log("  レース基本情報を取得中...")
                 from src.scraper.bulk_scraper import BulkScraper
                 scraper = BulkScraper()
@@ -497,16 +362,16 @@ def _fetch_missing_data_foreground(missing_dates: List[Dict], check_types: List[
             # 補完スクリプトの実行
             scripts_to_run = []
 
-            if "結果不足" in issues or "詳細不足" in issues:
+            if "結果不足" in issues or "レース詳細" in check_types:
                 scripts_to_run.append(("補完_レース詳細データ_改善版v4.py", "レース詳細"))
 
-            if "決まり手不足" in issues:
+            if "決まり手不足" in issues or "決まり手" in check_types:
                 scripts_to_run.append(("補完_決まり手データ_改善版.py", "決まり手"))
 
-            if "天候不足" in issues:
+            if "天候不足" in issues or "天候" in check_types:
                 scripts_to_run.append(("補完_天候データ_改善版.py", "天候"))
 
-            if "風向不足" in issues:
+            if "風向不足" in issues or "風向" in check_types:
                 scripts_to_run.append(("補完_風向データ_改善版.py", "風向"))
 
             for script_name, label in scripts_to_run:
@@ -552,25 +417,6 @@ def _render_original_tenji():
     """オリジナル展示データ収集"""
     st.subheader("オリジナル展示データ収集")
 
-    # ジョブ実行中チェック
-    if is_job_running(JOB_TENJI):
-        progress = get_job_progress(JOB_TENJI)
-        st.warning("🔄 オリジナル展示収集がバックグラウンドで実行中です")
-
-        if progress:
-            st.progress(progress.get('progress', 0) / 100)
-            st.text(progress.get('message', '処理中...'))
-
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🔄 状況を更新", key="refresh_tenji"):
-                    st.rerun()
-            with col2:
-                if st.button("⏹️ キャンセル", key="cancel_tenji"):
-                    cancel_job(JOB_TENJI)
-                    st.rerun()
-        return
-
     st.markdown("""
     **毎日実行が必要なデータ:**
     - 直線タイム（chikusen_time）
@@ -580,34 +426,34 @@ def _render_original_tenji():
     ⚠️ **注意**: オリジナル展示データは限られた期間のみ公開されます。過去データは取得できません。
     """)
 
-    # 実行モード選択
-    st.markdown("---")
-    run_mode = st.radio(
-        "実行モード",
-        ["バックグラウンド（推奨）", "フォアグラウンド"],
-        horizontal=True,
-        help="バックグラウンド: タブ移動しても継続 / フォアグラウンド: 完了まで待機"
-    )
-
     # クイックボタン
     st.markdown("---")
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         if st.button("📅 今日", key="tenji_today", type="primary", use_container_width=True):
-            if "バックグラウンド" in run_mode:
-                _start_tenji_job(0)
-            else:
-                _run_tenji_collection_foreground(0)
+            _run_tenji_collection(0)
 
     with col2:
         if st.button("📅 昨日", key="tenji_yesterday", use_container_width=True):
-            if "バックグラウンド" in run_mode:
-                _start_tenji_job(-1)
-            else:
-                _run_tenji_collection_foreground(-1)
+            _run_tenji_collection(-1)
 
-    st.caption("※ オリジナル展示データは今日と昨日のみ取得可能です")
+    with col3:
+        if st.button("📅 一昨日", key="tenji_day_before", use_container_width=True):
+            _run_tenji_collection(-2)
+
+    # カスタム日数
+    st.markdown("---")
+    with st.expander("カスタム日数指定"):
+        custom_days = st.slider(
+            "何日前のデータを取得？",
+            min_value=-7,
+            max_value=0,
+            value=0,
+            help="0=今日、-1=昨日、-2=一昨日..."
+        )
+        if st.button("実行", key="tenji_custom"):
+            _run_tenji_collection(custom_days)
 
     # 収集状況
     st.markdown("---")
@@ -650,46 +496,20 @@ def _render_original_tenji():
     st.dataframe(df, use_container_width=True, hide_index=True)
 
 
-def _start_tenji_job(days_offset: int):
-    """オリジナル展示収集をバックグラウンドで開始"""
-    worker_path = os.path.join(PROJECT_ROOT, 'scripts', 'worker_tenji_collection.py')
-
-    result = start_job(
-        JOB_TENJI,
-        worker_path,
-        args=[str(days_offset)]
-    )
-
-    if result['success']:
-        st.success(f"✅ {result['message']}")
-        st.info("タブを移動しても処理は継続します。「状況を更新」ボタンで進捗を確認できます。")
-        time.sleep(1)
-        st.rerun()
-    else:
-        st.error(f"❌ {result['message']}")
-
-
-def _run_tenji_collection_foreground(days_offset: int):
-    """オリジナル展示収集を実行（フォアグラウンド - 最適化版）"""
+def _run_tenji_collection(days_offset: int):
+    """オリジナル展示収集を実行"""
     target_date = datetime.now().date() + timedelta(days=days_offset)
 
     with st.spinner(f"オリジナル展示データを収集中... ({target_date})"):
         try:
-            script_path = os.path.join(PROJECT_ROOT, 'fetch_original_tenji_daily.py')
+            script_path = os.path.join(PROJECT_ROOT, '収集_オリジナル展示_手動実行.py')
 
             if not os.path.exists(script_path):
                 st.error(f"スクリプトが見つかりません: {script_path}")
                 return
 
-            # 日付引数を準備
-            if days_offset == 0:
-                date_args = ['--today']
-            else:
-                target_date_str = target_date.strftime('%Y-%m-%d')
-                date_args = ['--date', target_date_str]
-
             result = subprocess.run(
-                [sys.executable, script_path] + date_args,
+                [sys.executable, script_path, str(days_offset)],
                 capture_output=True,
                 text=True,
                 timeout=600,

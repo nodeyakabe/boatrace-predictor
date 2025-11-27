@@ -1,0 +1,143 @@
+{
+  "total_races": 500,
+  "old_results": {
+    "win_hits": 200,
+    "place_hits": 354,
+    "exacta_hits": 54,
+    "trifecta_hits": 18,
+    "top3_exact": 52,
+    "total": 500
+  },
+  "new_results": {
+    "win_hits": 192,
+    "place_hits": 354,
+    "exacta_hits": 51,
+    "trifecta_hits": 17,
+    "top3_exact": 51,
+    "total": 500
+  },
+  "venue_stats_old": {
+    "03": {
+      "win_hits": 4,
+      "total": 36
+    },
+    "05": {
+      "win_hits": 4,
+      "total": 12
+    },
+    "07": {
+      "win_hits": 27,
+      "total": 48
+    },
+    "09": {
+      "win_hits": 25,
+      "total": 47
+    },
+    "10": {
+      "win_hits": 12,
+      "total": 48
+    },
+    "13": {
+      "win_hits": 17,
+      "total": 24
+    },
+    "20": {
+      "win_hits": 9,
+      "total": 24
+    },
+    "23": {
+      "win_hits": 22,
+      "total": 48
+    },
+    "24": {
+      "win_hits": 32,
+      "total": 48
+    },
+    "02": {
+      "win_hits": 7,
+      "total": 45
+    },
+    "04": {
+      "win_hits": 5,
+      "total": 36
+    },
+    "06": {
+      "win_hits": 5,
+      "total": 24
+    },
+    "19": {
+      "win_hits": 14,
+      "total": 24
+    },
+    "22": {
+      "win_hits": 12,
+      "total": 24
+    },
+    "16": {
+      "win_hits": 5,
+      "total": 12
+    }
+  },
+  "venue_stats_new": {
+    "03": {
+      "win_hits": 4,
+      "total": 36
+    },
+    "05": {
+      "win_hits": 3,
+      "total": 12
+    },
+    "07": {
+      "win_hits": 26,
+      "total": 48
+    },
+    "09": {
+      "win_hits": 20,
+      "total": 47
+    },
+    "10": {
+      "win_hits": 10,
+      "total": 48
+    },
+    "13": {
+      "win_hits": 17,
+      "total": 24
+    },
+    "20": {
+      "win_hits": 8,
+      "total": 24
+    },
+    "23": {
+      "win_hits": 23,
+      "total": 48
+    },
+    "24": {
+      "win_hits": 32,
+      "total": 48
+    },
+    "02": {
+      "win_hits": 8,
+      "total": 45
+    },
+    "04": {
+      "win_hits": 5,
+      "total": 36
+    },
+    "06": {
+      "win_hits": 6,
+      "total": 24
+    },
+    "19": {
+      "win_hits": 12,
+      "total": 24
+    },
+    "22": {
+      "win_hits": 12,
+      "total": 24
+    },
+    "16": {
+      "win_hits": 6,
+      "total": 12
+    }
+  }
+}

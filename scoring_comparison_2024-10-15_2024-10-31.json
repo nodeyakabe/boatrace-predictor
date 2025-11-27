@@ -1,0 +1,47 @@
+{
+  "total_races": 100,
+  "old_results": {
+    "win_hits": 14,
+    "place_hits": 54,
+    "exacta_hits": 2,
+    "trifecta_hits": 1,
+    "top3_exact": 9,
+    "total": 100
+  },
+  "new_results": {
+    "win_hits": 14,
+    "place_hits": 53,
+    "exacta_hits": 3,
+    "trifecta_hits": 1,
+    "top3_exact": 10,
+    "total": 100
+  },
+  "venue_stats_old": {
+    "01": {
+      "win_hits": 14,
+      "total": 72
+    },
+    "03": {
+      "win_hits": 0,
+      "total": 24
+    },
+    "02": {
+      "win_hits": 0,
+      "total": 4
+    }
+  },
+  "venue_stats_new": {
+    "01": {
+      "win_hits": 14,
+      "total": 72
+    },
+    "03": {
+      "win_hits": 0,
+      "total": 24
+    },
+    "02": {
+      "win_hits": 0,
+      "total": 4
+    }
+  }
+}

@@ -192,43 +192,15 @@ def _render_ai_prediction(race_id, race_date_str, venue_code, race_number, racer
             st.markdown("---")
 
     # 全艇の予想
-    with st.expander("📊 全艇の予想スコア（詳細）", expanded=True):
-        # 基本情報
+    with st.expander("📊 全艇の予想スコア"):
         df = pd.DataFrame([{
             '順位': i+1,
             '艇番': p['pit_number'],
             '選手': p.get('racer_name', '選手名不明'),
-            '合計': f"{p['total_score']:.1f}",
-            'コース': f"{p.get('course_score', 0):.1f}",
-            '選手': f"{p.get('racer_score', 0):.1f}",
-            'モーター': f"{p.get('motor_score', 0):.1f}",
-            '拡張': f"{p.get('extended_score', 0):.1f}",
+            'スコア': f"{p['total_score']:.2f}"
         } for i, p in enumerate(predictions)])
 
         st.dataframe(df, use_container_width=True, hide_index=True)
-
-        # 展示データ詳細
-        st.markdown("#### 📊 展示ST・展示タイム順位")
-        st.caption("※バックテスト結果: 展示ST/タイム追加で的中率 +1.23%（58.75%→59.98%）")
-
-        exhibition_data = []
-        for p in predictions:
-            ext = p.get('extended_detail', {})
-            exhibition = ext.get('exhibition', {})
-            st_data = ext.get('start_timing', {})
-
-            exhibition_data.append({
-                '艇番': p['pit_number'],
-                '選手': p.get('racer_name', '')[:6],
-                '展示T順位': exhibition.get('rank', '-'),
-                '展示T': f"{exhibition.get('exhibition_time', 0):.2f}" if exhibition.get('exhibition_time') else '-',
-                '平均ST': f"{st_data.get('avg_st', 0):.2f}" if st_data.get('avg_st') else '-',
-                'ST評価': st_data.get('category', '-'),
-            })
-
-        if exhibition_data:
-            ex_df = pd.DataFrame(exhibition_data)
-            st.dataframe(ex_df, use_container_width=True, hide_index=True)
 
     # 判断根拠（適用法則）
     st.markdown("---")
@@ -316,10 +288,6 @@ def _render_bet_recommendations(race_id, race_date_str, venue_code, race_number)
         buy_win = f"{top3[0]['pit_number']}号艇"
         st.info(f"**{buy_win}**")
         st.caption("1着の推奨")
-
-    # 期待値分析セクション
-    st.markdown("---")
-    _render_expected_value_analysis(predictions, race_id, venue_code, race_date_str, race_number)
 
     # 詳細な買い目（フォーメーション）
     st.markdown("---")
@@ -572,179 +540,3 @@ def _render_detailed_analysis(race_id, race_date_str, venue_code, race_number, r
                         )
                         negative_df['寄与度'] = negative_df['寄与度'].apply(lambda x: f"{x*100:.2f}%")
                         st.dataframe(negative_df, hide_index=True)
-
-
-def _render_expected_value_analysis(predictions, race_id, venue_code, race_date_str, race_number):
-    """期待値ベースの分析と購入推奨"""
-    st.markdown("### 📈 期待値分析（Kelly基準）")
-
-    # オッズ入力
-    st.markdown("#### オッズ入力（任意）")
-    st.caption("オッズを入力すると期待値を計算します。未入力の場合は推定オッズを使用します。")
-
-    top3 = predictions[:3]
-
-    # 3連単の組み合わせを生成
-    combinations_3tan = []
-    first = top3[0]['pit_number']
-    for second in [top3[1]['pit_number'], top3[2]['pit_number']]:
-        for third in [top3[1]['pit_number'], top3[2]['pit_number']]:
-            if second != third:
-                combinations_3tan.append(f"{first}-{second}-{third}")
-
-    # オッズ入力UI
-    use_manual_odds = st.checkbox("オッズを手動入力", value=False, key="manual_odds_checkbox")
-
-    odds_data = {}
-    if use_manual_odds:
-        cols = st.columns(len(combinations_3tan))
-        for i, combo in enumerate(combinations_3tan):
-            with cols[i]:
-                odds = st.number_input(
-                    f"{combo}",
-                    min_value=1.0,
-                    max_value=9999.0,
-                    value=10.0,
-                    step=0.1,
-                    key=f"odds_{combo}"
-                )
-                odds_data[combo] = odds
-    else:
-        # 推定オッズ（スコアに基づいて逆算）
-        st.info("💡 スコアに基づく推定オッズを使用中")
-        total_score = sum(p['total_score'] for p in predictions)
-
-        for combo in combinations_3tan:
-            # 簡易的な推定（実際のオッズは異なる）
-            parts = combo.split('-')
-            first_score = next(p['total_score'] for p in predictions if p['pit_number'] == int(parts[0]))
-            second_score = next(p['total_score'] for p in predictions if p['pit_number'] == int(parts[1]))
-            third_score = next(p['total_score'] for p in predictions if p['pit_number'] == int(parts[2]))
-
-            # スコアから確率を推定し、オッズに変換
-            combo_score = first_score * 0.5 + second_score * 0.3 + third_score * 0.2
-            estimated_prob = combo_score / total_score * 0.3  # 3連単なので確率は低い
-            estimated_prob = max(0.01, min(0.30, estimated_prob))
-            estimated_odds = 1.0 / estimated_prob * 0.75  # 控除率を考慮
-            odds_data[combo] = round(estimated_odds, 1)
-
-    # 期待値計算
-    st.markdown("---")
-    st.markdown("#### 📊 期待値計算結果")
-
-    from src.betting.kelly_strategy import KellyBettingStrategy, ExpectedValueCalculator
-
-    # 予測確率を計算（スコアからsoftmaxで変換）
-    import numpy as np
-
-    scores = np.array([p['total_score'] for p in predictions])
-    temperature = 15.0
-    exp_scores = np.exp(scores / temperature)
-    base_probs = exp_scores / np.sum(exp_scores)
-
-    # 各組み合わせの確率を計算
-    pred_list = []
-    for combo in combinations_3tan:
-        parts = combo.split('-')
-        first_idx = next(i for i, p in enumerate(predictions) if p['pit_number'] == int(parts[0]))
-        second_idx = next(i for i, p in enumerate(predictions) if p['pit_number'] == int(parts[1]))
-        third_idx = next(i for i, p in enumerate(predictions) if p['pit_number'] == int(parts[2]))
-
-        # 3連単の確率 = 1着確率 × (2着確率 / 残り) × (3着確率 / 残り)
-        p1 = base_probs[first_idx]
-        remaining_after_1 = 1 - p1
-        p2 = base_probs[second_idx] / remaining_after_1 if remaining_after_1 > 0 else 0
-        remaining_after_2 = remaining_after_1 - base_probs[second_idx]
-        p3 = base_probs[third_idx] / remaining_after_2 if remaining_after_2 > 0 else 0
-
-        combo_prob = p1 * p2 * p3
-        combo_prob = max(0.001, min(0.5, combo_prob))  # 範囲制限
-
-        pred_list.append({
-            'combination': combo,
-            'prob': combo_prob
-        })
-
-    # Kelly戦略で分析
-    budget = st.number_input(
-        "資金（円）",
-        min_value=1000,
-        max_value=100000,
-        value=10000,
-        step=1000,
-        key="ev_budget"
-    )
-
-    strategy = KellyBettingStrategy(
-        bankroll=budget,
-        kelly_fraction=0.25,
-        min_ev=0.00  # すべて表示
-    )
-
-    # 期待値分析結果を表示
-    results = []
-    calc = ExpectedValueCalculator()
-
-    for pred in pred_list:
-        combo = pred['combination']
-        prob = pred['prob']
-        odds = odds_data.get(combo, 10.0)
-
-        ev = strategy.calculate_expected_value(prob, odds)
-        kelly_f, bet_amount = strategy.calculate_kelly_bet(prob, odds)
-        breakeven_odds = calc.calculate_breakeven_odds(prob)
-        edge = calc.calculate_edge(prob, odds)
-
-        results.append({
-            '買い目': combo,
-            '予測確率': f"{prob*100:.2f}%",
-            'オッズ': f"{odds:.1f}倍",
-            '期待値': ev,
-            '損益分岐': f"{breakeven_odds:.1f}倍",
-            'エッジ': edge,
-            '推奨': '◎' if ev > 0.10 else '○' if ev > 0 else '△' if ev > -0.10 else '×'
-        })
-
-    results_df = pd.DataFrame(results)
-
-    # 期待値でソート
-    results_df = results_df.sort_values('期待値', ascending=False)
-
-    # 表示用に整形
-    display_df = results_df.copy()
-    display_df['期待値'] = display_df['期待値'].apply(lambda x: f"{x*100:+.1f}%")
-    display_df['エッジ'] = display_df['エッジ'].apply(lambda x: f"{x:+.1f}%")
-
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
-
-    # 推奨サマリー
-    positive_ev = results_df[results_df['期待値'].apply(lambda x: x if isinstance(x, float) else float(x.replace('%', '').replace('+', '')) / 100) > 0]
-
-    if len(positive_ev) > 0:
-        st.success(f"✅ 期待値プラスの買い目: {len(positive_ev)}点")
-
-        st.markdown("#### 💡 推奨買い目")
-        for _, row in display_df.iterrows():
-            if row['推奨'] in ['◎', '○']:
-                st.write(f"**{row['買い目']}** - 期待値: {row['期待値']}, オッズ: {row['オッズ']}")
-    else:
-        st.warning("⚠️ 期待値プラスの買い目がありません。見送りを検討してください。")
-
-    # Kelly基準による購入額
-    with st.expander("📐 Kelly基準による購入額計算", expanded=False):
-        st.markdown("""
-        **Kelly基準とは:**
-        - 長期的に資金を最大化するための賭け金配分理論
-        - 期待値がプラスの買い目に対してのみ適用
-        - 1/4 Kelly（推奨）でリスクを抑制
-        """)
-
-        for pred in pred_list:
-            combo = pred['combination']
-            prob = pred['prob']
-            odds = odds_data.get(combo, 10.0)
-
-            ev = strategy.calculate_expected_value(prob, odds)
-            if ev > 0:
-                kelly_f, bet_amount = strategy.calculate_kelly_bet(prob, odds)
-                st.write(f"**{combo}**: 推奨購入額 ¥{bet_amount:,.0f} (Kelly分数: {kelly_f*100:.1f}%)")

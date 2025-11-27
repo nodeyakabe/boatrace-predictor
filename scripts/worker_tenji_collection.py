@@ -35,8 +35,8 @@ def main():
             'target_date': str(target_date)
         })
 
-        # 実際の収集処理を呼び出し
-        script_path = os.path.join(PROJECT_ROOT, '収集_オリジナル展示_手動実行.py')
+        # 実際の収集処理を呼び出し（最適化版）
+        script_path = os.path.join(PROJECT_ROOT, 'fetch_original_tenji_daily.py')
 
         if not os.path.exists(script_path):
             complete_job(JOB_NAME, success=False, message='収集スクリプトが見つかりません')
@@ -50,9 +50,16 @@ def main():
         os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, f'{JOB_NAME}_output.log')
 
+        # 日付引数を準備
+        if days_offset == 0:
+            date_args = ['--today']
+        else:
+            target_date_str = (datetime.now().date() + timedelta(days=days_offset)).strftime('%Y-%m-%d')
+            date_args = ['--date', target_date_str]
+
         with open(log_file, 'w', encoding='utf-8') as f:
             result = subprocess.run(
-                [sys.executable, script_path, str(days_offset)],
+                [sys.executable, script_path] + date_args,
                 stdout=f,
                 stderr=subprocess.STDOUT,
                 timeout=600,

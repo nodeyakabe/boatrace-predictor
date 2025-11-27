@@ -1,0 +1,183 @@
+{
+  "total_races": 1000,
+  "old_results": {
+    "win_hits": 389,
+    "place_hits": 711,
+    "exacta_hits": 103,
+    "trifecta_hits": 40,
+    "top3_exact": 109,
+    "total": 1000
+  },
+  "new_results": {
+    "win_hits": 366,
+    "place_hits": 699,
+    "exacta_hits": 90,
+    "trifecta_hits": 36,
+    "top3_exact": 107,
+    "total": 1000
+  },
+  "venue_stats_old": {
+    "03": {
+      "win_hits": 5,
+      "total": 49
+    },
+    "05": {
+      "win_hits": 4,
+      "total": 12
+    },
+    "07": {
+      "win_hits": 36,
+      "total": 60
+    },
+    "09": {
+      "win_hits": 33,
+      "total": 59
+    },
+    "10": {
+      "win_hits": 18,
+      "total": 72
+    },
+    "13": {
+      "win_hits": 17,
+      "total": 24
+    },
+    "20": {
+      "win_hits": 9,
+      "total": 24
+    },
+    "23": {
+      "win_hits": 29,
+      "total": 60
+    },
+    "24": {
+      "win_hits": 38,
+      "total": 60
+    },
+    "02": {
+      "win_hits": 10,
+      "total": 60
+    },
+    "04": {
+      "win_hits": 12,
+      "total": 72
+    },
+    "06": {
+      "win_hits": 18,
+      "total": 72
+    },
+    "19": {
+      "win_hits": 32,
+      "total": 59
+    },
+    "22": {
+      "win_hits": 33,
+      "total": 72
+    },
+    "16": {
+      "win_hits": 25,
+      "total": 60
+    },
+    "15": {
+      "win_hits": 22,
+      "total": 48
+    },
+    "01": {
+      "win_hits": 6,
+      "total": 41
+    },
+    "11": {
+      "win_hits": 15,
+      "total": 36
+    },
+    "18": {
+      "win_hits": 19,
+      "total": 36
+    },
+    "14": {
+      "win_hits": 8,
+      "total": 24
+    }
+  },
+  "venue_stats_new": {
+    "03": {
+      "win_hits": 6,
+      "total": 49
+    },
+    "05": {
+      "win_hits": 3,
+      "total": 12
+    },
+    "07": {
+      "win_hits": 35,
+      "total": 60
+    },
+    "09": {
+      "win_hits": 27,
+      "total": 59
+    },
+    "10": {
+      "win_hits": 16,
+      "total": 72
+    },
+    "13": {
+      "win_hits": 17,
+      "total": 24
+    },
+    "20": {
+      "win_hits": 8,
+      "total": 24
+    },
+    "23": {
+      "win_hits": 29,
+      "total": 60
+    },
+    "24": {
+      "win_hits": 38,
+      "total": 60
+    },
+    "02": {
+      "win_hits": 9,
+      "total": 60
+    },
+    "04": {
+      "win_hits": 13,
+      "total": 72
+    },
+    "06": {
+      "win_hits": 17,
+      "total": 72
+    },
+    "19": {
+      "win_hits": 29,
+      "total": 59
+    },
+    "22": {
+      "win_hits": 32,
+      "total": 72
+    },
+    "16": {
+      "win_hits": 24,
+      "total": 60
+    },
+    "15": {
+      "win_hits": 20,
+      "total": 48
+    },
+    "01": {
+      "win_hits": 5,
+      "total": 41
+    },
+    "11": {
+      "win_hits": 12,
+      "total": 36
+    },
+    "18": {
+      "win_hits": 19,
+      "total": 36
+    },
+    "14": {
+      "win_hits": 7,
+      "total": 24
+    }
+  }
+}
