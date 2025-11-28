@@ -37,8 +37,10 @@ class GradeScorer:
         '一般': 1
     }
 
-    def __init__(self, db_path: str = "data/boatrace.db"):
+    def __init__(self, db_path: str = "data/boatrace.db", batch_loader=None):
         self.db_path = db_path
+        self.batch_loader = batch_loader
+        self._use_cache = batch_loader is not None
 
     def _connect(self):
         """データベース接続"""
@@ -73,41 +75,61 @@ class GradeScorer:
                 'grade_level': 5
             }
         """
-        conn = self._connect()
-        cursor = conn.cursor()
-
-        end_date = datetime.now().date()
-        start_date = end_date - timedelta(days=days)
-
         # グレードが指定されていない場合は一般として扱う
         if not race_grade:
             race_grade = '一般'
 
-        # 選手のそのグレードでの成績を取得
-        query = """
-            SELECT
-                COUNT(*) as total_races,
-                SUM(CASE WHEN r.rank = 1 THEN 1 ELSE 0 END) as wins,
-                SUM(CASE WHEN r.rank <= 3 THEN 1 ELSE 0 END) as top3,
-                AVG(r.rank) as avg_rank
-            FROM entries e
-            JOIN races ra ON e.race_id = ra.id
-            LEFT JOIN results r ON e.race_id = r.race_id AND e.pit_number = r.pit_number
-            WHERE e.racer_number = ?
-              AND ra.race_grade = ?
-              AND ra.race_date BETWEEN ? AND ?
-              AND r.rank IS NOT NULL
-        """
+        # キャッシュ使用時
+        if self._use_cache and self.batch_loader:
+            cached = self.batch_loader.get_grade_stats(racer_number, race_grade)
+            if cached:
+                total_races = cached['total_races']
+                win_rate = cached['win_rate']
+                top3_rate = cached['top3_rate']
+                avg_rank = cached['avg_rank']
+            else:
+                # キャッシュにデータがない場合
+                total_races = 0
+                win_rate = 0.0
+                top3_rate = 0.0
+                avg_rank = 0.0
+        else:
+            # 従来のDB直接クエリ
+            conn = self._connect()
+            cursor = conn.cursor()
 
-        cursor.execute(query, (racer_number, race_grade, start_date.isoformat(), end_date.isoformat()))
-        row = cursor.fetchone()
+            end_date = datetime.now().date()
+            start_date = end_date - timedelta(days=days)
 
-        conn.close()
+            # 選手のそのグレードでの成績を取得
+            query = """
+                SELECT
+                    COUNT(*) as total_races,
+                    SUM(CASE WHEN r.rank = 1 THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN r.rank <= 3 THEN 1 ELSE 0 END) as top3,
+                    AVG(r.rank) as avg_rank
+                FROM entries e
+                JOIN races ra ON e.race_id = ra.id
+                LEFT JOIN results r ON e.race_id = r.race_id AND e.pit_number = r.pit_number
+                WHERE e.racer_number = ?
+                  AND ra.race_grade = ?
+                  AND ra.race_date BETWEEN ? AND ?
+                  AND r.rank IS NOT NULL
+            """
 
-        total_races = row['total_races'] if row else 0
-        wins = row['wins'] if row else 0
-        top3 = row['top3'] if row else 0
-        avg_rank = row['avg_rank'] if row and row['avg_rank'] else 3.5
+            cursor.execute(query, (racer_number, race_grade, start_date.isoformat(), end_date.isoformat()))
+            row = cursor.fetchone()
+
+            conn.close()
+
+            total_races = row['total_races'] if row else 0
+            win_rate = (row['wins'] / total_races * 100) if row and total_races > 0 else 0.0
+            top3_rate = (row['top3'] / total_races * 100) if row and total_races > 0 else 0.0
+            avg_rank = row['avg_rank'] if row and row['avg_rank'] else 3.5
+
+        # 以降の処理でwinsとtop3が必要なので計算
+        wins = int(win_rate * total_races / 100) if total_races > 0 else 0
+        top3 = int(top3_rate * total_races / 100) if total_races > 0 else 0
 
         # データがない場合の処理
         if total_races == 0:

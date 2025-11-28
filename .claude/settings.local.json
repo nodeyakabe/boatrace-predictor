@@ -50,7 +50,8 @@
       "Bash(timeout:*)",
       "Bash(chcp:*)",
       "Bash(find:*)",
-      "Bash(tasklist:*)"
+      "Bash(tasklist:*)",
+      "Bash(set DATABASE_PATH=c:/Users/User/Desktop/BR/BoatRace_package_20251115_172032/data/boatrace.db)"
     ],
     "deny": [],
     "ask": []

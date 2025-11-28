@@ -21,6 +21,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from src.utils.scoring_config import ScoringConfig
 from src.prediction.rule_based_engine import RuleBasedEngine
+from src.database.batch_data_loader import BatchDataLoader
 from config.venue_characteristics import get_venue_adjustment, get_venue_course_adjustment
 from config.settings import (
     get_dynamic_weights, get_venue_type, VENUE_IN1_RATES,
@@ -32,19 +33,25 @@ from config.settings import (
 class RacePredictor:
     """レース予想クラス"""
 
-    def __init__(self, db_path="data/boatrace.db", custom_weights: Dict[str, float] = None):
+    def __init__(self, db_path="data/boatrace.db", custom_weights: Dict[str, float] = None, use_cache: bool = False):
         self.db_path = db_path
+        self.use_cache = use_cache
+
+        # BatchDataLoaderの初期化（キャッシュ使用時のみ）
+        self.batch_loader = BatchDataLoader(db_path) if use_cache else None
+
+        # 各Analyzerにbatch_loaderを渡す
         self.stats_calc = StatisticsCalculator(db_path)
-        self.racer_analyzer = RacerAnalyzer(db_path)
-        self.motor_analyzer = MotorAnalyzer(db_path)
-        self.kimarite_scorer = KimariteScorer(db_path)
+        self.racer_analyzer = RacerAnalyzer(db_path, batch_loader=self.batch_loader)
+        self.motor_analyzer = MotorAnalyzer(db_path, batch_loader=self.batch_loader)
+        self.kimarite_scorer = KimariteScorer(db_path, batch_loader=self.batch_loader)
         self.first_place_lock_analyzer = FirstPlaceLockAnalyzer()
-        self.grade_scorer = GradeScorer(db_path)
+        self.grade_scorer = GradeScorer(db_path, batch_loader=self.batch_loader)
         self.rule_engine = RuleBasedEngine(db_path)
         self.weather_adjuster = WeatherAdjuster()
         self.tide_adjuster = TideAdjuster(db_path)
         self.exhibition_analyzer = ExhibitionAnalyzer()
-        self.extended_scorer = ExtendedScorer(db_path)
+        self.extended_scorer = ExtendedScorer(db_path, batch_loader=self.batch_loader)
 
         # 重み設定をロード
         if custom_weights:

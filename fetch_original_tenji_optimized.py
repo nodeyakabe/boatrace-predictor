@@ -78,7 +78,7 @@ def save_original_tenji_to_db(venue_code, date_str, race_number, tenji_data):
         for boat_num, data in tenji_data.items():
             cursor.execute("""
                 SELECT id FROM race_details
-                WHERE race_id = ? AND waku = ?
+                WHERE race_id = ? AND pit_number = ?
             """, (race_id, boat_num))
 
             detail_result = cursor.fetchone()
@@ -88,7 +88,7 @@ def save_original_tenji_to_db(venue_code, date_str, race_number, tenji_data):
                 cursor.execute("""
                     UPDATE race_details
                     SET chikusen_time = ?, isshu_time = ?, mawariashi_time = ?
-                    WHERE race_id = ? AND waku = ?
+                    WHERE race_id = ? AND pit_number = ?
                 """, (
                     data.get('chikusen_time'),
                     data.get('isshu_time'),
@@ -99,7 +99,7 @@ def save_original_tenji_to_db(venue_code, date_str, race_number, tenji_data):
             else:
                 # 新規レコードを挿入
                 cursor.execute("""
-                    INSERT INTO race_details (race_id, waku, chikusen_time, isshu_time, mawariashi_time)
+                    INSERT INTO race_details (race_id, pit_number, chikusen_time, isshu_time, mawariashi_time)
                     VALUES (?, ?, ?, ?, ?)
                 """, (
                     race_id,

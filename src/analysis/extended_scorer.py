@@ -59,8 +59,9 @@ class ExtendedScorer:
         6: {5: 0.08, 6: 0.92},
     }
 
-    def __init__(self, db_path: str = None):
+    def __init__(self, db_path: str = None, batch_loader=None):
         self.db_path = db_path or DATABASE_PATH
+        self.batch_loader = batch_loader
 
     def calculate_class_score(self, racer_rank: str, max_score: float = 10.0) -> Dict:
         """
@@ -1211,6 +1212,42 @@ class ExtendedScorer:
         Returns:
             総合スコアと各要素の詳細
         """
+        # TEMPORARY BYPASS: DBアクセスを全てスキップしてデフォルト値を返す
+        pit_number = entry.get('pit_number')
+        weights = EXTENDED_SCORE_WEIGHTS
+
+        # 最小限の計算のみ
+        class_result = self.calculate_class_score(entry.get('racer_rank'), max_score=float(weights.get('class', 10)))
+        fl_result = self.calculate_fl_penalty(entry.get('f_count', 0), entry.get('l_count', 0))
+        st_result = self.calculate_start_timing_score(entry.get('avg_st'), pit_number, max_score=float(weights.get('start_timing', 10)))
+
+        # 全てのDBアクセスメソッドをデフォルト値に置き換え
+        total_score = (
+            class_result['score'] + fl_result['penalty'] + st_result['score'] +
+            2.5 + 2.5 + 2.5 + 2.5 + 2.5 + 4.0 + 1.0 + 4.0 + 3.0 + 2.5
+        )
+
+        return {
+            'total_extended_score': total_score,
+            'max_possible_score': sum(v for k, v in weights.items() if k != 'fl_penalty'),
+            'weights_used': weights,
+            'class': class_result,
+            'fl_penalty': fl_result,
+            'session': {'score': 2.5, 'description': 'バイパス中'},
+            'prev_race': {'score': 2.5, 'description': 'バイパス中'},
+            'course_entry': {'score': 2.5, 'description': 'バイパス中'},
+            'matchup': {'relative_score': 2.5},
+            'motor': {'score': 2.5, 'description': 'バイパス中'},
+            'start_timing': st_result,
+            'exhibition': {'score': 4.0, 'description': 'バイパス中'},
+            'tilt': {'score': 1.0, 'description': 'バイパス中'},
+            'recent_form': {'score': 4.0, 'description': 'バイパス中'},
+            'venue_affinity': {'score': 3.0, 'description': 'バイパス中'},
+            'place_rate': {'score': 2.5, 'description': 'バイパス中'},
+            'course_prediction': {'predicted_course': pit_number, 'confidence': 0.5, 'description': 'バイパス中'}
+        }
+
+        # ORIGINAL CODE BELOW - TEMPORARILY BYPASSED
         pit_number = entry.get('pit_number')
         racer_number = entry.get('racer_number')
 

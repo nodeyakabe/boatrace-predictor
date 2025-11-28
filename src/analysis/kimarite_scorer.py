@@ -21,8 +21,10 @@ class KimariteScorer:
         6: '恵まれ'
     }
 
-    def __init__(self, db_path: str = "data/boatrace.db"):
+    def __init__(self, db_path: str = "data/boatrace.db", batch_loader=None):
         self.db_path = db_path
+        self.batch_loader = batch_loader
+        self._use_cache = batch_loader is not None
 
     def _connect(self):
         """データベース接続"""
@@ -59,48 +61,71 @@ class KimariteScorer:
                 'confidence': 'High'
             }
         """
-        conn = self._connect()
-        cursor = conn.cursor()
+        # キャッシュ使用時
+        if self._use_cache and self.batch_loader:
+            racer_kimarite_dict = self.batch_loader.get_racer_kimarite(racer_number, course)
+            venue_kimarite_dict = self.batch_loader.get_venue_kimarite(venue_code, course)
 
-        end_date = datetime.now().date()
-        start_date = end_date - timedelta(days=days)
+            # 辞書形式からリスト形式に変換（既存コードとの互換性のため）
+            if racer_kimarite_dict:
+                racer_kimarite = [
+                    {'winning_technique': k, 'count': v}
+                    for k, v in sorted(racer_kimarite_dict.items(), key=lambda x: x[1], reverse=True)
+                ]
+            else:
+                racer_kimarite = []
 
-        # 選手のコース別決まり手傾向を取得
-        query_racer = """
-            SELECT r.winning_technique, COUNT(*) as count
-            FROM results r
-            JOIN races ra ON r.race_id = ra.id
-            JOIN entries e ON r.race_id = e.race_id AND r.pit_number = e.pit_number
-            WHERE e.racer_number = ?
-              AND e.pit_number = ?
-              AND r.rank = 1
-              AND r.winning_technique IS NOT NULL
-              AND ra.race_date BETWEEN ? AND ?
-            GROUP BY r.winning_technique
-            ORDER BY count DESC
-        """
+            if venue_kimarite_dict:
+                venue_kimarite = [
+                    {'winning_technique': k, 'count': v}
+                    for k, v in sorted(venue_kimarite_dict.items(), key=lambda x: x[1], reverse=True)
+                ]
+            else:
+                venue_kimarite = []
+        else:
+            # 従来のDB直接クエリ
+            conn = self._connect()
+            cursor = conn.cursor()
 
-        cursor.execute(query_racer, (racer_number, course, start_date.isoformat(), end_date.isoformat()))
-        racer_kimarite = cursor.fetchall()
+            end_date = datetime.now().date()
+            start_date = end_date - timedelta(days=days)
 
-        # 会場のコース別決まり手傾向を取得
-        query_venue = """
-            SELECT r.winning_technique, COUNT(*) as count
-            FROM results r
-            JOIN races ra ON r.race_id = ra.id
-            WHERE ra.venue_code = ?
-              AND r.pit_number = ?
-              AND r.rank = 1
-              AND r.winning_technique IS NOT NULL
-              AND ra.race_date BETWEEN ? AND ?
-            GROUP BY r.winning_technique
-            ORDER BY count DESC
-        """
+            # 選手のコース別決まり手傾向を取得
+            query_racer = """
+                SELECT r.winning_technique, COUNT(*) as count
+                FROM results r
+                JOIN races ra ON r.race_id = ra.id
+                JOIN entries e ON r.race_id = e.race_id AND r.pit_number = e.pit_number
+                WHERE e.racer_number = ?
+                  AND e.pit_number = ?
+                  AND r.rank = 1
+                  AND r.winning_technique IS NOT NULL
+                  AND ra.race_date BETWEEN ? AND ?
+                GROUP BY r.winning_technique
+                ORDER BY count DESC
+            """
 
-        cursor.execute(query_venue, (venue_code, course, start_date.isoformat(), end_date.isoformat()))
-        venue_kimarite = cursor.fetchall()
+            cursor.execute(query_racer, (racer_number, course, start_date.isoformat(), end_date.isoformat()))
+            racer_kimarite = cursor.fetchall()
 
-        conn.close()
+            # 会場のコース別決まり手傾向を取得
+            query_venue = """
+                SELECT r.winning_technique, COUNT(*) as count
+                FROM results r
+                JOIN races ra ON r.race_id = ra.id
+                WHERE ra.venue_code = ?
+                  AND r.pit_number = ?
+                  AND r.rank = 1
+                  AND r.winning_technique IS NOT NULL
+                  AND ra.race_date BETWEEN ? AND ?
+                GROUP BY r.winning_technique
+                ORDER BY count DESC
+            """
+
+            cursor.execute(query_venue, (venue_code, course, start_date.isoformat(), end_date.isoformat()))
+            venue_kimarite = cursor.fetchall()
+
+            conn.close()
 
         # データがない場合は中間スコアを返す
         if not racer_kimarite or not venue_kimarite:

@@ -42,7 +42,14 @@ BOATRACE_BASE_URL = "https://www.boatrace.jp"
 BOATRACE_OFFICIAL_URL = "https://www.boatrace.jp/owpc/pc/race"
 
 # データベース設定
-DATABASE_PATH = os.getenv("DATABASE_PATH", "data/boatrace.db")
+# プロジェクトルートからの絶対パスを構築
+_project_root = Path(__file__).parent.parent
+_db_path_from_env = os.getenv("DATABASE_PATH", str(_project_root / "data" / "boatrace.db"))
+# 相対パスの場合は絶対パスに変換
+if not os.path.isabs(_db_path_from_env):
+    DATABASE_PATH = str(_project_root / _db_path_from_env)
+else:
+    DATABASE_PATH = _db_path_from_env
 
 # 天気API設定（OpenWeatherMap）
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")

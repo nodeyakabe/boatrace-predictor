@@ -140,6 +140,22 @@ def _render_ai_prediction(race_id, race_date_str, venue_code, race_number, racer
     """AI予測タブ"""
     st.subheader("🎯 AI予測結果")
 
+    # 直前予想更新ボタン
+    col_btn1, col_btn2 = st.columns([1, 3])
+    with col_btn1:
+        if st.button("🔄 直前予想を更新", help="展示データがあれば直前予想（before）を生成します"):
+            from src.analysis.prediction_updater import PredictionUpdater
+            updater = PredictionUpdater()
+
+            with st.spinner("直前予想を生成中..."):
+                success = updater.update_to_before_prediction(race_id, force=True)
+
+            if success:
+                st.success("✅ 直前予想を更新しました")
+                st.rerun()
+            else:
+                st.error("❌ 直前予想の更新に失敗しました")
+
     # 既存の予測がある場合は使用、なければ生成
     if existing_predictions:
         predictions = existing_predictions

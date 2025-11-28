@@ -37,8 +37,10 @@ def laplace_smoothing(wins: int, trials: int, alpha: float = 2.0, k: int = 6) ->
 class RacerAnalyzer:
     """選手分析クラス"""
 
-    def __init__(self, db_path="data/boatrace.db"):
+    def __init__(self, db_path="data/boatrace.db", batch_loader=None):
         self.db_path = db_path
+        self.batch_loader = batch_loader
+        self._use_cache = batch_loader is not None
 
     def _connect(self):
         """データベース接続"""
@@ -87,6 +89,13 @@ class RacerAnalyzer:
                 'avg_st': 0.14
             }
         """
+        # キャッシュ使用時
+        if self._use_cache and self.batch_loader:
+            cached = self.batch_loader.get_racer_overall_stats(racer_number)
+            if cached:
+                return cached
+
+        # 従来のDB直接クエリ
         start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
 
         query = """
@@ -149,6 +158,13 @@ class RacerAnalyzer:
                 'avg_rank': 2.8
             }
         """
+        # キャッシュ使用時
+        if self._use_cache and self.batch_loader:
+            cached = self.batch_loader.get_racer_course_stats(racer_number, course)
+            if cached:
+                return cached
+
+        # 従来のDB直接クエリ
         start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
 
         query = """
@@ -207,6 +223,13 @@ class RacerAnalyzer:
                 'place_rate_3': 0.65
             }
         """
+        # キャッシュ使用時
+        if self._use_cache and self.batch_loader:
+            cached = self.batch_loader.get_racer_venue_stats(racer_number, venue_code)
+            if cached:
+                return cached
+
+        # 従来のDB直接クエリ
         start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
 
         query = """
@@ -262,6 +285,13 @@ class RacerAnalyzer:
                 'form_trend': 'up'  # 'up', 'down', 'stable'
             }
         """
+        # キャッシュ使用時
+        if self._use_cache and self.batch_loader:
+            cached = self.batch_loader.get_racer_recent_form(racer_number, recent_races)
+            if cached:
+                return cached
+
+        # 従来のDB直接クエリ
         query = """
             SELECT r.rank, ra.race_date
             FROM results r
@@ -331,6 +361,13 @@ class RacerAnalyzer:
                 'late_rate': 0.10  # 出遅れ率
             }
         """
+        # キャッシュ使用時
+        if self._use_cache and self.batch_loader:
+            cached = self.batch_loader.get_racer_st_stats(racer_number)
+            if cached:
+                return cached
+
+        # 従来のDB直接クエリ
         start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
 
         query = """
@@ -391,6 +428,47 @@ class RacerAnalyzer:
                 ...
             ]
         """
+        # キャッシュ使用時
+        if self._use_cache and self.batch_loader:
+            race_info = self.batch_loader.get_race_info(race_id)
+            entries = self.batch_loader.get_race_entries(race_id)
+
+            if race_info and entries:
+                venue_code = race_info['venue_code']
+
+                results = []
+                for entry in entries:
+                    racer_number = entry['racer_number']
+                    actual_course = entry['actual_course']
+
+                    # 各種統計を取得
+                    overall_stats = self.get_racer_overall_stats(racer_number)
+
+                    # コース別成績（進入コースが分かる場合）
+                    if actual_course:
+                        course_stats = self.get_racer_course_stats(racer_number, actual_course)
+                    else:
+                        # 進入コース不明の場合は枠番を仮のコースとして使用
+                        course_stats = self.get_racer_course_stats(racer_number, entry['pit_number'])
+
+                    venue_stats = self.get_racer_venue_stats(racer_number, venue_code)
+                    recent_form = self.get_racer_recent_form(racer_number)
+                    st_stats = self.get_racer_st_stats(racer_number)
+
+                    results.append({
+                        'pit_number': entry['pit_number'],
+                        'racer_number': racer_number,
+                        'racer_name': entry['racer_name'],
+                        'overall_stats': overall_stats,
+                        'course_stats': course_stats,
+                        'venue_stats': venue_stats,
+                        'recent_form': recent_form,
+                        'st_stats': st_stats
+                    })
+
+                return results
+
+        # 従来のDB直接クエリ
         # レース情報取得
         race_query = """
             SELECT venue_code, race_date
@@ -552,14 +630,14 @@ class RacerAnalyzer:
     # 会場別分析
     # ========================================
 
-    def get_racer_venue_stats(self, racer_number: int, venue_code: str, days: int = 365) -> Dict:
+    def get_racer_venue_stats(self, racer_number: int, venue_code: str, days: int = 180) -> Dict:
         """
         選手の会場別成績を取得
 
         Args:
             racer_number: 選手登録番号
             venue_code: 会場コード（'01'〜'24'）
-            days: 集計期間（日数）
+            days: 集計期間（日数）デフォルト180日
 
         Returns:
             {
@@ -571,6 +649,13 @@ class RacerAnalyzer:
                 'favorite_venue': True  # この会場が得意かどうか
             }
         """
+        # キャッシュ使用時
+        if self._use_cache and self.batch_loader:
+            cached = self.batch_loader.get_racer_venue_stats(racer_number, venue_code)
+            if cached:
+                return cached
+
+        # 従来のDB直接クエリ
         start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
 
         query = """

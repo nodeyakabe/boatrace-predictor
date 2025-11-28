@@ -60,6 +60,7 @@ def _render_accuracy_focused():
             venue_name_map[venue_info['code']] = venue_info['name']
 
         # レース情報と予想スコアを取得（上位20件）
+        # 1位予測の艇のスコアでソート
         cursor.execute("""
             SELECT
                 r.id as race_id,
@@ -67,13 +68,13 @@ def _render_accuracy_focused():
                 r.race_number,
                 r.race_time,
                 r.race_date,
-                AVG(rp.total_score) as avg_score,
+                MAX(CASE WHEN rp.rank_prediction = 1 THEN rp.total_score ELSE 0 END) as top_score,
                 GROUP_CONCAT(rp.pit_number || ':' || rp.rank_prediction || ':' || rp.total_score || ':' || rp.confidence, '|') as predictions_data
             FROM races r
             JOIN race_predictions rp ON r.id = rp.race_id
             WHERE r.race_date = ?
             GROUP BY r.id
-            ORDER BY avg_score DESC
+            ORDER BY top_score DESC
             LIMIT 20
         """, (target_date_str,))
 
@@ -91,7 +92,7 @@ def _render_accuracy_focused():
         recommended_races = []
 
         for row in race_rows:
-            race_id, venue_code, race_number, race_time, race_date, avg_score, predictions_data = row
+            race_id, venue_code, race_number, race_time, race_date, top_score, predictions_data = row
 
             # 予想データをパース
             predictions = []
@@ -152,7 +153,7 @@ def _render_accuracy_focused():
                 confidence = sum(c * w for c, w in zip(top3_confidences, weights[:len(top3_confidences)]))
             else:
                 # フォールバック: スコアベース
-                confidence = min(100, max(20, avg_score * 8))
+                confidence = min(100, max(20, top_score * 8))
 
             recommended_races.append({
                 '会場': venue_name_map.get(venue_code, f'会場{venue_code}'),
@@ -165,7 +166,7 @@ def _render_accuracy_focused():
                 '3連複': trio_bet,
                 '買い目詳細': [f"{p['pit_number']}号艇" for p in top3],
                 '信頼度': confidence,
-                '平均スコア': avg_score,
+                '平均スコア': top_score,
                 'badge': render_confidence_badge(confidence),
                 'race_id': race_id,
                 'race_date': race_date,
@@ -277,6 +278,7 @@ def _render_value_focused():
             venue_name_map[venue_info['code']] = venue_info['name']
 
         # レース情報と予想スコアを取得
+        # 期待値タブでは平均スコアは不要だが、1位予測スコアを取得
         cursor.execute("""
             SELECT
                 r.id as race_id,
@@ -284,7 +286,7 @@ def _render_value_focused():
                 r.race_number,
                 r.race_time,
                 r.race_date,
-                AVG(rp.total_score) as avg_score,
+                MAX(CASE WHEN rp.rank_prediction = 1 THEN rp.total_score ELSE 0 END) as top_score,
                 GROUP_CONCAT(rp.pit_number || ':' || rp.rank_prediction || ':' || rp.total_score || ':' || rp.confidence, '|') as predictions_data
             FROM races r
             JOIN race_predictions rp ON r.id = rp.race_id
@@ -304,7 +306,7 @@ def _render_value_focused():
         value_races = []
 
         for row in race_rows:
-            race_id, venue_code, race_number, race_time, race_date, avg_score, predictions_data = row
+            race_id, venue_code, race_number, race_time, race_date, top_score, predictions_data = row
 
             # 予想データをパース
             predictions = []

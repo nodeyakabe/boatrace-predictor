@@ -28,8 +28,10 @@ def laplace_smoothing(successes: int, trials: int, alpha: float = 2.0, k: int = 
 class MotorAnalyzer:
     """モーター・ボート分析クラス"""
 
-    def __init__(self, db_path="data/boatrace.db"):
+    def __init__(self, db_path="data/boatrace.db", batch_loader=None):
         self.db_path = db_path
+        self.batch_loader = batch_loader
+        self._use_cache = batch_loader is not None
 
     def _connect(self):
         """データベース接続"""
@@ -78,6 +80,13 @@ class MotorAnalyzer:
                 'avg_rank': 3.1
             }
         """
+        # キャッシュ使用時
+        if self._use_cache and self.batch_loader:
+            cached = self.batch_loader.get_motor_stats(venue_code, motor_number)
+            if cached:
+                return cached
+
+        # 従来のDB直接クエリ
         start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
 
         query = """
@@ -134,6 +143,13 @@ class MotorAnalyzer:
                 'recent_place_rate_3': 0.60
             }
         """
+        # キャッシュ使用時
+        if self._use_cache and self.batch_loader:
+            cached = self.batch_loader.get_motor_recent_form(venue_code, motor_number, recent_races)
+            if cached:
+                return cached
+
+        # 従来のDB直接クエリ
         query = """
             SELECT r.rank
             FROM results r
@@ -190,6 +206,13 @@ class MotorAnalyzer:
                 'avg_rank': 3.2
             }
         """
+        # キャッシュ使用時
+        if self._use_cache and self.batch_loader:
+            cached = self.batch_loader.get_boat_stats(venue_code, boat_number)
+            if cached:
+                return cached
+
+        # 従来のDB直接クエリ
         start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
 
         query = """
@@ -254,6 +277,38 @@ class MotorAnalyzer:
                 ...
             ]
         """
+        # キャッシュ使用時
+        if self._use_cache and self.batch_loader:
+            race_info = self.batch_loader.get_race_info(race_id)
+            entries = self.batch_loader.get_race_entries(race_id)
+
+            if race_info and entries:
+                venue_code = race_info['venue_code']
+
+                results = []
+                for entry in entries:
+                    motor_number = entry.get('motor_number')
+                    boat_number = entry.get('boat_number')
+
+                    # モーター成績
+                    motor_stats = self.get_motor_stats(venue_code, motor_number) if motor_number else {}
+                    motor_recent = self.get_motor_recent_form(venue_code, motor_number) if motor_number else {}
+
+                    # ボート成績
+                    boat_stats = self.get_boat_stats(venue_code, boat_number) if boat_number else {}
+
+                    results.append({
+                        'pit_number': entry['pit_number'],
+                        'motor_number': motor_number,
+                        'boat_number': boat_number,
+                        'motor_stats': motor_stats,
+                        'motor_recent_form': motor_recent,
+                        'boat_stats': boat_stats
+                    })
+
+                return results
+
+        # 従来のDB直接クエリ
         # レース情報取得
         race_query = """
             SELECT venue_code

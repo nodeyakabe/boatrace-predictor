@@ -173,7 +173,8 @@ def fetch_today_data():
     # データがない場合のみ取得
     try:
         with st.spinner("本日のレースデータを取得中..."):
-            data_manager = DataManager()
+            from config.settings import DATABASE_PATH
+            data_manager = DataManager(DATABASE_PATH)
 
             # 並列処理版を使用（高速化）
             if HAS_PARALLEL_SCRAPER:
@@ -357,12 +358,13 @@ def generate_and_save_predictions(today_schedule):
                 text=True,
                 timeout=600,  # 10分タイムアウト
                 cwd=PROJECT_ROOT,
-                encoding='utf-8'
+                encoding='cp932',  # Windowsコンソール出力用
+                errors='replace'  # デコードエラーを無視
             )
 
             if result.returncode == 0:
                 # 成功メッセージを抽出
-                output_lines = result.stdout.split('\n')
+                output_lines = result.stdout.split('\n') if result.stdout else []
                 success_info = []
                 for line in output_lines:
                     if '生成成功:' in line or '総処理時間:' in line or '平均処理時間:' in line:

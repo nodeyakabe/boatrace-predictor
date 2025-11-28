@@ -4,20 +4,30 @@
 
 import sqlite3
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
+import logging
+
 from config.settings import DATABASE_PATH
 from src.analysis.race_predictor import RacePredictor
 from src.analysis.exhibition_analyzer import ExhibitionAnalyzer
+from src.database.data_manager import DataManager
+
+logger = logging.getLogger(__name__)
 
 
 class PredictionUpdater:
     """レース直前データに基づく予測更新"""
 
-    def __init__(self):
-        self.conn = sqlite3.connect(DATABASE_PATH)
+    def __init__(self, db_path: str = None):
+        if db_path is None:
+            db_path = DATABASE_PATH
+
+        self.db_path = db_path
+        self.conn = sqlite3.connect(db_path)
         self.cursor = self.conn.cursor()
-        self.predictor = RacePredictor()
+        self.predictor = RacePredictor(db_path=db_path, use_cache=True)
         self.exhibition_analyzer = ExhibitionAnalyzer()
+        self.data_manager = DataManager(db_path)
 
     def __del__(self):
         if hasattr(self, 'conn'):
@@ -405,3 +415,154 @@ class PredictionUpdater:
             'has_updated': len(updated_preds) > 0,
             'comparisons': comparisons
         }
+
+    def check_beforeinfo_exists(self, race_id: int) -> bool:
+        """
+        直前情報（展示データ）が存在するかチェック
+
+        Args:
+            race_id: レースID
+
+        Returns:
+            直前情報が存在する場合True
+        """
+        try:
+            # race_detailsのbeforeinfo列をチェック
+            self.cursor.execute("""
+                SELECT beforeinfo
+                FROM race_details
+                WHERE race_id = ?
+            """, (race_id,))
+
+            row = self.cursor.fetchone()
+            if row and row[0]:
+                # beforeinfoが存在する（NULLでも空文字でもない）
+                return True
+
+            return False
+
+        except Exception as e:
+            logger.error(f"直前情報チェックエラー: {e}", exc_info=True)
+            return False
+
+    def update_to_before_prediction(self, race_id: int, force: bool = False) -> bool:
+        """
+        レースの予想を直前予想（before）に更新
+
+        prediction_type='before'として新規保存
+
+        Args:
+            race_id: レースID
+            force: Trueの場合、展示データがなくても強制更新
+
+        Returns:
+            更新成功: True, 失敗: False
+        """
+        try:
+            # 直前情報の存在チェック
+            has_beforeinfo = self.check_beforeinfo_exists(race_id)
+
+            if not has_beforeinfo and not force:
+                logger.warning(f"Race {race_id}: 直前情報が存在しないため更新をスキップ")
+                return False
+
+            # 既に直前予想が存在するかチェック
+            existing = self.data_manager.get_race_predictions(race_id, prediction_type='before')
+            if existing and not force:
+                logger.info(f"Race {race_id}: 直前予想は既に存在します")
+                return True
+
+            # 予想を生成
+            logger.info(f"Race {race_id}: 直前予想を生成中...")
+            predictions = self.predictor.predict_race(race_id)
+
+            if not predictions:
+                logger.error(f"Race {race_id}: 予想生成に失敗")
+                return False
+
+            # 直前予想として保存
+            success = self.data_manager.save_race_predictions(
+                race_id=race_id,
+                predictions=predictions,
+                prediction_type='before'
+            )
+
+            if success:
+                logger.info(f"Race {race_id}: 直前予想を保存しました")
+            else:
+                logger.error(f"Race {race_id}: 直前予想の保存に失敗")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Race {race_id}: 直前予想更新エラー - {e}", exc_info=True)
+            return False
+
+    def update_daily_before_predictions(
+        self,
+        target_date: str,
+        hours_before_deadline: float = 0.33
+    ) -> Dict[str, int]:
+        """
+        指定日の全レースについて、締切前のレースの直前予想を更新
+
+        Args:
+            target_date: 対象日（YYYY-MM-DD）
+            hours_before_deadline: 締切何時間前までを対象とするか（デフォルト: 20分前 = 0.33時間）
+
+        Returns:
+            {'total': 対象レース数, 'updated': 更新成功数, 'skipped': スキップ数, 'failed': 失敗数}
+        """
+        try:
+            # 指定日のレース一覧を取得
+            self.cursor.execute("""
+                SELECT r.id, r.race_date, r.race_time
+                FROM races r
+                WHERE r.race_date = ?
+                ORDER BY r.venue_code, r.race_number
+            """, (target_date,))
+
+            races = self.cursor.fetchall()
+
+            if not races:
+                logger.info(f"{target_date}: 対象レースが見つかりません")
+                return {'total': 0, 'updated': 0, 'skipped': 0, 'failed': 0}
+
+            # 現在時刻
+            now = datetime.now()
+
+            # 日次データを一括ロード（高速化）
+            if self.predictor.batch_loader:
+                logger.info(f"{target_date}: 日次データを一括ロード中...")
+                self.predictor.batch_loader.load_daily_data(target_date)
+
+            stats = {'total': 0, 'updated': 0, 'skipped': 0, 'failed': 0}
+
+            for race_id, race_date, race_time in races:
+                stats['total'] += 1
+
+                # レース締切時刻を計算
+                if race_time:
+                    deadline_dt = datetime.strptime(f"{race_date} {race_time}", "%Y-%m-%d %H:%M:%S")
+                    deadline_dt -= timedelta(hours=hours_before_deadline)
+
+                    # 締切時刻を過ぎている場合はスキップ
+                    if now > deadline_dt:
+                        logger.info(f"Race {race_id}: 締切時刻を過ぎているためスキップ")
+                        stats['skipped'] += 1
+                        continue
+
+                # 予想を更新
+                success = self.update_to_before_prediction(race_id, force=False)
+
+                if success:
+                    stats['updated'] += 1
+                else:
+                    stats['failed'] += 1
+
+            logger.info(f"{target_date}: 更新完了 - {stats}")
+            return stats
+
+        except Exception as e:
+            logger.error(f"{target_date}: 日次更新エラー - {e}", exc_info=True)
+            return {'total': 0, 'updated': 0, 'skipped': 0, 'failed': 0}

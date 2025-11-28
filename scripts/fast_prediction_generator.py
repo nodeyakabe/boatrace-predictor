@@ -33,11 +33,12 @@ class FastPredictionGenerator:
     """高速予想生成クラス（キャッシュ最適化版）"""
 
     def __init__(self):
-        self.predictor = RacePredictor()
+        # キャッシュ有効モードでRacePredictorを初期化
+        self.predictor = RacePredictor(use_cache=True)
         self.data_manager = DataManager()
         self.db_path = DATABASE_PATH
 
-        # キャッシュ
+        # 旧キャッシュ（互換性のため残すが使用しない）
         self.racer_cache = {}
         self.motor_cache = {}
         self.venue_cache = {}
@@ -192,18 +193,28 @@ class FastPredictionGenerator:
 
         print(f'[OK] {len(races)}レースを取得')
 
-        # 2. 全エントリー情報を一括取得
-        print('\n[2/4] エントリー情報を一括取得中...')
+        # 2. BatchDataLoaderにデータを一括ロード
+        print('\n[2/5] 日次データを一括ロード中...')
+        if self.predictor.batch_loader:
+            batch_load_start = time.time()
+            self.predictor.batch_loader.load_daily_data(target_date)
+            batch_load_time = time.time() - batch_load_start
+            print(f'[OK] データロード完了 ({batch_load_time:.1f}秒)')
+        else:
+            print('[!] キャッシュ無効モードで動作中')
+
+        # 3. 全エントリー情報を一括取得
+        print('\n[3/5] エントリー情報を一括取得中...')
         race_ids = [r['race_id'] for r in races]
         entries_by_race = self.get_all_entries_batch(race_ids)
         print(f'[OK] {len(entries_by_race)}レース分のエントリーを取得')
 
-        # 3. 既存予想をチェック（必要な場合）
+        # 4. 既存予想をチェック（必要な場合）
         races_to_predict = []
         skipped_count = 0
 
         if skip_existing:
-            print('\n[3/4] 既存予想をチェック中...')
+            print('\n[4/5] 既存予想をチェック中...')
             for race in races:
                 existing = self.data_manager.get_race_predictions(race['race_id'])
                 if existing:
@@ -213,7 +224,7 @@ class FastPredictionGenerator:
             print(f'[OK] 既存: {skipped_count}件, 生成対象: {len(races_to_predict)}件')
         else:
             races_to_predict = races
-            print('\n[3/4] 既存予想チェックをスキップ')
+            print('\n[4/5] 既存予想チェックをスキップ')
 
         if not races_to_predict:
             elapsed = time.time() - start_time
@@ -231,8 +242,8 @@ class FastPredictionGenerator:
                 'total_time': elapsed
             }
 
-        # 4. 予想生成
-        print(f'\n[4/4] {len(races_to_predict)}レースの予想を生成中...')
+        # 5. 予想生成
+        print(f'\n[5/5] {len(races_to_predict)}レースの予想を生成中...')
 
         success_count = 0
         error_count = 0

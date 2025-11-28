@@ -905,7 +905,7 @@ class DataManager:
             if conn:
                 conn.close()
 
-    def save_race_predictions(self, race_id: int, predictions: List[Dict]) -> bool:
+    def save_race_predictions(self, race_id: int, predictions: List[Dict], prediction_type: str = 'advance') -> bool:
         """
         レースの予想結果をデータベースに保存
 
@@ -924,6 +924,7 @@ class DataManager:
                     },
                     ...
                 ]
+            prediction_type: 予想タイプ ('advance': 事前予想, 'before': 直前予想)
 
         Returns:
             保存成功: True, 失敗: False
@@ -933,17 +934,24 @@ class DataManager:
             conn = self.db.connect()
             cursor = conn.cursor()
 
-            # 既存の予想データを削除（再生成の場合）
-            cursor.execute("DELETE FROM race_predictions WHERE race_id = ?", (race_id,))
+            # 既存の同タイプの予想データを削除（再生成の場合）
+            cursor.execute(
+                "DELETE FROM race_predictions WHERE race_id = ? AND prediction_type = ?",
+                (race_id, prediction_type)
+            )
 
             # 予想データを保存
+            from datetime import datetime
+            generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
             for pred in predictions:
                 cursor.execute("""
                     INSERT INTO race_predictions (
                         race_id, pit_number, rank_prediction, total_score,
                         confidence, racer_name, racer_number, applied_rules,
-                        course_score, racer_score, motor_score, kimarite_score, grade_score
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        course_score, racer_score, motor_score, kimarite_score, grade_score,
+                        prediction_type, generated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     race_id,
                     pred.get('pit_number'),
@@ -957,11 +965,13 @@ class DataManager:
                     pred.get('racer_score', 0),
                     pred.get('motor_score', 0),
                     pred.get('kimarite_score', 0),
-                    pred.get('grade_score', 0)
+                    pred.get('grade_score', 0),
+                    prediction_type,
+                    generated_at
                 ))
 
             conn.commit()
-            logger.info(f"予想データ保存完了: race_id={race_id}, {len(predictions)}件")
+            logger.info(f"予想データ保存完了: race_id={race_id}, type={prediction_type}, {len(predictions)}件")
             return True
 
         except Exception as e:
@@ -974,12 +984,14 @@ class DataManager:
             if conn:
                 conn.close()
 
-    def get_race_predictions(self, race_id: int) -> Optional[List[Dict]]:
+    def get_race_predictions(self, race_id: int, prediction_type: str = 'before') -> Optional[List[Dict]]:
         """
         保存された予想データを取得
 
         Args:
             race_id: レースID
+            prediction_type: 予想タイプ ('advance': 事前予想, 'before': 直前予想)
+                            デフォルトは'before'（直前予想を優先）
 
         Returns:
             予想データのリスト、またはNone
@@ -989,15 +1001,27 @@ class DataManager:
             conn = self.db.connect()
             cursor = conn.cursor()
 
+            # まず指定されたタイプの予想を検索
             cursor.execute("""
                 SELECT pit_number, rank_prediction, total_score, confidence,
-                       racer_name, racer_number, applied_rules
+                       racer_name, racer_number, applied_rules, prediction_type, generated_at
                 FROM race_predictions
-                WHERE race_id = ?
+                WHERE race_id = ? AND prediction_type = ?
                 ORDER BY rank_prediction
-            """, (race_id,))
+            """, (race_id, prediction_type))
 
             rows = cursor.fetchall()
+
+            # 指定されたタイプが見つからない場合、他のタイプを検索（後方互換性）
+            if not rows:
+                cursor.execute("""
+                    SELECT pit_number, rank_prediction, total_score, confidence,
+                           racer_name, racer_number, applied_rules, prediction_type, generated_at
+                    FROM race_predictions
+                    WHERE race_id = ?
+                    ORDER BY rank_prediction
+                """, (race_id,))
+                rows = cursor.fetchall()
 
             if not rows:
                 return None
@@ -1011,7 +1035,9 @@ class DataManager:
                     'confidence': row[3],
                     'racer_name': row[4],
                     'racer_number': row[5],
-                    'applied_rules': row[6]
+                    'applied_rules': row[6],
+                    'prediction_type': row[7] if len(row) > 7 else 'advance',
+                    'generated_at': row[8] if len(row) > 8 else None
                 })
 
             return predictions
