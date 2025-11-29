@@ -62,7 +62,7 @@ def run_today_preparation_workflow():
     status_text = st.empty()
 
     # Step 1: データ取得
-    status_text.text("Step 1/4: 本日のデータを取得中...")
+    status_text.text("Step 1/5: 本日のデータを取得中...")
     progress_bar.progress(0.1)
 
     today_schedule = fetch_today_data()
@@ -72,15 +72,21 @@ def run_today_preparation_workflow():
         status_text.empty()
         return
 
-    progress_bar.progress(0.3)
+    progress_bar.progress(0.2)
 
-    # Step 2: 法則再解析
-    status_text.text("Step 2/4: 法則を再解析中...")
+    # Step 2: オッズ取得
+    status_text.text("Step 2/5: 本日のオッズを取得中...")
+    progress_bar.progress(0.25)
+    fetch_today_odds(today_schedule)
+    progress_bar.progress(0.4)
+
+    # Step 3: 法則再解析
+    status_text.text("Step 3/5: 法則を再解析中...")
     reanalyze_rules()
     progress_bar.progress(0.5)
 
-    # Step 3: 予測生成
-    status_text.text("Step 3/4: 予測を生成中...")
+    # Step 4: 予測生成
+    status_text.text("Step 4/5: 予測を生成中...")
     progress_bar.progress(0.6)
 
     # 進捗バーとステータステキストを削除して、generate_and_save_predictions内で新しいものを使用
@@ -320,6 +326,31 @@ def reanalyze_rules():
                 st.warning("⚠️ 一部の法則解析に失敗しました")
     except Exception as e:
         st.error(f"再解析エラー: {e}")
+
+
+def fetch_today_odds(today_schedule):
+    """
+    本日の全レースのオッズを取得
+
+    Args:
+        today_schedule: {venue_code: race_date} の辞書
+    """
+    try:
+        from src.scraper.auto_odds_fetcher import AutoOddsFetcher
+
+        with st.spinner("オッズを取得中..."):
+            fetcher = AutoOddsFetcher(delay=1.0)
+            result = fetcher.fetch_odds_for_today(today_schedule)
+            fetcher.close()
+
+            if result['success_count'] > 0:
+                st.success(f"✅ オッズ取得: {result['success_count']}/{result['total_races']} レース")
+            else:
+                st.warning("⚠️ オッズ取得に失敗しました（レース開始前の可能性があります）")
+
+    except Exception as e:
+        st.warning(f"⚠️ オッズ取得エラー: {e}")
+        st.info("オッズは後から「オッズ自動取得」で取得できます")
 
 
 def generate_and_save_predictions(today_schedule):

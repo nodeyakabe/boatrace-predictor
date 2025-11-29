@@ -1,9 +1,9 @@
 {
-  "course_weight": 35,
-  "racer_weight": 35,
-  "motor_weight": 20,
+  "course_weight": 55,
+  "racer_weight": 25,
+  "motor_weight": 10,
   "kimarite_weight": 5,
   "grade_weight": 5,
   "total": 100,
-  "description": "Scoring weights with all 5 components: Course=35, Racer=35, Motor=20, Kimarite=5, Grade=5"
+  "description": "Scoring weights: Course=55 (Course x Rank interaction), Racer=25 (performance only), Motor=10, Kimarite=5, Grade=5. Racer rank is reflected in course score."
 }

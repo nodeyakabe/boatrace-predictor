@@ -50,7 +50,7 @@ def render_realtime_dashboard():
 
                 if predictions and len(predictions) >= 3:
                     top3 = predictions[:3]
-                    confidence = min(top3[0]['total_score'], 100.0)
+                    confidence = min(top3[0].get('total_score', top3[0].get('score', 50)), 100.0)
 
                     if confidence >= 55:  # 閾値を下げて表示数を増やす
                         recommended_races.append({
@@ -158,7 +158,7 @@ def render_race_detail_viewer(race_date, venue_code, race_number):
                 with col2:
                     st.write(f"**{pred.get('racer_name', 'N/A')}**")
                 with col3:
-                    st.write(f"スコア: {pred['total_score']:.1f}")
+                    st.write(f"スコア: {pred.get('total_score', pred.get('score', 50)):.1f}")
 
             # 適用法則を表示
             st.markdown("---")

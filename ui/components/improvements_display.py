@@ -183,7 +183,8 @@ def render_first_place_lock_details(predictions: List[Dict]):
     lock_analyzer = FirstPlaceLockAnalyzer()
 
     # 推定勝率を取得（仮に total_score から計算）
-    estimated_win_rate = pit1.get('estimated_win_rate', pit1['total_score'] / 100.0)
+    total_score = pit1.get('total_score', pit1.get('score', 50))
+    estimated_win_rate = pit1.get('estimated_win_rate', total_score / 100.0)
     data_completeness = pit1.get('data_completeness_score', 50)
 
     result = lock_analyzer.should_lock_first_place(

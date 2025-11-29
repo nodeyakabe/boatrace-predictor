@@ -23,6 +23,7 @@ from ui.components.common.db_utils import get_db_connection, safe_query_to_df
 # Tab1: データ参照
 from ui.components.venue_analysis import render_venue_analysis_page
 from ui.components.racer_analysis import render_racer_analysis_page
+from ui.components.pattern_analysis import render_pattern_analysis_page
 
 # Tab2: レース予想（統合版） - 遅延インポートに変更
 # from ui.components.unified_race_list import render_unified_race_list, check_and_show_detail, get_selected_race
@@ -83,7 +84,7 @@ def main():
 
         data_view = st.selectbox(
             "表示内容を選択",
-            ["レース結果", "会場分析", "選手分析", "統計情報"]
+            ["レース結果", "会場分析", "選手分析", "パターン分析", "統計情報"]
         )
 
         if data_view == "レース結果":
@@ -94,6 +95,9 @@ def main():
 
         elif data_view == "選手分析":
             render_racer_analysis_page()
+
+        elif data_view == "パターン分析":
+            render_pattern_analysis_page()
 
         elif data_view == "統計情報":
             render_statistics_view()

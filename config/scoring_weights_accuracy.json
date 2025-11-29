@@ -1,0 +1,10 @@
+{
+  "course_weight": 50,
+  "racer_weight": 30,
+  "motor_weight": 10,
+  "kimarite_weight": 5,
+  "grade_weight": 5,
+  "total": 100,
+  "mode": "accuracy",
+  "description": "的中率重視モード: コース重視でイン有利を強調。当たりやすいが期待値は低い。"
+}

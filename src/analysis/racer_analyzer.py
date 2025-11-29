@@ -482,12 +482,13 @@ class RacerAnalyzer:
 
         venue_code = race_info['venue_code']
 
-        # エントリー取得
+        # エントリー取得（racer_rankを追加）
         entry_query = """
             SELECT
                 e.pit_number,
                 e.racer_number,
                 e.racer_name,
+                e.racer_rank,
                 rd.actual_course
             FROM entries e
             LEFT JOIN race_details rd ON e.race_id = rd.race_id AND e.pit_number = rd.pit_number
@@ -500,6 +501,7 @@ class RacerAnalyzer:
         for entry in entries:
             racer_number = entry['racer_number']
             actual_course = entry['actual_course']
+            racer_rank = entry['racer_rank'] if entry['racer_rank'] else 'B2'  # デフォルトB2
 
             # 各種統計を取得
             overall_stats = self.get_racer_overall_stats(racer_number)
@@ -519,6 +521,7 @@ class RacerAnalyzer:
                 'pit_number': entry['pit_number'],
                 'racer_number': racer_number,
                 'racer_name': entry['racer_name'],
+                'racer_rank': racer_rank,
                 'overall_stats': overall_stats,
                 'course_stats': course_stats,
                 'venue_stats': venue_stats,
@@ -534,28 +537,29 @@ class RacerAnalyzer:
 
     def calculate_racer_score(self, racer_analysis: Dict) -> float:
         """
-        選手の総合スコアを計算（最大40点、最低12点保証）
+        選手の総合スコアを計算（最大40点、最低8点保証）
 
-        ラプラス平滑化を使用してデータ不足時の0%問題を解消。
-        レース数に応じて段階的に個人データの重みを上げる。
+        注意: 選手ランク（A1/A2/B1/B2）はコース×ランクスコアで既に反映済み。
+        ここでは純粋に実績（勝率、コース別、当地、直近）のみで評価する。
 
-        改善点:
-        - ラプラス平滑化で外枠0%問題を解消
-        - 基礎点を追加して最低限のスコアを保証
-        - スコアの分布を広げて差別化を強化
+        配点:
+        - 全国勝率: 0-8点
+        - コース別勝率: 0-8点
+        - 当地成績: 0-6点
+        - 直近5走: 0-8点（★強化）
+        - ST評価: 0-2点
 
         Args:
             racer_analysis: analyze_race_entries()の各選手データ
 
         Returns:
-            選手スコア（12-40点）
+            選手スコア（8-40点）
         """
-        # 基礎点: 12点（30%）を保証
-        BASE_SCORE = 12.0
-
+        # 基礎点（最低保証）
+        BASE_SCORE = 8.0
         score = BASE_SCORE
 
-        # 1. 全国勝率（0-10点）- ラプラス平滑化を使用
+        # 1. 全国勝率（0-8点）- ラプラス平滑化を使用
         overall_stats = racer_analysis['overall_stats']
         total_races = overall_stats['total_races']
         win_count = overall_stats['win_count']
@@ -563,10 +567,10 @@ class RacerAnalyzer:
         # ラプラス平滑化で勝率を計算（データなしでも16.7%相当になる）
         smoothed_win_rate = laplace_smoothing(win_count, total_races, alpha=2.0, k=6)
 
-        # 勝率30%で10点満点（全国平均16.7%で約5.6点）
-        score += min(smoothed_win_rate * 33.3, 10.0)
+        # 勝率30%で8点満点（全国平均16.7%で約4.5点）
+        score += min(smoothed_win_rate * 26.7, 8.0)
 
-        # 2. コース別勝率（0-10点）- ラプラス平滑化を使用
+        # 2. コース別勝率（0-8点）- ラプラス平滑化を使用
         course_stats = racer_analysis['course_stats']
         course_races = course_stats['total_races']
         course_wins = course_stats['win_count']
@@ -574,10 +578,10 @@ class RacerAnalyzer:
         # ラプラス平滑化（コースデータは少ないのでalphaを小さめに）
         smoothed_course_rate = laplace_smoothing(course_wins, course_races, alpha=1.5, k=6)
 
-        # 25%で10点満点
-        score += min(smoothed_course_rate * 40, 10.0)
+        # 25%で8点満点
+        score += min(smoothed_course_rate * 32, 8.0)
 
-        # 3. 当地成績（0-8点）- ラプラス平滑化を使用
+        # 3. 当地成績（0-6点）- ラプラス平滑化を使用
         venue_stats = racer_analysis['venue_stats']
         venue_races = venue_stats['total_races']
         # venue_statsにwin_countがない場合は計算
@@ -586,31 +590,37 @@ class RacerAnalyzer:
         # ラプラス平滑化（当地データも少ないのでalphaを小さめに）
         smoothed_venue_rate = laplace_smoothing(venue_wins, venue_races, alpha=1.0, k=6)
 
-        # 25%で8点満点
-        score += min(smoothed_venue_rate * 32, 8.0)
+        # 25%で6点満点
+        score += min(smoothed_venue_rate * 24, 6.0)
 
-        # 4. 直近調子（0-5点）
+        # 4. 直近調子（0-8点）★強化：競艇は直近パフォーマンスが非常に重要
         recent_form = racer_analysis['recent_form']
         if recent_form['recent_races']:
             recent_count = len(recent_form['recent_races'])
-            recent_wins = sum(1 for r in recent_form['recent_races'] if r == 1)
 
-            # ラプラス平滑化
-            smoothed_recent_rate = laplace_smoothing(recent_wins, recent_count, alpha=1.0, k=6)
+            # 直近5走を特に重視（最新ほど重要）
+            recent_5 = recent_form['recent_races'][:5] if recent_count >= 5 else recent_form['recent_races']
+            recent_5_wins = sum(1 for r in recent_5 if r == 1)
+            recent_5_place3 = sum(1 for r in recent_5 if r <= 3)
 
-            # 25%で5点満点
-            score += min(smoothed_recent_rate * 20, 5.0)
+            # 直近5走の勝率（0-4点）
+            recent_5_win_rate = recent_5_wins / len(recent_5) if recent_5 else 0
+            score += min(recent_5_win_rate * 20, 4.0)  # 20%で4点
 
-            # 調子の傾向でボーナス/ペナルティ（データが十分な場合のみ）
+            # 直近5走の3着以内率（0-3点）
+            recent_5_place3_rate = recent_5_place3 / len(recent_5) if recent_5 else 0
+            score += min(recent_5_place3_rate * 5, 3.0)  # 60%で3点
+
+            # 調子の傾向でボーナス/ペナルティ（0-1点）
             if recent_count >= 5:
                 if recent_form['form_trend'] == 'up':
-                    score += 1.0
+                    score += 1.0  # 調子上昇
                 elif recent_form['form_trend'] == 'down':
-                    score -= 0.5  # ペナルティは軽減
+                    score -= 1.0  # 調子下降は大きなペナルティ
         else:
             # 直近データなしでもラプラス平滑化で最低限のスコア
             smoothed_recent_rate = laplace_smoothing(0, 0, alpha=1.0, k=6)
-            score += min(smoothed_recent_rate * 20 * 0.5, 2.5)
+            score += min(smoothed_recent_rate * 16 * 0.5, 2.0)
 
         # 5. ST評価（0-2点）
         st_stats = racer_analysis['st_stats']

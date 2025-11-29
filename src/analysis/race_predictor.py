@@ -16,6 +16,7 @@ from .weather_adjuster import WeatherAdjuster
 from .tide_adjuster import TideAdjuster
 from .exhibition_analyzer import ExhibitionAnalyzer
 from .extended_scorer import ExtendedScorer
+from .compound_buff_system import CompoundBuffSystem
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -33,8 +34,22 @@ from config.settings import (
 class RacePredictor:
     """レース予想クラス"""
 
-    def __init__(self, db_path="data/boatrace.db", custom_weights: Dict[str, float] = None, use_cache: bool = False):
+    def __init__(self, db_path="data/boatrace.db", custom_weights: Dict[str, float] = None,
+                 mode: Optional[str] = None, use_cache: bool = False):
+        """
+        レース予想クラスの初期化
+
+        Args:
+            db_path: データベースパス
+            custom_weights: カスタム重み設定（指定時はmodeより優先）
+            mode: 予測モード
+                - 'accuracy': 的中率重視（コース重視）
+                - 'value': 期待値重視（選手・モーター重視）
+                - None: デフォルト設定
+            use_cache: キャッシュを使用するかどうか
+        """
         self.db_path = db_path
+        self.mode = mode
         self.use_cache = use_cache
 
         # BatchDataLoaderの初期化（キャッシュ使用時のみ）
@@ -52,10 +67,14 @@ class RacePredictor:
         self.tide_adjuster = TideAdjuster(db_path)
         self.exhibition_analyzer = ExhibitionAnalyzer()
         self.extended_scorer = ExtendedScorer(db_path, batch_loader=self.batch_loader)
+        self.compound_buff_system = CompoundBuffSystem(db_path)
 
-        # 重み設定をロード
+        # 重み設定をロード（優先順位: custom_weights > mode > default）
         if custom_weights:
             self.weights = custom_weights
+        elif mode:
+            config = ScoringConfig.for_mode(mode)
+            self.weights = config.load_weights()
         else:
             config = ScoringConfig()
             self.weights = config.load_weights()
@@ -77,6 +96,10 @@ class RacePredictor:
     # 動的重み調整（回収率改善のため）
     # ========================================
     # 注: 会場分類は config/settings.py から読み込み
+
+    # モーター差が極端に出る会場（足が勝負を左右する）
+    # 唐津(23)、福岡(22)、徳山(18) - 海水で波が高く、足の差が出やすい
+    HIGH_MOTOR_VENUES = ['23', '22', '18', '21']  # 唐津、福岡、徳山、芦屋
 
     def _adjust_weights_dynamically(
         self,
@@ -101,6 +124,7 @@ class RacePredictor:
         dynamic_weights = get_dynamic_weights(venue_code)
         venue_type = get_venue_type(venue_code)
 
+<<<<<<< Updated upstream
         weights = {
             'course_weight': dynamic_weights['course'],
             'racer_weight': dynamic_weights['racer'],
@@ -109,6 +133,28 @@ class RacePredictor:
             'kimarite_weight': self.weights.get('kimarite_weight', 5.0),
             'grade_weight': self.weights.get('grade_weight', 5.0),
         }
+=======
+        # === モーター差が極端に出る会場 ===
+        # ★ 最優先で処理（唐津/福岡/徳山はモーターが勝負を決める）
+        if venue_code in self.HIGH_MOTOR_VENUES:
+            # モーター重み +8〜10、コース重み -5
+            weights['motor_weight'] = weights.get('motor_weight', 20) + 8
+            weights['course_weight'] = weights.get('course_weight', 35) - 5
+            weights['kimarite_weight'] = weights.get('kimarite_weight', 5) + 2
+
+        # === 会場別調整（イン有利/不利） ===
+        elif venue_code in self.HIGH_IN_VENUES:
+            # インが強い会場: コース重視、モーター軽視
+            weights['course_weight'] = weights.get('course_weight', 35) + 3
+            weights['motor_weight'] = weights.get('motor_weight', 20) - 2
+            weights['racer_weight'] = weights.get('racer_weight', 35) - 1
+
+        elif venue_code in self.LOW_IN_VENUES:
+            # インが弱い会場: モーター・選手重視、コース軽視
+            weights['course_weight'] = weights.get('course_weight', 35) - 5
+            weights['motor_weight'] = weights.get('motor_weight', 20) + 4
+            weights['racer_weight'] = weights.get('racer_weight', 35) + 2
+>>>>>>> Stashed changes
 
         # === グレード別調整 ===
         if race_grade in ['SG', 'G1']:
@@ -203,13 +249,25 @@ class RacePredictor:
         6: 0.03,  # 6コース: 約3%
     }
 
+    # コース×ランク別 実績勝率（過去データより算出）
+    # これがスコアリングの基盤となる
+    COURSE_RANK_WIN_RATES = {
+        # (コース, ランク): 勝率
+        (1, 'A1'): 0.715,  (1, 'A2'): 0.611,  (1, 'B1'): 0.424,  (1, 'B2'): 0.303,
+        (2, 'A1'): 0.195,  (2, 'A2'): 0.167,  (2, 'B1'): 0.096,  (2, 'B2'): 0.081,
+        (3, 'A1'): 0.182,  (3, 'A2'): 0.162,  (3, 'B1'): 0.091,  (3, 'B2'): 0.066,
+        (4, 'A1'): 0.138,  (4, 'A2'): 0.119,  (4, 'B1'): 0.076,  (4, 'B2'): 0.039,
+        (5, 'A1'): 0.100,  (5, 'A2'): 0.073,  (5, 'B1'): 0.044,  (5, 'B2'): 0.020,
+        (6, 'A1'): 0.066,  (6, 'A2'): 0.034,  (6, 'B1'): 0.017,  (6, 'B2'): 0.006,
+    }
+
     def calculate_course_score(self, venue_code: str, course: int) -> float:
         """
-        コース別スコアを計算（正規化版）
+        コース別スコアを計算（正規化版・インコース優位性強化）
 
         改善点:
-        - 全国平均との相対評価で正規化
-        - 各コースが理論上の最大スコアに到達可能
+        - 1コースの圧倒的優位性を反映（基礎点＋勝率反映）
+        - コース間のスコア差を拡大
         - 会場特性を適切に反映
 
         Args:
@@ -231,41 +289,45 @@ class RacePredictor:
 
         max_score = self.weights['course_weight']
 
-        # === 正規化ロジック（改良版） ===
-        # 方針:
-        #   1. 絶対的な勝率で基礎点を計算（実力を反映）
-        #   2. 会場平均との比較でボーナス/ペナルティを付与
-        #
-        # これにより:
-        #   - 1コース（勝率55%）は基本的に高スコア
-        #   - 6コース（勝率3%）は基本的に低スコア
-        #   - 会場特性で微調整
+        # === コース別基礎点システム（強化版） ===
+        # ボートレースの現実を反映: 1コースが圧倒的に有利
+        # 基礎点を主体とし、勝率・会場特性は微調整に留める
+        COURSE_BASE_POINTS = {
+            1: 1.00,  # 1コースは基礎点100%（圧倒的有利）
+            2: 0.40,  # 2コースは基礎点40%
+            3: 0.35,  # 3コースは基礎点35%
+            4: 0.30,  # 4コースは基礎点30%
+            5: 0.25,  # 5コースは基礎点25%
+            6: 0.20,  # 6コースは基礎点20%
+        }
 
-        # 1. 絶対的な勝率スコア（60%の配分）
-        # 勝率をシグモイド風に正規化して0-1にマッピング
-        # 中央値を約16.7%（1/6）として、勝率が高いほど高スコア
-        # max勝率70%を想定して設計
-        win_rate_normalized = min(win_rate / 0.70, 1.0)  # 70%で1.0に到達
-        absolute_score = max_score * 0.60 * win_rate_normalized
+        base_factor = COURSE_BASE_POINTS.get(course, 0.30)
 
-        # 2. 会場特性スコア（40%の配分）
-        # 全国平均との比較で、その会場でそのコースがどれだけ有利/不利か
+        # 1. コース基礎点（70%の配分）
+        # コースによる固定の優位性を強く反映
+        base_score = max_score * 0.70 * base_factor
+
+        # 2. 実際の勝率スコア（20%の配分）
+        # 全コース共通の基準で評価（勝率が高いほど高スコア）
+        # 1コース55%が基準、それ以上で満点
+        win_rate_factor = min(win_rate / 0.55, 1.0)
+        win_rate_score = max_score * 0.20 * win_rate_factor
+
+        # 3. 会場特性スコア（10%の配分）
+        # 全国平均との比較（影響を縮小）
         if national_avg > 0:
             ratio = win_rate / national_avg
         else:
             ratio = 1.0
 
-        # ratioを0.7〜1.3の範囲に制限し、0〜1にマッピング
-        # ratio=0.7 → 0, ratio=1.0 → 0.5, ratio=1.3 → 1.0
-        ratio_clamped = max(0.7, min(1.3, ratio))
-        venue_factor = (ratio_clamped - 0.7) / 0.6  # 0〜1
+        # ratioを0.8〜1.2の範囲に制限し、0〜1にマッピング
+        ratio_clamped = max(0.8, min(1.2, ratio))
+        venue_factor = (ratio_clamped - 0.8) / 0.4  # 0〜1
+        venue_score = max_score * 0.10 * venue_factor
 
-        venue_score = max_score * 0.40 * venue_factor
-
-        score = absolute_score + venue_score
+        score = base_score + win_rate_score + venue_score
 
         # 会場・コース別補正（全コースに適用）
-        # 1コース用の特別補正も適用維持
         if course == 1:
             venue_adjustment = get_venue_adjustment(venue_code)
             score = score * venue_adjustment
@@ -277,6 +339,42 @@ class RacePredictor:
         score = score * course_adjustment
 
         return score
+
+    def calculate_course_rank_score(self, course: int, racer_rank: str, venue_code: str) -> float:
+        """
+        コース×ランクの実績勝率に基づくスコアを計算
+
+        実際のデータから算出した勝率をベースに、
+        コースと選手ランクの相互作用を正確に反映。
+
+        Args:
+            course: コース番号（1-6）
+            racer_rank: 選手ランク（A1, A2, B1, B2）
+            venue_code: 競艇場コード
+
+        Returns:
+            コース×ランクスコア（0〜course_weight）
+        """
+        max_score = self.weights['course_weight']
+
+        # コース×ランクの実績勝率を取得
+        base_win_rate = self.COURSE_RANK_WIN_RATES.get(
+            (course, racer_rank),
+            self.NATIONAL_AVG_WIN_RATES.get(course, 0.10)  # フォールバック
+        )
+
+        # 会場特性による補正（±20%程度）
+        course_adjustment = get_venue_course_adjustment(venue_code, course)
+        course_adjustment = max(0.80, min(1.20, course_adjustment))
+
+        adjusted_win_rate = base_win_rate * course_adjustment
+
+        # 勝率をスコアに変換
+        # 最大勝率（1コースA1: 71.5%）で満点になるよう正規化
+        MAX_WIN_RATE = 0.72
+        score = (adjusted_win_rate / MAX_WIN_RATE) * max_score
+
+        return min(score, max_score)
 
     # ========================================
     # レース単位での総合予想
@@ -459,21 +557,23 @@ class RacePredictor:
         for racer_analysis, motor_analysis in zip(racer_analyses, motor_analyses):
             pit_number = racer_analysis['pit_number']
             racer_name = racer_analysis['racer_name']
+            racer_rank = racer_analysis.get('racer_rank', 'B2')  # ランクを取得
 
             # 進入コース（レース前の予測では枠番を使用）
             # 注: actual_courseはレース終了後にしか取得できないため、
             # 予測時は枠番をコースとして使用（ボートレースでは枠番=進入コースが多い）
             course = pit_number
 
-            # 各スコア計算（動的調整後の重みを使用）
-            # course_scoreは既に重みが反映されている（勝率 * max_score）
-            # 一時的にweightsを差し替えてcourse_scoreを計算
+            # === コース×ランクスコア（新方式） ===
+            # 実績勝率に基づくスコア計算で、コースと選手ランクの相互作用を正確に反映
             original_course_weight = self.weights['course_weight']
             self.weights['course_weight'] = adjusted_weights['course_weight']
-            course_score = self.calculate_course_score(venue_code, course)
+            course_score = self.calculate_course_rank_score(course, racer_rank, venue_code)
             self.weights['course_weight'] = original_course_weight  # 元に戻す
 
-            # 選手・モーターは固定値(40/20)で計算されるので、動的調整後の重み設定に応じて変換
+            # 選手スコア（ランクは既にcourse_scoreで反映されているので、
+            # ここでは実績ベースの補正のみ）
+            # racer_score_raw: 8-40点（直近5走強化後）→ racer_weight に正規化
             racer_score_raw = self.racer_analyzer.calculate_racer_score(racer_analysis)
             motor_score_raw = self.motor_analyzer.calculate_motor_score(motor_analysis)
             racer_score = racer_score_raw * (adjusted_weights['racer_weight'] / 40.0)
@@ -488,6 +588,33 @@ class RacePredictor:
                 max_score=adjusted_weights['kimarite_weight']
             )
             kimarite_score = kimarite_result['score']
+
+            # 決まり手×環境連動補正を適用
+            # 潮位情報を取得（後続の_apply_tide_adjustmentと共通化）
+            tide_phase = None
+            if venue_code in self.tide_adjuster.TIDE_DATA_VENUES:
+                from datetime import datetime
+                try:
+                    if race_time:
+                        race_datetime = datetime.strptime(f"{race_date} {race_time}", "%Y-%m-%d %H:%M")
+                    else:
+                        race_datetime = datetime.strptime(f"{race_date} 12:00", "%Y-%m-%d %H:%M")
+                    tide_data = self.tide_adjuster.get_tide_level(venue_code, race_datetime)
+                    if tide_data:
+                        tide_phase = tide_data.get('phase')
+                except Exception:
+                    pass
+
+            kimarite_score = self.kimarite_scorer.apply_environment_adjustment(
+                kimarite_score,
+                kimarite_result,
+                wind_speed,
+                wave_height,
+                wind_direction,
+                tide_phase,
+                venue_code,
+                course
+            )
 
             # グレード適性スコアを計算（動的調整後の重みを使用）
             grade_result = self.grade_scorer.calculate_grade_affinity_score(
@@ -558,6 +685,26 @@ class RacePredictor:
             else:
                 total_score = raw_total
 
+            # ========================================
+            # 複合条件バフを計算・適用
+            # ========================================
+            compound_buff_result = self.compound_buff_system.calculate_compound_buff(
+                venue_code=venue_code,
+                course=course,
+                racer_analysis=racer_analysis,
+                motor_analysis=motor_analysis,
+                tide_phase=tide_phase,
+                wind_speed=wind_speed,
+                wind_direction=wind_direction,
+                wave_height=wave_height,
+                kimarite_result=kimarite_result,
+                max_total_buff=15.0  # 最大15点のバフ/デバフ
+            )
+            compound_buff = compound_buff_result['total_buff']
+
+            # スコアにバフを適用（0-100範囲を維持）
+            total_score = max(0.0, min(100.0, total_score + compound_buff))
+
             # 信頼度判定（A-E）
             confidence = self._calculate_confidence(total_score, racer_analysis, motor_analysis)
 
@@ -573,11 +720,13 @@ class RacePredictor:
                 'kimarite_score': round(kimarite_score, 1),
                 'grade_score': round(grade_score, 1),
                 'extended_score': round(extended_score, 1),
+                'compound_buff': round(compound_buff, 1),
                 'total_score': round(total_score, 1),
                 'confidence': confidence,
                 # 詳細情報
                 'kimarite_detail': kimarite_result,
                 'grade_detail': grade_result,
+                'compound_buff_detail': compound_buff_result,
             }
 
             # 拡張スコア詳細を追加（存在する場合）

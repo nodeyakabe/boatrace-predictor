@@ -208,17 +208,12 @@ def _render_ai_prediction(race_id, race_date_str, venue_code, race_number, racer
             st.markdown("---")
 
     # 全艇の予想
-    with st.expander("📊 全艇の予想スコア（詳細）", expanded=True):
-        # 基本情報
+    with st.expander("📊 全艇の予想スコア", expanded=False):
         df = pd.DataFrame([{
             '順位': i+1,
             '艇番': p['pit_number'],
             '選手': p.get('racer_name', '選手名不明'),
-            '合計': f"{p['total_score']:.1f}",
-            'コース': f"{p.get('course_score', 0):.1f}",
-            '選手': f"{p.get('racer_score', 0):.1f}",
-            'モーター': f"{p.get('motor_score', 0):.1f}",
-            '拡張': f"{p.get('extended_score', 0):.1f}",
+            'スコア': f"{p.get('total_score', p.get('score', 0)):.2f}"
         } for i, p in enumerate(predictions)])
 
         st.dataframe(df, use_container_width=True, hide_index=True)
@@ -628,14 +623,14 @@ def _render_expected_value_analysis(predictions, race_id, venue_code, race_date_
     else:
         # 推定オッズ（スコアに基づいて逆算）
         st.info("💡 スコアに基づく推定オッズを使用中")
-        total_score = sum(p['total_score'] for p in predictions)
+        total_score = sum(p.get('total_score', p.get('score', 50)) for p in predictions)
 
         for combo in combinations_3tan:
             # 簡易的な推定（実際のオッズは異なる）
             parts = combo.split('-')
-            first_score = next(p['total_score'] for p in predictions if p['pit_number'] == int(parts[0]))
-            second_score = next(p['total_score'] for p in predictions if p['pit_number'] == int(parts[1]))
-            third_score = next(p['total_score'] for p in predictions if p['pit_number'] == int(parts[2]))
+            first_score = next(p.get('total_score', p.get('score', 50)) for p in predictions if p['pit_number'] == int(parts[0]))
+            second_score = next(p.get('total_score', p.get('score', 50)) for p in predictions if p['pit_number'] == int(parts[1]))
+            third_score = next(p.get('total_score', p.get('score', 50)) for p in predictions if p['pit_number'] == int(parts[2]))
 
             # スコアから確率を推定し、オッズに変換
             combo_score = first_score * 0.5 + second_score * 0.3 + third_score * 0.2
@@ -653,7 +648,7 @@ def _render_expected_value_analysis(predictions, race_id, venue_code, race_date_
     # 予測確率を計算（スコアからsoftmaxで変換）
     import numpy as np
 
-    scores = np.array([p['total_score'] for p in predictions])
+    scores = np.array([p.get('total_score', p.get('score', 50)) for p in predictions])
     temperature = 15.0
     exp_scores = np.exp(scores / temperature)
     base_probs = exp_scores / np.sum(exp_scores)

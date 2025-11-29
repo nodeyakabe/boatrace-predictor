@@ -1,0 +1,10 @@
+{
+  "course_weight": 25,
+  "racer_weight": 35,
+  "motor_weight": 20,
+  "kimarite_weight": 15,
+  "grade_weight": 5,
+  "total": 100,
+  "mode": "value",
+  "description": "期待値重視モード: コース過大評価を抑え、モーター・選手直近成績・決まり手を重視。穴を正しく拾い回収率向上を狙う。"
+}

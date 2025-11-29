@@ -63,10 +63,11 @@ def render_prediction_viewer(race_date, venue_code, race_number):
                     st.markdown(f"{racer_name}")
 
                 with col3:
-                    st.metric("スコア", f"{pred['total_score']:.1f}")
+                    score = pred.get('total_score', pred.get('score', 50))
+                    st.metric("スコア", f"{score:.1f}")
 
                 with col4:
-                    confidence = pred['total_score']
+                    confidence = pred.get('total_score', pred.get('score', 50))
                     badge = render_confidence_badge(confidence)
                     st.markdown(f"**{badge}**")
 
@@ -77,7 +78,7 @@ def render_prediction_viewer(race_date, venue_code, race_number):
             df = pd.DataFrame([{
                 '艇番': p['pit_number'],
                 '選手': p.get('racer_name', '選手名不明'),
-                'スコア': f"{p['total_score']:.2f}",
+                'スコア': f"{p.get('total_score', p.get('score', 50)):.2f}",
                 '順位': i+1
             } for i, p in enumerate(predictions)])
 
@@ -101,7 +102,7 @@ def render_prediction_viewer(race_date, venue_code, race_number):
 
                     if selected_pred:
                         # モデル予測確率を正規化スコアから推定
-                        model_prob = selected_pred['total_score'] / 100
+                        model_prob = selected_pred.get('total_score', selected_pred.get('score', 50)) / 100
 
                         # 予測データを構築
                         pred_data = {
@@ -315,7 +316,7 @@ def render_multiple_predictions(race_list):
 
                 if predictions and len(predictions) >= 3:
                     top3 = predictions[:3]
-                    confidence = top3[0]['total_score']
+                    confidence = top3[0].get('total_score', top3[0].get('score', 50))
 
                     predictions_summary.append({
                         '会場': race.get('venue_name', venue_code),

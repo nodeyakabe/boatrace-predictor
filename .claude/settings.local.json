@@ -1,6 +1,8 @@
 {
   "permissions": {
     "allow": [
+      "Write",
+      "Edit",
       "Bash(sqlite3:*)",
       "Bash(python:*)",
       "Bash(iconv:*)",

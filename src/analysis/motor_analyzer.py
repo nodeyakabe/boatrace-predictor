@@ -363,29 +363,27 @@ class MotorAnalyzer:
 
     def calculate_motor_score(self, motor_analysis: Dict) -> float:
         """
-        モーター・ボートの総合スコアを計算（最大20点、最低6点保証）
-
-        ラプラス平滑化を使用してデータ不足時の安定性を向上。
+        モーター・ボートの総合スコアを計算（最大20点、最低12点保証）
 
         改善点:
+        - 基礎点を高くし、モーター差の影響を縮小
         - ラプラス平滑化で小サンプル問題を解消
-        - 基礎点を追加して最低限のスコアを保証
-        - スコア範囲を広げて差別化を強化
+        - コース・選手より影響を小さくする
 
         Args:
             motor_analysis: analyze_race_motors()の各モーターデータ
 
         Returns:
-            モータースコア（6-20点）
+            モータースコア（12-20点）
         """
-        # 基礎点: 6点（30%）を保証
-        BASE_SCORE = 6.0
+        # 基礎点: 12点（60%）を保証 - モーターの影響を縮小
+        BASE_SCORE = 12.0
         score = BASE_SCORE
 
         # 全国平均値（基準値）
         NATIONAL_AVG_PLACE_RATE_2 = 0.50  # 2連対率50%（ラプラス平滑化のデフォルト値）
 
-        # 1. モーター2連対率（0-7点）- ラプラス平滑化を使用
+        # 1. モーター2連対率（0-4点）- ラプラス平滑化を使用
         motor_stats = motor_analysis['motor_stats']
         motor_races = motor_stats['total_races']
         motor_place_2 = int(motor_stats.get('place_rate_2', 0) * motor_races) if motor_races > 0 else 0
@@ -393,12 +391,11 @@ class MotorAnalyzer:
         # ラプラス平滑化で2連対率を計算（データなしでも50%相当）
         smoothed_rate = laplace_smoothing(motor_place_2, motor_races, alpha=2.0, k=2)
 
-        # 50%を3.5点（中央値）とし、65%以上で7点満点
-        # 式: (rate - 0.50) / (0.65 - 0.50) * 3.5 + 3.5
-        relative_score = (smoothed_rate - 0.50) / 0.15 * 3.5 + 3.5
-        score += max(0.0, min(relative_score, 7.0))
+        # 50%を2点（中央値）とし、65%以上で4点満点
+        relative_score = (smoothed_rate - 0.50) / 0.15 * 2.0 + 2.0
+        score += max(0.0, min(relative_score, 4.0))
 
-        # 2. モーター直近成績（0-5点）- ラプラス平滑化を使用
+        # 2. モーター直近成績（0-2点）- ラプラス平滑化を使用
         motor_recent = motor_analysis['motor_recent_form']
         if motor_recent['recent_races']:
             recent_count = len(motor_recent['recent_races'])
@@ -407,14 +404,14 @@ class MotorAnalyzer:
             # ラプラス平滑化で3連対率を計算
             smoothed_recent = laplace_smoothing(recent_place_3_count, recent_count, alpha=1.5, k=2)
 
-            # 50%を2.5点（中央値）とし、70%以上で5点満点
-            relative_score = (smoothed_recent - 0.50) / 0.20 * 2.5 + 2.5
-            score += max(0.0, min(relative_score, 5.0))
+            # 50%を1点（中央値）とし、70%以上で2点満点
+            relative_score = (smoothed_recent - 0.50) / 0.20 * 1.0 + 1.0
+            score += max(0.0, min(relative_score, 2.0))
         else:
-            # データなしは平均値（2.5点）
-            score += 2.5
+            # データなしは平均値（1点）
+            score += 1.0
 
-        # 3. ボート2連対率（0-5点）- ラプラス平滑化を使用
+        # 3. ボート2連対率（0-2点）- ラプラス平滑化を使用
         boat_stats = motor_analysis['boat_stats']
         boat_races = boat_stats['total_races']
         boat_place_2 = int(boat_stats.get('place_rate_2', 0) * boat_races) if boat_races > 0 else 0
@@ -422,9 +419,9 @@ class MotorAnalyzer:
         # ラプラス平滑化で2連対率を計算
         smoothed_boat = laplace_smoothing(boat_place_2, boat_races, alpha=1.5, k=2)
 
-        # 50%を2.5点（中央値）とし、65%以上で5点満点
-        relative_score = (smoothed_boat - 0.50) / 0.15 * 2.5 + 2.5
-        score += max(0.0, min(relative_score, 5.0))
+        # 50%を1点（中央値）とし、65%以上で2点満点
+        relative_score = (smoothed_boat - 0.50) / 0.15 * 1.0 + 1.0
+        score += max(0.0, min(relative_score, 2.0))
 
         return min(score, 20.0)
 

@@ -234,6 +234,97 @@ class KimariteScorer:
 
         return results
 
+    def apply_environment_adjustment(
+        self,
+        base_score: float,
+        kimarite_result: Dict,
+        wind_speed: Optional[float],
+        wave_height: Optional[float],
+        wind_direction: Optional[str],
+        tide_phase: Optional[str],
+        venue_code: str,
+        course: int
+    ) -> float:
+        """
+        決まり手スコアに環境条件を加味した補正を適用
+
+        競艇の決まり手は環境条件と密接に関連する：
+        - 強風(6m以上): まくり有利、逃げ不利
+        - 上げ潮: 逃げ有利（水面が穏やか）
+        - 向かい風: 逃げ有利（スタートしやすい）
+        - 追い風: まくり有利（スピードが乗る）
+        - 海水会場: 波の影響で決まり手傾向が変化
+
+        Args:
+            base_score: 基本の決まり手スコア
+            kimarite_result: calculate_kimarite_affinity_score()の結果
+            wind_speed: 風速(m/s)
+            wave_height: 波高(cm)
+            wind_direction: 風向
+            tide_phase: 潮位状態('満潮', '上げ潮', '干潮', '下げ潮')
+            venue_code: 会場コード
+            course: コース番号
+
+        Returns:
+            環境補正後の決まり手スコア
+        """
+        adjustment = 1.0  # 補正係数
+        racer_kimarite = kimarite_result.get('racer_primary_kimarite', '')
+
+        # === 1. 強風補正（6m以上） ===
+        if wind_speed and wind_speed >= 6:
+            if racer_kimarite == '逃げ':
+                # 強風時は逃げにくい（1コースに不利）
+                if course == 1:
+                    adjustment *= 0.8  # 20%減
+            elif racer_kimarite in ['まくり', 'まくり差し']:
+                # 強風時はまくり有利（外コースに有利）
+                if course >= 3:
+                    adjustment *= 1.2  # 20%増
+
+        # === 2. 潮位補正 ===
+        if tide_phase:
+            if tide_phase in ['満潮', '上げ潮']:
+                # 水面が穏やか → 逃げ有利
+                if racer_kimarite == '逃げ' and course == 1:
+                    adjustment *= 1.1
+            elif tide_phase in ['干潮', '下げ潮']:
+                # 荒れやすい → まくり有利
+                if racer_kimarite in ['まくり', 'まくり差し'] and course >= 3:
+                    adjustment *= 1.15
+
+        # === 3. 風向補正 ===
+        if wind_direction:
+            # 向かい風（ホームストレッチに対して）
+            headwind_dirs = ['北', '北北東', '北東', '北北西']  # 会場によって異なるが簡易判定
+            # 追い風
+            tailwind_dirs = ['南', '南南東', '南東', '南南西', '南西']
+
+            if wind_direction in headwind_dirs:
+                # 向かい風 → 逃げ有利（スタートしやすい）
+                if racer_kimarite == '逃げ' and course == 1:
+                    adjustment *= 1.1
+            elif wind_direction in tailwind_dirs:
+                # 追い風 → まくり有利（スピードが乗る）
+                if racer_kimarite in ['まくり', 'まくり差し'] and course >= 3:
+                    adjustment *= 1.1
+
+        # === 4. 海水会場の波補正 ===
+        SEAWATER_VENUES = ['17', '18', '19', '21', '22', '23', '24']  # 宮島、徳山、下関、芦屋、福岡、唐津、大村
+        if venue_code in SEAWATER_VENUES and wave_height:
+            if wave_height >= 10:  # 10cm以上の波
+                # 荒れた水面 → 逃げにくい
+                if racer_kimarite == '逃げ' and course == 1:
+                    adjustment *= 0.9
+                # 差し/まくり差し有利
+                if racer_kimarite in ['差し', 'まくり差し']:
+                    adjustment *= 1.1
+
+        # 補正係数を0.7〜1.3の範囲に制限
+        adjustment = max(0.7, min(1.3, adjustment))
+
+        return base_score * adjustment
+
 
 if __name__ == "__main__":
     # テスト
