@@ -255,7 +255,8 @@ def get_all_jobs() -> Dict[str, Dict[str, Any]]:
     jobs = {}
 
     for filename in os.listdir(JOBS_DIR):
-        if filename.endswith('.json'):
+        # _config.jsonファイルは除外
+        if filename.endswith('.json') and not filename.endswith('_config.json'):
             job_name = filename[:-5]  # .jsonを除去
             progress = get_job_progress(job_name)
             if progress:
