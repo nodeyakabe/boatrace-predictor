@@ -22,6 +22,12 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from src.utils.scoring_config import ScoringConfig
 from src.prediction.rule_based_engine import RuleBasedEngine
+# 階層的確率モデル（条件付き確率）
+try:
+    from src.prediction.hierarchical_predictor import HierarchicalPredictor
+    HIERARCHICAL_MODEL_AVAILABLE = True
+except ImportError:
+    HIERARCHICAL_MODEL_AVAILABLE = False
 from src.database.batch_data_loader import BatchDataLoader
 from config.venue_characteristics import get_venue_adjustment, get_venue_course_adjustment
 from config.settings import (
@@ -69,6 +75,14 @@ class RacePredictor:
         self.extended_scorer = ExtendedScorer(db_path, batch_loader=self.batch_loader)
         self.compound_buff_system = CompoundBuffSystem(db_path)
 
+        # 階層的確率モデル（条件付き確率ベースの三連単予測）
+        self.hierarchical_predictor = None
+        if HIERARCHICAL_MODEL_AVAILABLE:
+            try:
+                self.hierarchical_predictor = HierarchicalPredictor(db_path)
+            except Exception as e:
+                print(f"階層的予測モデル初期化エラー: {e}")
+
         # 重み設定をロード（優先順位: custom_weights > mode > default）
         if custom_weights:
             self.weights = custom_weights
@@ -101,6 +115,12 @@ class RacePredictor:
     # 唐津(23)、福岡(22)、徳山(18) - 海水で波が高く、足の差が出やすい
     HIGH_MOTOR_VENUES = ['23', '22', '18', '21']  # 唐津、福岡、徳山、芦屋
 
+    # インコースが有利な会場
+    HIGH_IN_VENUES = HIGH_IN_VENUES  # config.settingsからインポート
+
+    # インコースが不利な会場（アウト勢が強い）
+    LOW_IN_VENUES = LOW_IN_VENUES  # config.settingsからインポート
+
     def _adjust_weights_dynamically(
         self,
         venue_code: str,
@@ -124,7 +144,7 @@ class RacePredictor:
         dynamic_weights = get_dynamic_weights(venue_code)
         venue_type = get_venue_type(venue_code)
 
-<<<<<<< Updated upstream
+        # 基本重みを初期化
         weights = {
             'course_weight': dynamic_weights['course'],
             'racer_weight': dynamic_weights['racer'],
@@ -133,7 +153,7 @@ class RacePredictor:
             'kimarite_weight': self.weights.get('kimarite_weight', 5.0),
             'grade_weight': self.weights.get('grade_weight', 5.0),
         }
-=======
+
         # === モーター差が極端に出る会場 ===
         # ★ 最優先で処理（唐津/福岡/徳山はモーターが勝負を決める）
         if venue_code in self.HIGH_MOTOR_VENUES:
@@ -154,7 +174,6 @@ class RacePredictor:
             weights['course_weight'] = weights.get('course_weight', 35) - 5
             weights['motor_weight'] = weights.get('motor_weight', 20) + 4
             weights['racer_weight'] = weights.get('racer_weight', 35) + 2
->>>>>>> Stashed changes
 
         # === グレード別調整 ===
         if race_grade in ['SG', 'G1']:
@@ -708,6 +727,13 @@ class RacePredictor:
             # 信頼度判定（A-E）
             confidence = self._calculate_confidence(total_score, racer_analysis, motor_analysis)
 
+            # 各選手のデータ充実度を計算
+            racer_races = racer_analysis.get('overall_stats', {}).get('total_races', 0)
+            racer_quality = min(racer_races / 50.0, 1.0) * 50  # 50レースで50点
+            motor_races = motor_analysis.get('motor_stats', {}).get('total_races', 0)
+            motor_quality = min(motor_races / 30.0, 1.0) * 50  # 30レースで50点
+            data_completeness_score = racer_quality + motor_quality  # 0-100
+
             prediction_entry = {
                 'pit_number': pit_number,
                 'racer_name': racer_name,
@@ -723,6 +749,7 @@ class RacePredictor:
                 'compound_buff': round(compound_buff, 1),
                 'total_score': round(total_score, 1),
                 'confidence': confidence,
+                'data_completeness_score': round(data_completeness_score, 1),
                 # 詳細情報
                 'kimarite_detail': kimarite_result,
                 'grade_detail': grade_result,
@@ -787,6 +814,32 @@ class RacePredictor:
         # 順位予想を付与
         for rank, pred in enumerate(predictions, 1):
             pred['rank_prediction'] = rank
+
+        # 階層的確率モデルによる三連単予測を追加（モデルがある場合）
+        if self.hierarchical_predictor is not None:
+            try:
+                hierarchical_result = self.hierarchical_predictor.predict_race(race_id)
+                if 'error' not in hierarchical_result:
+                    # 各予測に三連単確率情報を追加
+                    rank_probs = hierarchical_result.get('rank_probs', {})
+                    for pred in predictions:
+                        pit = pred['pit_number']
+                        if pit in rank_probs:
+                            pred['hierarchical_1st_prob'] = round(rank_probs[pit].get(1, 0) * 100, 1)
+                            pred['hierarchical_2nd_prob'] = round(rank_probs[pit].get(2, 0) * 100, 1)
+                            pred['hierarchical_3rd_prob'] = round(rank_probs[pit].get(3, 0) * 100, 1)
+
+                    # 上位三連単組み合わせを predictions に付与
+                    top_trifecta = hierarchical_result.get('top_combinations', [])[:10]
+                    # 最初の予測結果に三連単情報を追加
+                    if predictions:
+                        predictions[0]['trifecta_predictions'] = [
+                            {'combination': comb, 'probability': round(prob * 100, 2)}
+                            for comb, prob in top_trifecta
+                        ]
+            except Exception as e:
+                # 階層的予測エラーは無視して従来の予測を返す
+                pass
 
         return predictions
 
@@ -936,9 +989,19 @@ class RacePredictor:
 
         venue_code, race_date = race_row
 
-        # 出走情報を取得
+        # 風向データを取得
         cursor.execute("""
-            SELECT e.pit_number, e.racer_number, e.racer_name, rd.actual_course
+            SELECT wind_direction FROM race_conditions WHERE race_id = ?
+        """, (race_id,))
+        wind_row = cursor.fetchone()
+        wind_direction = wind_row[0] if wind_row and wind_row[0] else ''
+
+        # 出走情報を取得（racer_rank, genderを含む）
+        cursor.execute("""
+            SELECT e.pit_number, e.racer_number, e.racer_name, e.racer_rank, rd.actual_course,
+                   CASE WHEN e.racer_name LIKE '%子' OR e.racer_name LIKE '%美' OR e.racer_name LIKE '%香'
+                        OR e.racer_name LIKE '%奈' OR e.racer_name LIKE '%恵' OR e.racer_name LIKE '%代'
+                        THEN '女' ELSE '' END as gender_guess
             FROM entries e
             LEFT JOIN race_details rd ON e.race_id = rd.race_id AND e.pit_number = rd.pit_number
             WHERE e.race_id = ?
@@ -949,18 +1012,21 @@ class RacePredictor:
 
         # エントリー情報を構築
         entries = []
-        for pit, racer_num, racer_name, course in entries_data:
+        for pit, racer_num, racer_name, racer_rank, course, gender in entries_data:
             entries.append({
                 'pit_number': pit,
                 'racer_number': racer_num,
                 'racer_name': racer_name,
+                'racer_rank': racer_rank if racer_rank else '',
+                'gender': gender if gender else '',
                 'actual_course': course if course else pit
             })
 
-        # レース情報
+        # レース情報（風向を含む）
         race_info = {
             'venue_code': venue_code,
-            'race_date': race_date
+            'race_date': race_date,
+            'wind_direction': wind_direction
         }
 
         # 法則エンジンから適用される法則を取得

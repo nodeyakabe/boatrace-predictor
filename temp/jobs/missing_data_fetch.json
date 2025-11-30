@@ -1,0 +1,11 @@
+{
+  "status": "running",
+  "progress": 28,
+  "message": "2025-11-10 を処理中... (9/28)",
+  "started_at": "2025-11-29T17:48:29.812790",
+  "updated_at": "2025-11-29T22:21:36.884695",
+  "current_date": "2025-11-10",
+  "processed": 8,
+  "total": 28,
+  "errors": 8
+}

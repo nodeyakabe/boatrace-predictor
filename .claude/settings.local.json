@@ -53,7 +53,17 @@
       "Bash(chcp:*)",
       "Bash(find:*)",
       "Bash(tasklist:*)",
-      "Bash(set DATABASE_PATH=c:/Users/User/Desktop/BR/BoatRace_package_20251115_172032/data/boatrace.db)"
+      "Bash(set DATABASE_PATH=c:/Users/User/Desktop/BR/BoatRace_package_20251115_172032/data/boatrace.db)",
+      "Bash(git checkout:*)",
+      "Bash(timeout 15 python:*)",
+      "Bash(timeout 65 python:*)",
+      "Bash(timeout 95 python:*)",
+      "Bash(timeout 125 python:*)",
+      "Bash(timeout 5 sleep:*)",
+      "Bash(timeout 35 sleep:*)",
+      "Bash(tree:*)",
+      "Bash(mkdir:*)",
+      "Bash(wmic process where name=''python.exe'' get processid,commandline,creationdate)"
     ],
     "deny": [],
     "ask": []

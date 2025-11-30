@@ -1,0 +1,9 @@
+{
+  "status": "completed",
+  "progress": 100,
+  "message": "今日の予測生成が完了しました",
+  "started_at": "2025-11-30T14:18:12.840556",
+  "updated_at": "2025-11-30T14:39:53.945830",
+  "step": "Step 6/6",
+  "completed_at": "2025-11-30T14:39:53.945830"
+}

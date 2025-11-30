@@ -31,10 +31,8 @@ class IntegratedPredictor:
         # Phase 1: 最適化特徴量生成器
         self.optimized_feature_gen = OptimizedFeatureGenerator(db_path)
 
-        # Phase 2: 時系列特徴量生成器
-        import sqlite3
-        self.conn = sqlite3.connect(db_path)
-        self.timeseries_feature_gen = TimeseriesFeatureGenerator(self.conn)
+        # Phase 2: 時系列特徴量生成器（DBパスを渡してスレッドセーフに）
+        self.timeseries_feature_gen = TimeseriesFeatureGenerator(db_path)
 
         # Phase 2: アンサンブル予測器
         self.ensemble_predictor = EnsemblePredictor()

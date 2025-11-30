@@ -145,28 +145,44 @@ class ResultScraper(BaseScraper):
                     if len(result_data["results"]) >= 6:
                         break
 
-            # 三連単オッズを探す
-            # 方法1: 払戻金テーブルから探す
-            payoff_table = soup.find('table', class_=lambda x: x and 'is-w243' in str(x))
-            if payoff_table:
-                # 3連単の行を探す（通常は最初の行）
-                tbody = payoff_table.find('tbody')
-                if tbody:
-                    first_row = tbody.find('tr')
-                    if first_row:
-                        tds = first_row.find_all('td')
-                        # 払戻金は通常2番目か3番目のtd
-                        for td in tds:
-                            odds_value = self._parse_odds(td.text)
-                            if odds_value:
-                                result_data["trifecta_odds"] = odds_value
-                                break
+            # 三連単オッズ（払戻金）を探す
+            # 方法1: 払戻金テーブルから「3連単」行を探す
+            for table in soup.find_all('table'):
+                table_text = table.get_text()
+                if '3連単' in table_text and '払戻金' in table_text:
+                    # 3連単の行を探す
+                    for tr in table.find_all('tr'):
+                        row_text = tr.get_text()
+                        if '3連単' in row_text:
+                            # 払戻金のspan要素を探す（class="is-payout1"など）
+                            payout_span = tr.find('span', class_=lambda x: x and 'payout' in str(x).lower())
+                            if payout_span:
+                                odds_value = self._parse_odds(payout_span.get_text())
+                                if odds_value and odds_value >= 100:  # 払戻金は100円以上
+                                    # 払戻金を100円単位のオッズに変換（払戻金/100）
+                                    result_data["trifecta_odds"] = odds_value / 100.0
+                                    break
+                            # spanがない場合はtdから探す
+                            if not result_data["trifecta_odds"]:
+                                for td in tr.find_all('td'):
+                                    td_text = td.get_text(strip=True)
+                                    odds_value = self._parse_odds(td_text)
+                                    if odds_value and odds_value >= 100:
+                                        result_data["trifecta_odds"] = odds_value / 100.0
+                                        break
+                    if result_data["trifecta_odds"]:
+                        break
 
-            # 方法2: 'odds'クラスを含む要素を探す（フォールバック）
+            # 方法2: 'is-payout'クラスのspan要素から探す（フォールバック）
             if not result_data["trifecta_odds"]:
-                odds_element = soup.find(class_=lambda x: x and 'odds' in str(x).lower())
-                if odds_element:
-                    result_data["trifecta_odds"] = self._parse_odds(odds_element.text)
+                payout_spans = soup.find_all('span', class_=lambda x: x and 'payout' in str(x).lower())
+                for span in payout_spans:
+                    parent = span.find_parent('tr')
+                    if parent and '3連単' in parent.get_text():
+                        odds_value = self._parse_odds(span.get_text())
+                        if odds_value and odds_value >= 100:
+                            result_data["trifecta_odds"] = odds_value / 100.0
+                            break
 
             # 返還・不成立の判定（テーブルヘッダーを除外）
             # レース自体が返還の場合、結果テーブルがないか、特定のメッセージが表示される
@@ -443,15 +459,20 @@ class ResultScraper(BaseScraper):
         オッズテキストを数値に変換
 
         Args:
-            odds_text: オッズの文字列（例: "12.3円"）
+            odds_text: オッズの文字列（例: "12.3円", "¥1,800"）
 
         Returns:
             オッズ（浮動小数点数） or None
         """
         try:
-            # "12.3円" → 12.3
-            odds_text = odds_text.replace('円', '').replace(',', '').strip()
-            return float(odds_text)
+            import re
+            # 数字とカンマ、ピリオドのみ抽出
+            # "12.3円" → 12.3, "¥1,800" → 1800
+            cleaned = re.sub(r'[^\d.,]', '', odds_text)
+            cleaned = cleaned.replace(',', '')
+            if cleaned:
+                return float(cleaned)
+            return None
         except (ValueError, AttributeError):
             return None
 

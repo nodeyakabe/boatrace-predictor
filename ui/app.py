@@ -1,6 +1,7 @@
 """
 コンドル - 競艇予想システム
 4タブ構成: データ参照、レース予想、データ準備、設定・管理
+バックグラウンド処理対応版
 """
 
 import streamlit as st
@@ -19,6 +20,9 @@ from src.database.views import initialize_views
 # 共通コンポーネント
 from ui.components.common.filters import render_sidebar_filters
 from ui.components.common.db_utils import get_db_connection, safe_query_to_df
+
+# グローバル進捗表示
+from ui.components.global_progress import render_global_progress, show_job_complete_notification
 
 # Tab1: データ参照
 from ui.components.venue_analysis import render_venue_analysis_page
@@ -60,6 +64,10 @@ def main():
 
     st.title("🦅 コンドル")
 
+    # グローバル進捗バー（ヘッダー部分に表示）
+    render_global_progress()
+    show_job_complete_notification()
+
     # サイドバー
     with st.sidebar:
         st.header("メニュー")
@@ -72,38 +80,14 @@ def main():
 
     # メインタブ（4タブ構成）
     tab1, tab2, tab3, tab4 = st.tabs([
-        "📊 データ参照",
         "🔮 レース予想",
         "🔧 データ準備",
+        "📊 データ参照",
         "⚙️ 設定・管理"
     ])
 
-    # Tab 1: データ参照
+    # Tab 1: レース予想（統合版）
     with tab1:
-        st.header("📊 データ参照")
-
-        data_view = st.selectbox(
-            "表示内容を選択",
-            ["レース結果", "会場分析", "選手分析", "パターン分析", "統計情報"]
-        )
-
-        if data_view == "レース結果":
-            render_race_results_view(target_date, selected_venues)
-
-        elif data_view == "会場分析":
-            render_venue_analysis_page()
-
-        elif data_view == "選手分析":
-            render_racer_analysis_page()
-
-        elif data_view == "パターン分析":
-            render_pattern_analysis_page()
-
-        elif data_view == "統計情報":
-            render_statistics_view()
-
-    # Tab 2: レース予想（統合版）
-    with tab2:
         st.header("🔮 レース予想")
 
         # 遅延インポート
@@ -143,48 +127,48 @@ def main():
                 from ui.components.backtest import render_backtest_page
                 render_backtest_page()
 
-    # Tab 3: データ準備
-    with tab3:
+    # Tab 2: データ準備
+    with tab2:
         st.header("🔧 データ準備")
 
         preparation_mode = st.selectbox(
             "準備内容を選択",
-            ["📋 データメンテナンス", "ワークフロー自動化", "オッズ自動取得", "高度なモデル学習", "モデルベンチマーク", "自動データ収集", "手動データ収集", "モデル学習", "データ品質"]
+            ["ワークフロー自動化", "データ収集"]
         )
 
-        if preparation_mode == "📋 データメンテナンス":
-            from ui.components.data_maintenance import render_data_maintenance
-            render_data_maintenance()
-
-        elif preparation_mode == "ワークフロー自動化":
+        if preparation_mode == "ワークフロー自動化":
             from ui.components.workflow_manager import render_workflow_manager
             render_workflow_manager()
 
-        elif preparation_mode == "オッズ自動取得":
-            from ui.components.odds_fetcher_ui import render_odds_fetcher
-            render_odds_fetcher()
+        elif preparation_mode == "データ収集":
+            from ui.components.data_collector_unified import render_data_collector
+            render_data_collector()
 
-        elif preparation_mode == "高度なモデル学習":
-            from ui.components.advanced_training import render_advanced_training
-            render_advanced_training()
+    # Tab 3: データ参照
+    with tab3:
+        st.header("📊 データ参照")
 
-        elif preparation_mode == "モデルベンチマーク":
-            from ui.components.advanced_training import render_model_benchmark
-            render_model_benchmark()
+        data_view = st.selectbox(
+            "表示内容を選択",
+            ["レース結果", "会場分析", "選手分析", "パターン分析", "統計情報", "データ品質"]
+        )
 
-        elif preparation_mode == "自動データ収集":
-            from ui.components.auto_data_collector import render_auto_data_collector
-            render_auto_data_collector()
+        if data_view == "レース結果":
+            render_race_results_view(target_date, selected_venues)
 
-        elif preparation_mode == "手動データ収集":
-            from ui.components.bulk_data_collector import render_bulk_data_collector
-            render_bulk_data_collector(target_date, selected_venues)
+        elif data_view == "会場分析":
+            render_venue_analysis_page()
 
-        elif preparation_mode == "モデル学習":
-            from ui.components.model_training import render_model_training_page
-            render_model_training_page()
+        elif data_view == "選手分析":
+            render_racer_analysis_page()
 
-        elif preparation_mode == "データ品質":
+        elif data_view == "パターン分析":
+            render_pattern_analysis_page()
+
+        elif data_view == "統計情報":
+            render_statistics_view()
+
+        elif data_view == "データ品質":
             from ui.components.data_quality_monitor import render_data_quality_monitor
             render_data_quality_monitor()
 
@@ -194,12 +178,28 @@ def main():
 
         settings_mode = st.selectbox(
             "管理内容を選択",
-            ["予測精度改善", "システム設定", "データ管理", "法則管理", "システム監視"]
+            ["予測精度改善", "オッズ自動取得", "モデル学習", "高度なモデル学習", "モデルベンチマーク", "システム設定", "データ管理", "法則管理", "システム監視"]
         )
 
         if settings_mode == "予測精度改善":
             from ui.components.improvements_display import render_improvements_summary_page
             render_improvements_summary_page()
+
+        elif settings_mode == "オッズ自動取得":
+            from ui.components.odds_fetcher_ui import render_odds_fetcher
+            render_odds_fetcher()
+
+        elif settings_mode == "モデル学習":
+            from ui.components.model_training import render_model_training_page
+            render_model_training_page()
+
+        elif settings_mode == "高度なモデル学習":
+            from ui.components.advanced_training import render_advanced_training
+            render_advanced_training()
+
+        elif settings_mode == "モデルベンチマーク":
+            from ui.components.advanced_training import render_model_benchmark
+            render_model_benchmark()
 
         elif settings_mode == "システム設定":
             render_system_settings()

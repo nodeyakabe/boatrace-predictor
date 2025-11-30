@@ -291,7 +291,7 @@ def save_to_db(data_item, db_path="data/boatrace.db"):
 
         # race_idを取得（既存レースから取得）
         import sqlite3
-        from src.utils.date_converter import to_iso_format
+        from src.utils.date_utils import to_iso_format
 
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()

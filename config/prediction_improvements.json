@@ -11,7 +11,7 @@
   "first_place_lock": {
     "enabled": true,
     "win_rate_threshold": 0.55,
-    "min_data_completeness": 60,
+    "min_data_completeness": 40,
     "description": "1着固定ルール（1号艇の勝率が閾値以上かつデータ充実度が基準以上の場合）"
   },
 

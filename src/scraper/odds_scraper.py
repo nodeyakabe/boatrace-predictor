@@ -26,8 +26,8 @@ class OddsScraper:
             delay: リクエスト間の遅延時間（秒）
             max_retries: 最大リトライ回数
         """
-        self.base_url = "https://www.boatrace.jp/owpc/pc/race/oddstf"
-        self.win_odds_url = "https://www.boatrace.jp/owpc/pc/race/oddstf"  # 単勝・複勝オッズ（oddstfに含まれる）
+        self.base_url = "https://www.boatrace.jp/owpc/pc/race/odds3t"  # 3連単オッズ
+        self.win_odds_url = "https://www.boatrace.jp/owpc/pc/race/oddstf"  # 単勝・複勝オッズ
         self.delay = delay
         self.max_retries = max_retries
         self.session = requests.Session()
@@ -134,7 +134,18 @@ class OddsScraper:
 
     def _parse_odds(self, soup):
         """
-        HTMLからオッズを解析（複数パターン対応）
+        HTMLからオッズを解析（ボートレース公式1軸流し形式）
+
+        テーブル構造（21行）：
+        - Row 0: 空（ヘッダー）
+        - Row 1-4: 2着=2の組み合わせ（Row1は18セル、Row2-4は12セル）
+        - Row 5-8: 2着=3の組み合わせ
+        - Row 9-12: 2着=4の組み合わせ
+        - Row 13-16: 2着=5の組み合わせ
+        - Row 17-20: 2着=6の組み合わせ
+
+        各行のセル構造（18セル行）: [2着, 3着, オッズ] × 6（1着艇1-6）
+        各行のセル構造（12セル行）: [3着, オッズ] × 6（2着は前の18セル行から継承）
 
         Args:
             soup: BeautifulSoup オブジェクト
@@ -145,50 +156,79 @@ class OddsScraper:
         odds_data = {}
 
         try:
-            # 方法1: oddsテーブルから取得
-            # 3連単は通常、tableタグに格納されている
             tables = soup.find_all('table')
 
             for table in tables:
-                # tbody内の各行を解析
-                tbody = table.find('tbody')
-                if not tbody:
-                    # tbodyがない場合は直接trを探索
-                    rows = table.find_all('tr')
-                else:
-                    rows = tbody.find_all('tr')
+                rows = table.find_all('tr')
+                if len(rows) < 20:
+                    continue
 
-                for row in rows:
-                    tds = row.find_all('td')
+                # 2着艇ごとのグループで処理
+                second_boats = [2, 3, 4, 5, 6]
+                row_idx = 1  # Row 0はヘッダー
 
-                    if len(tds) < 2:
-                        continue
+                for second_boat in second_boats:
+                    # 各2着艇のグループは4行
+                    for sub_row in range(4):
+                        if row_idx >= len(rows):
+                            break
 
-                    # 組番とオッズを探す
-                    combination = None
-                    odds_value = None
+                        row = rows[row_idx]
+                        cells = row.find_all('td')
+                        row_idx += 1
 
-                    for i, td in enumerate(tds):
-                        text = td.text.strip()
+                        if len(cells) < 6:
+                            continue
 
-                        # 組番パターン: "1-2-3"
-                        if not combination and '-' in text:
-                            parts = text.split('-')
-                            if len(parts) == 3 and all(p.isdigit() and 1 <= int(p) <= 6 for p in parts):
-                                combination = text
+                        # 18セル行（グループの最初の行）
+                        if len(cells) >= 18:
+                            for first_boat in range(1, 7):
+                                base_idx = (first_boat - 1) * 3
 
-                        # オッズパターン: 数値
-                        if combination and not odds_value:
-                            try:
-                                # カンマを除去して数値化
-                                clean_text = text.replace(',', '').replace('円', '').replace('倍', '').strip()
-                                if clean_text:
-                                    odds_value = float(clean_text)
-                            except ValueError:
-                                continue
+                                try:
+                                    # 2着（確認用）
+                                    cell_second = int(cells[base_idx].text.strip())
+                                    # 3着
+                                    third_boat = int(cells[base_idx + 1].text.strip())
+                                    # オッズ
+                                    odds_text = cells[base_idx + 2].text.strip()
+                                    odds_text = odds_text.replace(',', '').strip()
+                                    if odds_text and odds_text != '-':
+                                        odds_value = float(odds_text)
+                                        if 1.0 <= odds_value <= 99999.0:
+                                            if len(set([first_boat, cell_second, third_boat])) == 3:
+                                                combination = f"{first_boat}-{cell_second}-{third_boat}"
+                                                odds_data[combination] = odds_value
+                                except (ValueError, IndexError):
+                                    continue
 
-                    if combination and odds_value:
-                        odds_data[combination] = odds_value
+                        # 12セル行（グループの2-4行目）
+                        elif len(cells) >= 12:
+                            for first_boat in range(1, 7):
+                                base_idx = (first_boat - 1) * 2
+
+                                try:
+                                    # 3着
+                                    third_boat = int(cells[base_idx].text.strip())
+                                    # オッズ
+                                    odds_text = cells[base_idx + 1].text.strip()
+                                    odds_text = odds_text.replace(',', '').strip()
+                                    if odds_text and odds_text != '-':
+                                        odds_value = float(odds_text)
+                                        if 1.0 <= odds_value <= 99999.0:
+                                            # 2着はグループの2着艇、ただし1着と同じならスキップ
+                                            actual_second = second_boat
+                                            if first_boat == second_boat:
+                                                # 1着=2着の場合、別の艇を2着とする
+                                                continue
+                                            if len(set([first_boat, actual_second, third_boat])) == 3:
+                                                combination = f"{first_boat}-{actual_second}-{third_boat}"
+                                                odds_data[combination] = odds_value
+                                except (ValueError, IndexError):
+                                    continue
+
+                if len(odds_data) >= 100:
+                    break
 
             # 方法2: フォールバック - データ属性から取得
             if not odds_data:

@@ -178,68 +178,71 @@ def _render_ai_prediction(race_id, race_date_str, venue_code, race_number, racer
         st.warning("予想データを生成できませんでした")
         return
 
-    # TOP3予想を大きく表示
-    st.markdown("### 🏆 予想結果 TOP3")
+    # 選手名をracers_dfから補完（predictionに選手名がない場合）
+    racer_name_map = {row['pit_number']: row['racer_name'] for _, row in racers_df.iterrows()}
+    for pred in predictions:
+        if not pred.get('racer_name') or pred.get('racer_name') == '選手名不明':
+            pred['racer_name'] = racer_name_map.get(pred['pit_number'], '選手名不明')
 
-    top3 = predictions[:3]
+    # 予想結果（6人全員をテーブル表示）
+    st.markdown("### 🏆 予想結果")
 
-    for i, pred in enumerate(top3, 1):
-        with st.container():
-            col1, col2, col3, col4 = st.columns([1, 2, 2, 2])
+    # テーブル形式でコンパクトに表示
+    prediction_data = []
+    for i, pred in enumerate(predictions, 1):
+        medal = ["🥇", "🥈", "🥉"][i-1] if i <= 3 else f"{i}位"
+        score = pred.get('total_score', pred.get('score', 0))
+        confidence_level = pred.get('confidence', 'C')
 
-            with col1:
-                medal = ["🥇", "🥈", "🥉"][i-1]
-                st.markdown(f"## {medal}")
+        prediction_data.append({
+            '順位': medal,
+            '艇番': f"{pred['pit_number']}号艇",
+            '選手名': pred.get('racer_name', '選手名不明'),
+            'スコア': f"{score:.1f}",
+            '信頼度': render_confidence_badge(confidence_level)
+        })
 
-            with col2:
-                st.markdown(f"**{pred['pit_number']}号艇**")
-                racer_name = pred.get('racer_name', '選手名不明')
-                st.markdown(f"{racer_name}")
+    pred_df = pd.DataFrame(prediction_data)
+    st.dataframe(pred_df, use_container_width=True, hide_index=True)
 
-            with col3:
-                score = pred.get('total_score', pred.get('score', 0))
-                st.metric("スコア", f"{score:.1f}")
+    # 展示データ詳細（DBから取得）
+    with st.expander("📊 展示ST・展示タイム詳細", expanded=False):
+        # DBから展示データを取得（entriesからavg_stも取得）
+        exhibition_query = """
+            SELECT
+                rd.pit_number,
+                e.racer_name,
+                rd.exhibition_time,
+                e.avg_st,
+                rd.tilt_angle
+            FROM race_details rd
+            JOIN entries e ON rd.race_id = e.race_id AND rd.pit_number = e.pit_number
+            WHERE rd.race_id = ?
+            ORDER BY rd.pit_number
+        """
+        # race_idを確実に整数に変換
+        race_id_int = int(race_id) if race_id else None
+        ex_df = safe_query_to_df(exhibition_query, params=(race_id_int,))
 
-            with col4:
-                confidence_level = pred.get('confidence', 'C')
-                badge = render_confidence_badge(confidence_level)
-                st.markdown(f"**{badge}**")
+        if ex_df is not None and not ex_df.empty:
+            # 展示タイムで順位付け（小さいほうが良い）
+            ex_df['展示T順位'] = ex_df['exhibition_time'].rank(method='min').fillna(0).astype(int).replace(0, '-')
 
-            st.markdown("---")
+            # 表示用に整形
+            display_data = []
+            for _, row in ex_df.iterrows():
+                display_data.append({
+                    '艇番': int(row['pit_number']),
+                    '選手': row['racer_name'][:6] if row['racer_name'] else '-',
+                    '展示T順位': row['展示T順位'] if pd.notna(row['exhibition_time']) else '-',
+                    '展示T': f"{row['exhibition_time']:.2f}" if pd.notna(row['exhibition_time']) else '-',
+                    '平均ST': f"{row['avg_st']:.2f}" if pd.notna(row['avg_st']) else '-',
+                    'チルト': f"{row['tilt_angle']:.1f}" if pd.notna(row['tilt_angle']) else '-',
+                })
 
-    # 全艇の予想
-    with st.expander("📊 全艇の予想スコア", expanded=False):
-        df = pd.DataFrame([{
-            '順位': i+1,
-            '艇番': p['pit_number'],
-            '選手': p.get('racer_name', '選手名不明'),
-            'スコア': f"{p.get('total_score', p.get('score', 0)):.2f}"
-        } for i, p in enumerate(predictions)])
-
-        st.dataframe(df, use_container_width=True, hide_index=True)
-
-        # 展示データ詳細
-        st.markdown("#### 📊 展示ST・展示タイム順位")
-        st.caption("※バックテスト結果: 展示ST/タイム追加で的中率 +1.23%（58.75%→59.98%）")
-
-        exhibition_data = []
-        for p in predictions:
-            ext = p.get('extended_detail', {})
-            exhibition = ext.get('exhibition', {})
-            st_data = ext.get('start_timing', {})
-
-            exhibition_data.append({
-                '艇番': p['pit_number'],
-                '選手': p.get('racer_name', '')[:6],
-                '展示T順位': exhibition.get('rank', '-'),
-                '展示T': f"{exhibition.get('exhibition_time', 0):.2f}" if exhibition.get('exhibition_time') else '-',
-                '平均ST': f"{st_data.get('avg_st', 0):.2f}" if st_data.get('avg_st') else '-',
-                'ST評価': st_data.get('category', '-'),
-            })
-
-        if exhibition_data:
-            ex_df = pd.DataFrame(exhibition_data)
-            st.dataframe(ex_df, use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(display_data), use_container_width=True, hide_index=True)
+        else:
+            st.info("展示データはまだ取得されていません")
 
     # 判断根拠（適用法則）
     st.markdown("---")
@@ -303,62 +306,300 @@ def _render_bet_recommendations(race_id, race_date_str, venue_code, race_number)
         st.warning("先にAI予測タブで予測を実行してください")
         return
 
+    # =====================================================
+    # 階層的確率モデルによる三連単予測（NEW）
+    # =====================================================
+    st.markdown("### 🎯 AI三連単予測（階層的確率モデル）")
+
+    # 階層的モデルで予測
+    try:
+        from src.prediction.hierarchical_predictor import HierarchicalPredictor
+        import os
+
+        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'boatrace.db')
+        hierarchical_predictor = HierarchicalPredictor(db_path)
+        hierarchical_predictor.load_models()
+
+        if hierarchical_predictor._model_loaded:
+            # 予測実行
+            h_result = hierarchical_predictor.predict_race(race_id)
+
+            if 'error' not in h_result:
+                # 上位10件の三連単を表示
+                top_trifecta = h_result.get('top_combinations', [])[:10]
+
+                if top_trifecta:
+                    st.success("✅ 学習済み条件付きモデルによる予測")
+
+                    # 確率分布の可視化
+                    trifecta_data = []
+                    for i, (combo, prob) in enumerate(top_trifecta, 1):
+                        rank_emoji = ["🥇", "🥈", "🥉"][i-1] if i <= 3 else f"{i}位"
+                        trifecta_data.append({
+                            '順位': rank_emoji,
+                            '三連単': combo,
+                            '確率': f"{prob * 100:.2f}%",
+                            '確率値': prob
+                        })
+
+                    trifecta_df = pd.DataFrame(trifecta_data)
+
+                    # テーブル表示
+                    st.dataframe(
+                        trifecta_df[['順位', '三連単', '確率']],
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+                    # 各艇の1着/2着/3着確率
+                    st.markdown("#### 📊 各艇の順位別確率")
+                    rank_probs = h_result.get('rank_probs', {})
+                    if rank_probs:
+                        rank_data = []
+                        for pit in range(1, 7):
+                            if pit in rank_probs:
+                                rank_data.append({
+                                    '艇番': f"{pit}号艇",
+                                    '1着確率': f"{rank_probs[pit].get(1, 0) * 100:.1f}%",
+                                    '2着確率': f"{rank_probs[pit].get(2, 0) * 100:.1f}%",
+                                    '3着確率': f"{rank_probs[pit].get(3, 0) * 100:.1f}%",
+                                })
+                        st.dataframe(pd.DataFrame(rank_data), use_container_width=True, hide_index=True)
+
+                    # 推奨買い目（上位5点）
+                    st.markdown("#### 🎯 推奨買い目（確率上位5点）")
+                    for i, (combo, prob) in enumerate(top_trifecta[:5], 1):
+                        if i == 1:
+                            st.info(f"**① {combo}** ({prob*100:.2f}%) ← 本命")
+                        else:
+                            st.write(f"{'②③④⑤'[i-2]} {combo} ({prob*100:.2f}%)")
+
+                    # =====================================================
+                    # 三連複予測（三連単確率から計算）
+                    # =====================================================
+                    st.markdown("---")
+                    st.markdown("### 🎲 AI三連複予測")
+
+                    from src.prediction.trifecta_calculator import calculate_trio_from_trifecta, get_top_trio
+                    trifecta_probs = h_result.get('trifecta_probs', {})
+
+                    if trifecta_probs:
+                        top_trio = get_top_trio(trifecta_probs, top_n=10)
+
+                        trio_data = []
+                        for idx_t, (combo, prob) in enumerate(top_trio, 1):
+                            rank_emoji = ["🥇", "🥈", "🥉"][idx_t-1] if idx_t <= 3 else f"{idx_t}位"
+                            trio_data.append({
+                                '順位': rank_emoji,
+                                '三連複': combo,
+                                '確率': f"{prob * 100:.2f}%",
+                            })
+
+                        st.dataframe(
+                            pd.DataFrame(trio_data),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+                        st.caption("※ 三連複は三連単の確率を順不同で合計して計算")
+
+
+                    # =====================================================
+                    # 2連単/2連複予測
+                    # =====================================================
+                    st.markdown("---")
+                    st.markdown("### 🎰 AI 2連単/2連複予測")
+
+                    from src.prediction.trifecta_calculator import (
+                        calculate_exacta_from_trifecta, get_top_exacta,
+                        calculate_quinella_from_trifecta, get_top_quinella
+                    )
+
+                    col_ex, col_qu = st.columns(2)
+
+                    with col_ex:
+                        st.markdown("**2連単 TOP10**")
+                        top_exacta = get_top_exacta(trifecta_probs, top_n=10)
+                        exacta_data = []
+                        for idx_e, (combo, prob) in enumerate(top_exacta, 1):
+                            rank_emoji = ["🥇", "🥈", "🥉"][idx_e-1] if idx_e <= 3 else f"{idx_e}位"
+                            exacta_data.append({
+                                '順位': rank_emoji,
+                                '2連単': combo,
+                                '確率': f"{prob * 100:.2f}%",
+                            })
+                        st.dataframe(pd.DataFrame(exacta_data), use_container_width=True, hide_index=True)
+
+                    with col_qu:
+                        st.markdown("**2連複 TOP10**")
+                        top_quinella = get_top_quinella(trifecta_probs, top_n=10)
+                        quinella_data = []
+                        for idx_q, (combo, prob) in enumerate(top_quinella, 1):
+                            rank_emoji = ["🥇", "🥈", "🥉"][idx_q-1] if idx_q <= 3 else f"{idx_q}位"
+                            quinella_data.append({
+                                '順位': rank_emoji,
+                                '2連複': combo,
+                                '確率': f"{prob * 100:.2f}%",
+                            })
+                        st.dataframe(pd.DataFrame(quinella_data), use_container_width=True, hide_index=True)
+
+                    # =====================================================
+                    # 期待値分析（階層的モデルの確率を使用）
+                    # =====================================================
+                    st.markdown("---")
+                    st.markdown("### 📈 期待値分析（階層的モデル）")
+
+                    use_ev_analysis = st.checkbox("オッズを入力して期待値計算", value=False, key="hierarchical_ev_checkbox")
+
+                    if use_ev_analysis and trifecta_probs:
+                        st.caption("オッズを入力すると、階層的モデルの予測確率に基づいて期待値を計算します")
+
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown("**三連単オッズ**")
+                            trifecta_odds = {}
+                            for idx_o, (combo, prob) in enumerate(top_trifecta[:5]):
+                                odds = st.number_input(
+                                    f"{combo}",
+                                    min_value=1.0,
+                                    max_value=9999.0,
+                                    value=round(1.0 / max(prob, 0.001) * 0.75, 1),
+                                    step=0.1,
+                                    key=f"h_odds_tan_{idx_o}"
+                                )
+                                trifecta_odds[combo] = odds
+
+                        with col2:
+                            st.markdown("**三連複オッズ**")
+                            trio_odds = {}
+                            for idx_o, (combo, prob) in enumerate(top_trio[:5]):
+                                odds = st.number_input(
+                                    f"{combo}",
+                                    min_value=1.0,
+                                    max_value=9999.0,
+                                    value=round(1.0 / max(prob, 0.001) * 0.75, 1),
+                                    step=0.1,
+                                    key=f"h_odds_fuku_{idx_o}"
+                                )
+                                trio_odds[combo] = odds
+
+                        # 期待値計算
+                        st.markdown("#### 📊 期待値計算結果")
+
+                        ev_results = []
+                        for combo, odds in trifecta_odds.items():
+                            prob = trifecta_probs.get(combo, 0)
+                            ev = prob * odds - 1
+                            ev_results.append({
+                                '種別': '三連単',
+                                '買い目': combo,
+                                '確率': f"{prob*100:.2f}%",
+                                'オッズ': odds,
+                                '期待値': f"{ev*100:+.1f}%",
+                                'ev_value': ev
+                            })
+
+                        trio_probs_dict = calculate_trio_from_trifecta(trifecta_probs)
+                        for combo, odds in trio_odds.items():
+                            prob = trio_probs_dict.get(combo, 0)
+                            ev = prob * odds - 1
+                            ev_results.append({
+                                '種別': '三連複',
+                                '買い目': combo,
+                                '確率': f"{prob*100:.2f}%",
+                                'オッズ': odds,
+                                '期待値': f"{ev*100:+.1f}%",
+                                'ev_value': ev
+                            })
+
+                        ev_df = pd.DataFrame(ev_results)
+                        ev_df = ev_df.sort_values('ev_value', ascending=False)
+
+                        st.dataframe(
+                            ev_df[['種別', '買い目', '確率', 'オッズ', '期待値']],
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+                        # プラス期待値の買い目
+                        positive_ev = ev_df[ev_df['ev_value'] > 0]
+                        if len(positive_ev) > 0:
+                            st.success(f"✅ 期待値プラスの買い目: {len(positive_ev)}点")
+                            for _, row in positive_ev.iterrows():
+                                st.write(f"  **{row['種別']} {row['買い目']}** - 期待値: {row['期待値']}")
+                        else:
+                            st.warning("⚠️ 期待値プラスの買い目がありません。オッズ妙味が低い可能性があります。")
+
+
+                else:
+                    st.warning("三連単予測を生成できませんでした")
+            else:
+                error_msg = h_result.get('error', '')
+                if 'レースデータ取得失敗' in error_msg:
+                    st.info("💡 直前情報（展示タイム等）が未取得のため、階層的モデルは使用できません。下記の従来予測をご参照ください。")
+                else:
+                    st.warning(f"予測エラー: {error_msg}")
+                _render_traditional_bets(predictions, key_prefix="fallback")
+        else:
+            st.info("💡 階層的モデルが読み込まれていません。従来の予測を使用します。")
+            _render_traditional_bets(predictions, key_prefix="no_model")
+
+    except Exception as e:
+        st.warning(f"階層的モデルエラー: {e}")
+        _render_traditional_bets(predictions, key_prefix="error")
+
+    st.markdown("---")
+
+    # =====================================================
+    # 従来の買い目（比較用）- 階層的モデル成功時のみexpander表示
+    # =====================================================
+    with st.expander("📋 従来の買い目（スコア順）", expanded=False):
+        _render_traditional_bets(predictions, key_prefix="expander")
+
+
+def _render_traditional_bets(predictions, key_prefix: str = "main"):
+    """従来のスコアベース買い目
+
+    Args:
+        predictions: 予測データ
+        key_prefix: Streamlitウィジェットのキープレフィックス（重複防止用）
+    """
     top3 = predictions[:3]
 
-    # 基本的な推奨買い目
-    st.markdown("### 🎯 基本の推奨買い目")
+    first = top3[0]['pit_number']
+    second = top3[1]['pit_number']
+    third = top3[2]['pit_number']
 
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.markdown("#### 3連単")
-        buy_3tan = f"{top3[0]['pit_number']}-{top3[1]['pit_number']}-{top3[2]['pit_number']}"
-        st.info(f"**{buy_3tan}**")
-        st.caption("1着固定の推奨")
-
-    with col2:
-        st.markdown("#### 2連単")
-        buy_2tan = f"{top3[0]['pit_number']}-{top3[1]['pit_number']}"
-        st.info(f"**{buy_2tan}**")
-        st.caption("1-2着の推奨")
-
-    with col3:
-        st.markdown("#### 単勝")
-        buy_win = f"{top3[0]['pit_number']}号艇"
-        st.info(f"**{buy_win}**")
-        st.caption("1着の推奨")
-
-    # 期待値分析セクション
-    st.markdown("---")
-    _render_expected_value_analysis(predictions, race_id, venue_code, race_date_str, race_number)
-
-    # 詳細な買い目（フォーメーション）
-    st.markdown("---")
-    st.markdown("### 📋 フォーメーション買い目")
+    # 5点の買い目
+    trifecta_bets = [
+        f"{first}-{second}-{third}",
+        f"{first}-{third}-{second}",
+        f"{second}-{first}-{third}",
+        f"{second}-{third}-{first}",
+        f"{third}-{first}-{second}",
+    ]
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("#### 3連単（1着固定）")
-        first = top3[0]['pit_number']
-        second_third = [top3[1]['pit_number'], top3[2]['pit_number']]
-
-        formations = []
-        for second in second_third:
-            for third in second_third:
-                if second != third:
-                    formations.append(f"{first}-{second}-{third}")
-
-        for formation in formations:
-            st.write(f"• {formation}")
-
-        st.caption(f"合計: {len(formations)}点")
+        st.markdown("#### 3連単 5点")
+        for i, bet in enumerate(trifecta_bets, 1):
+            if i == 1:
+                st.info(f"**① {bet}** ← 本命")
+            else:
+                st.write(f"② {bet}" if i == 2 else f"③ {bet}" if i == 3 else f"④ {bet}" if i == 4 else f"⑤ {bet}")
 
     with col2:
-        st.markdown("#### 3連複（ボックス）")
-        box_numbers = [top3[0]['pit_number'], top3[1]['pit_number'], top3[2]['pit_number']]
-        st.write(f"• {'-'.join(map(str, box_numbers))}")
+        st.markdown("#### 3連複（BOX）")
+        trio_bet = f"{first}={second}={third}"
+        st.info(f"**{trio_bet}**")
         st.caption("3艇ボックス: 1点")
+
+        st.markdown("#### 2連単")
+        st.write(f"• {first}-{second}")
+        st.write(f"• {first}-{third}")
+
+    st.success(f"📊 合計: 3連単5点 + 3連複1点 = **6点**")
 
     # 購入金額シミュレーション
     st.markdown("---")
@@ -373,14 +614,14 @@ def _render_bet_recommendations(race_id, race_date_str, venue_code, race_number)
             max_value=100000,
             value=1000,
             step=100,
-            key="bet_budget"
+            key=f"bet_budget_{key_prefix}"
         )
 
     with col2:
         bet_type = st.selectbox(
             "舟券種類",
             options=["3連単", "3連複", "2連単", "2連複", "単勝"],
-            key="bet_type"
+            key=f"bet_type_{key_prefix}"
         )
 
     with col3:
@@ -389,7 +630,7 @@ def _render_bet_recommendations(race_id, race_date_str, venue_code, race_number)
             min_value=1,
             max_value=20,
             value=2 if bet_type == "3連単" else 1,
-            key="bet_points"
+            key=f"bet_points_{key_prefix}"
         )
 
     # 1点あたりの金額
@@ -406,10 +647,10 @@ def _render_detailed_analysis(race_id, race_date_str, venue_code, race_number, r
     st.subheader("🧠 詳細分析（XAI）")
 
     st.info("""
-    **統合予測システム（Phase 1-3）**:
-    - Phase 1: 最適化特徴量とハイパーパラメータ調整
-    - Phase 2: アンサンブル予測と時系列特徴量
-    - Phase 3: リアルタイム更新とXAI説明
+    **このタブの機能**:
+    - 展示タイム・スタートタイミングを**手動入力**して詳細予測
+    - AI予測の根拠（有利・不利な要因）を可視化
+    - ※「AI予測」タブの直前予想更新ボタンとは別機能です
     """)
 
     # 予測器の初期化

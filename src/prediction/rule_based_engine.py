@@ -233,18 +233,81 @@ class RuleBasedEngine:
         適用される法則を取得（説明用）
 
         Args:
-            race_info: レース情報
-            entries: 出走情報
+            race_info: レース情報（wind_directionを含むことを推奨）
+            entries: 出走情報（racer_rank, genderを含む必要あり）
 
         Returns:
             適用される法則のリスト
         """
         venue_code = race_info.get('venue_code')
+        wind_direction = race_info.get('wind_direction', '')  # 現在の風向
         applied_rules = []
+
+        # エントリーから艇番→選手ランクのマッピングを作成
+        pit_to_rank = {}
+        pit_to_gender = {}
+        for entry in entries:
+            pit = entry.get('pit_number')
+            rank = entry.get('racer_rank', '')
+            gender = entry.get('gender', '')
+            pit_to_rank[pit] = rank
+            pit_to_gender[pit] = gender
+
+        # 風向の正規化マッピング
+        wind_direction_map = {
+            '北': '北', '南': '南', '東': '東', '西': '西',
+            '北東': '北東', '北西': '北西', '南東': '南東', '南西': '南西',
+            '東北東': '北東', '東南東': '南東', '西北西': '北西', '西南西': '南西',
+            '北北東': '北東', '北北西': '北西', '南南東': '南東', '南南西': '南西',
+        }
 
         # 競艇場法則
         venue_rules = self.get_venue_rules(venue_code)
         for rule in venue_rules:
+            description = rule['description']
+            target_pit = rule['target_pit']
+            condition_type = rule.get('condition_type', 'general')
+
+            # === 選手ランク系法則のチェック ===
+            rank_prefixes = ['A1選手', 'A2選手', 'B1選手', 'B2選手']
+            is_rank_rule = any(prefix in description for prefix in rank_prefixes)
+
+            if is_rank_rule:
+                entry_rank = pit_to_rank.get(target_pit, '')
+                rule_rank = None
+                for prefix in rank_prefixes:
+                    if prefix in description:
+                        rule_rank = prefix.replace('選手', '')
+                        break
+                if not (rule_rank and entry_rank == rule_rank):
+                    continue  # ランク不一致ならスキップ
+
+            # === 女子法則のチェック ===
+            if '女子' in description:
+                entry_gender = pit_to_gender.get(target_pit, '')
+                if entry_gender != '女':
+                    continue  # 女子選手でなければスキップ
+
+            # === 風向系法則のチェック ===
+            if condition_type == 'wind':
+                # descriptionから風向を抽出（例: 「南風_1号艇」→「南」、「福岡_北西風_1号艇」→「北西」）
+                wind_keywords = ['北北東風', '北北西風', '南南東風', '南南西風',
+                                 '東北東風', '東南東風', '西北西風', '西南西風',
+                                 '北東風', '北西風', '南東風', '南西風',
+                                 '北風', '南風', '東風', '西風']
+                rule_wind = None
+                for keyword in wind_keywords:
+                    if keyword in description:
+                        rule_wind = keyword.replace('風', '')
+                        break
+
+                if rule_wind:
+                    # 現在の風向と法則の風向を比較
+                    current_wind_normalized = wind_direction_map.get(wind_direction, wind_direction)
+                    if current_wind_normalized != rule_wind:
+                        continue  # 風向不一致ならスキップ
+
+            # すべてのチェックをパスした法則を追加
             applied_rules.append({
                 'type': '競艇場法則',
                 'description': rule['description'],

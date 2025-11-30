@@ -566,3 +566,72 @@ class PredictionUpdater:
         except Exception as e:
             logger.error(f"{target_date}: 日次更新エラー - {e}", exc_info=True)
             return {'total': 0, 'updated': 0, 'skipped': 0, 'failed': 0}
+
+    def update_batch_before_predictions(
+        self,
+        race_ids: List[int],
+        target_date: str = None,
+        progress_callback=None
+    ) -> Dict[str, int]:
+        """
+        指定レースIDリストの直前予想をバッチ更新（高速化版）
+
+        日次データを一括ロードしてから処理することで高速化
+
+        Args:
+            race_ids: 更新対象のレースIDリスト
+            target_date: 対象日（YYYY-MM-DD）。Noneの場合は今日
+            progress_callback: 進捗コールバック関数 (current, total) -> None
+
+        Returns:
+            {'total': 対象レース数, 'updated': 更新成功数, 'failed': 失敗数}
+        """
+        if not race_ids:
+            return {'total': 0, 'updated': 0, 'failed': 0}
+
+        try:
+            # 対象日を取得
+            if target_date is None:
+                target_date = datetime.now().strftime('%Y-%m-%d')
+
+            # 日次データを一括ロード（高速化のキー）
+            if self.predictor.batch_loader:
+                logger.info(f"バッチ更新: 日次データを一括ロード中...")
+                self.predictor.batch_loader.load_daily_data(target_date)
+
+            stats = {'total': len(race_ids), 'updated': 0, 'failed': 0}
+
+            for idx, race_id in enumerate(race_ids):
+                try:
+                    # 予想を生成
+                    predictions = self.predictor.predict_race(race_id)
+
+                    if predictions:
+                        # 直前予想として保存
+                        success = self.data_manager.save_race_predictions(
+                            race_id=race_id,
+                            predictions=predictions,
+                            prediction_type='before'
+                        )
+
+                        if success:
+                            stats['updated'] += 1
+                        else:
+                            stats['failed'] += 1
+                    else:
+                        stats['failed'] += 1
+
+                except Exception as e:
+                    logger.error(f"Race {race_id}: バッチ更新エラー - {e}")
+                    stats['failed'] += 1
+
+                # 進捗コールバック
+                if progress_callback:
+                    progress_callback(idx + 1, len(race_ids))
+
+            logger.info(f"バッチ更新完了: {stats}")
+            return stats
+
+        except Exception as e:
+            logger.error(f"バッチ更新エラー: {e}", exc_info=True)
+            return {'total': len(race_ids), 'updated': 0, 'failed': len(race_ids)}

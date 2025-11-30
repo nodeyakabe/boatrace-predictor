@@ -1,11 +1,17 @@
 """
 ワークフロー管理コンポーネント
 データ準備の自動化とワンクリック実行
+バックグラウンド処理対応版
 """
 import streamlit as st
 import subprocess
+import logging
+import os
+import sys
 from datetime import datetime
 from src.scraper.bulk_scraper import BulkScraper
+from src.utils.job_manager import start_job, is_job_running, get_job_progress, cancel_job
+
 # 並列処理版（高速化）
 try:
     from src.scraper.bulk_scraper_parallel import BulkScraperParallel
@@ -13,11 +19,19 @@ try:
 except ImportError:
     HAS_PARALLEL_SCRAPER = False
 
+logger = logging.getLogger(__name__)
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+
+# ジョブ名定数
+JOB_TODAY_PREDICTION = 'today_prediction'
+JOB_TRAINING = 'training'
+
 
 def render_workflow_manager():
     """データ準備ワークフローマネージャー"""
     st.header("🔧 データ準備ワークフロー")
-    st.markdown("データ収集から学習までを自動化")
+    st.markdown("データ収集から学習までを自動化（バックグラウンド処理）")
 
     # ワンクリック実行ボタン
     st.markdown("### 🚀 クイックスタート")
@@ -25,12 +39,38 @@ def render_workflow_manager():
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("🎯 今日の予測を生成", type="primary", use_container_width=True):
-            run_today_preparation_workflow()
+        # 実行中かチェック
+        if is_job_running(JOB_TODAY_PREDICTION):
+            progress = get_job_progress(JOB_TODAY_PREDICTION)
+            pct = progress.get('progress', 0) if progress else 0
+            msg = progress.get('message', '処理中...') if progress else '処理中...'
+            step = progress.get('step', '') if progress else ''
+
+            st.warning(f"🔄 実行中: {step} - {msg}")
+            st.progress(pct / 100)
+
+            if st.button("⏹️ 停止", key="stop_today"):
+                cancel_job(JOB_TODAY_PREDICTION)
+                st.rerun()
+        else:
+            if st.button("🎯 今日の予測を生成", type="primary", use_container_width=True):
+                run_today_preparation_background()
 
     with col2:
-        if st.button("📚 過去データ学習", use_container_width=True):
-            run_training_workflow()
+        if is_job_running(JOB_TRAINING):
+            progress = get_job_progress(JOB_TRAINING)
+            pct = progress.get('progress', 0) if progress else 0
+            msg = progress.get('message', '処理中...') if progress else '処理中...'
+
+            st.warning(f"🔄 実行中: {msg}")
+            st.progress(pct / 100)
+
+            if st.button("⏹️ 停止", key="stop_training"):
+                cancel_job(JOB_TRAINING)
+                st.rerun()
+        else:
+            if st.button("📚 過去データ学習", use_container_width=True):
+                run_training_workflow()
 
     st.markdown("---")
 
@@ -54,15 +94,33 @@ def render_workflow_manager():
             reanalyze_rules()
 
 
-def run_today_preparation_workflow():
-    """今日の予測生成ワークフロー"""
+def run_today_preparation_background():
+    """今日の予測生成をバックグラウンドで実行"""
+    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'background_today_prediction.py')
+
+    if not os.path.exists(script_path):
+        st.error("バックグラウンドスクリプトが見つかりません")
+        return
+
+    result = start_job(JOB_TODAY_PREDICTION, script_path)
+
+    if result['success']:
+        st.success(f"✅ {result['message']}")
+        st.info("処理はバックグラウンドで実行されます。タブを移動しても処理は継続します。")
+        st.rerun()
+    else:
+        st.error(result['message'])
+
+
+def run_today_preparation_workflow_foreground():
+    """今日の予測生成ワークフロー（フォアグラウンド版 - 後方互換用）"""
     st.info("🚀 今日の予測を生成します...")
 
     progress_bar = st.progress(0)
     status_text = st.empty()
 
     # Step 1: データ取得
-    status_text.text("Step 1/5: 本日のデータを取得中...")
+    status_text.text("Step 1/6: 本日のデータを取得中...")
     progress_bar.progress(0.1)
 
     today_schedule = fetch_today_data()
@@ -74,20 +132,26 @@ def run_today_preparation_workflow():
 
     progress_bar.progress(0.2)
 
-    # Step 2: オッズ取得
-    status_text.text("Step 2/5: 本日のオッズを取得中...")
+    # Step 2: 補完データ収集（決まり手、詳細、天候、風向）
+    status_text.text("Step 2/6: 補完データを収集中...")
     progress_bar.progress(0.25)
-    fetch_today_odds(today_schedule)
+    run_supplement_collection(status_text)
     progress_bar.progress(0.4)
 
-    # Step 3: 法則再解析
-    status_text.text("Step 3/5: 法則を再解析中...")
-    reanalyze_rules()
-    progress_bar.progress(0.5)
+    # Step 3: オッズ取得（タイムアウト付き）
+    status_text.text("Step 3/6: オッズを取得中...")
+    progress_bar.progress(0.45)
+    fetch_today_odds(today_schedule)
+    progress_bar.progress(0.55)
 
-    # Step 4: 予測生成
-    status_text.text("Step 4/5: 予測を生成中...")
-    progress_bar.progress(0.6)
+    # Step 4: 法則再解析
+    status_text.text("Step 4/6: 法則を再解析中...")
+    reanalyze_rules()
+    progress_bar.progress(0.65)
+
+    # Step 5: 予測生成
+    status_text.text("Step 5/6: 予測を生成中...")
+    progress_bar.progress(0.7)
 
     # 進捗バーとステータステキストを削除して、generate_and_save_predictions内で新しいものを使用
     progress_bar.empty()
@@ -208,11 +272,13 @@ def fetch_today_data():
                     race_date = race_dates[0] if race_dates else None
 
                     if race_date:
-                        results = scraper.fetch_multiple_venues_parallel(
+                        # fetch_with_retryを使用（自動リトライ機能付き）
+                        results = scraper.fetch_with_retry(
                             venue_codes=venue_codes,
                             race_date=race_date,
                             race_count=12,
-                            progress_callback=progress_callback
+                            progress_callback=progress_callback,
+                            max_retries=2  # 最大2回リトライ
                         )
 
                         # 結果を保存
@@ -255,6 +321,76 @@ def fetch_today_data():
 
                 scraper.close()
                 fetch_progress.empty()
+
+                # 取得後の確認: 実際に保存された件数を確認
+                conn = sqlite3.connect(DATABASE_PATH)
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM races WHERE race_date = ?", (today_str,))
+                final_count = cursor.fetchone()[0]
+
+                # 会場別の取得状況を確認
+                cursor.execute("""
+                    SELECT venue_code, COUNT(*) as cnt
+                    FROM races WHERE race_date = ?
+                    GROUP BY venue_code
+                """, (today_str,))
+                venue_counts = {row[0]: row[1] for row in cursor.fetchall()}
+                conn.close()
+
+                # 不足会場を特定
+                missing_venues = []
+                for venue_code in today_schedule.keys():
+                    if venue_code not in venue_counts or venue_counts[venue_code] < 12:
+                        missing_venues.append(venue_code)
+
+                # 結果表示
+                if final_count >= expected_races:
+                    st.success(f"✅ データ取得完了: {final_count}/{expected_races} レース")
+                elif missing_venues:
+                    st.warning(f"⚠️ 一部データ取得: {final_count}/{expected_races} レース（不足会場: {', '.join(missing_venues)}）")
+
+                    # 不足会場の再取得を試行
+                    if len(missing_venues) > 0:
+                        retry_progress = st.empty()
+                        retry_progress.info(f"🔄 不足会場 {len(missing_venues)}件を再取得中...")
+
+                        retry_scraper = BulkScraper()  # 直列処理で確実に取得
+                        race_date = list(today_schedule.values())[0]
+
+                        for idx, venue_code in enumerate(missing_venues, 1):
+                            retry_progress.text(f"再取得中: {venue_code} ({idx}/{len(missing_venues)})")
+                            try:
+                                result = retry_scraper.fetch_multiple_venues(
+                                    venue_codes=[venue_code],
+                                    race_date=race_date,
+                                    race_count=12
+                                )
+                                if venue_code in result:
+                                    for race_data in result[venue_code]:
+                                        try:
+                                            if race_data and isinstance(race_data, dict):
+                                                data_manager.save_race_data(race_data)
+                                        except:
+                                            pass
+                            except Exception as retry_error:
+                                logger.warning(f"会場 {venue_code} 再取得失敗: {retry_error}")
+
+                        retry_scraper.close()
+                        retry_progress.empty()
+
+                        # 最終確認
+                        conn = sqlite3.connect(DATABASE_PATH)
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT COUNT(*) FROM races WHERE race_date = ?", (today_str,))
+                        final_count = cursor.fetchone()[0]
+                        conn.close()
+
+                        if final_count >= expected_races:
+                            st.success(f"✅ 再取得完了: {final_count}/{expected_races} レース")
+                        else:
+                            st.warning(f"⚠️ 最終結果: {final_count}/{expected_races} レース（一部取得できませんでした）")
+                else:
+                    st.info(f"📊 データ取得結果: {final_count}/{expected_races} レース")
 
                 # スケジュールを返す（予測生成は呼び出し元で行う）
                 return today_schedule
@@ -330,23 +466,88 @@ def reanalyze_rules():
 
 def fetch_today_odds(today_schedule):
     """
-    本日の全レースのオッズを取得
+    本日の全レースのオッズを取得（並列化・高速版）
 
     Args:
         today_schedule: {venue_code: race_date} の辞書
     """
+    import concurrent.futures
+    import sqlite3
+    from src.scraper.odds_scraper import OddsScraper
+
+    MAX_WORKERS = 8  # 並列数
+    MAX_ODDS_FETCH_TIME = 300  # 5分タイムアウト
+
+    # レース一覧を取得
+    conn = sqlite3.connect('data/boatrace.db')
+    cursor = conn.cursor()
+
+    all_races = []
+    for venue_code, race_date in today_schedule.items():
+        race_date_iso = race_date if '-' in race_date else f"{race_date[:4]}-{race_date[4:6]}-{race_date[6:8]}"
+        cursor.execute("""
+            SELECT id, race_number FROM races
+            WHERE venue_code = ? AND race_date = ?
+            ORDER BY race_number
+        """, (venue_code, race_date_iso))
+        for row in cursor.fetchall():
+            all_races.append({
+                'race_id': row[0],
+                'venue_code': venue_code,
+                'race_date': race_date.replace('-', ''),
+                'race_number': row[1]
+            })
+    conn.close()
+
+    if not all_races:
+        st.warning("⚠️ オッズ取得対象のレースがありません")
+        return
+
+    def fetch_single_odds(race_info):
+        """1レースのオッズを取得"""
+        try:
+            scraper = OddsScraper(delay=0.1, max_retries=1)
+            odds = scraper.get_trifecta_odds(
+                race_info['venue_code'],
+                race_info['race_date'],
+                race_info['race_number']
+            )
+            scraper.close()
+
+            if odds and len(odds) > 50:
+                # DBに保存
+                conn = sqlite3.connect('data/boatrace.db')
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM trifecta_odds WHERE race_id = ?", (race_info['race_id'],))
+                for combo, odds_val in odds.items():
+                    cursor.execute(
+                        "INSERT INTO trifecta_odds (race_id, combination, odds) VALUES (?, ?, ?)",
+                        (race_info['race_id'], combo, odds_val)
+                    )
+                conn.commit()
+                conn.close()
+                return True
+            return False
+        except Exception:
+            return False
+
     try:
-        from src.scraper.auto_odds_fetcher import AutoOddsFetcher
+        with st.spinner(f"オッズを取得中...（{len(all_races)}レース、最大5分）"):
+            success_count = 0
+            with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                futures = {executor.submit(fetch_single_odds, race): race for race in all_races}
 
-        with st.spinner("オッズを取得中..."):
-            fetcher = AutoOddsFetcher(delay=1.0)
-            result = fetcher.fetch_odds_for_today(today_schedule)
-            fetcher.close()
+                try:
+                    for future in concurrent.futures.as_completed(futures, timeout=MAX_ODDS_FETCH_TIME):
+                        if future.result():
+                            success_count += 1
+                except concurrent.futures.TimeoutError:
+                    pass
 
-            if result['success_count'] > 0:
-                st.success(f"✅ オッズ取得: {result['success_count']}/{result['total_races']} レース")
+            if success_count > 0:
+                st.success(f"✅ オッズ取得: {success_count}/{len(all_races)} レース")
             else:
-                st.warning("⚠️ オッズ取得に失敗しました（レース開始前の可能性があります）")
+                st.warning("⚠️ オッズ取得に失敗しました")
 
     except Exception as e:
         st.warning(f"⚠️ オッズ取得エラー: {e}")
@@ -417,3 +618,33 @@ def generate_and_save_predictions(today_schedule):
             st.error("予想生成がタイムアウトしました（10分経過）")
         except Exception as e:
             st.error(f"予想生成エラー: {e}")
+
+
+def run_supplement_collection(status_text=None):
+    """
+    補完データ収集（今日の予測準備用 - 高速化版）
+
+    注: 過去データの大量補完（8000件以上）は時間がかかるためスキップ。
+    今日のレースにはまだ結果がないため、補完対象もない。
+    過去データの補完は「過去データ学習」で行う。
+
+    Args:
+        status_text: Streamlitのステータス表示用empty()
+    """
+    # 今日の予測準備では補完スクリプトをスキップ
+    # 理由: 今日のレースには結果がないため決まり手/詳細データ補完不要
+    #       過去データの補完は時間がかかりすぎる（8000件以上 → 数時間）
+
+    if status_text:
+        status_text.text("Step 2/6: DBビューを更新中...")
+
+    # DBビューの更新のみ実行（軽量・数秒で完了）
+    try:
+        from src.database.views import create_all_views
+        import sqlite3
+        conn = sqlite3.connect('data/boatrace.db')
+        create_all_views(conn)
+        conn.close()
+        logger.info("補完データ収集: スキップ（今日分は補完不要）、DBビュー更新完了")
+    except Exception as e:
+        logger.warning(f"DBビュー更新エラー: {e}")

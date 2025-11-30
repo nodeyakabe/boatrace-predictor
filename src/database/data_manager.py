@@ -206,8 +206,15 @@ class DataManager:
         race_date = race_data['race_date']
         race_number = race_data['race_number']
         race_time = race_data.get('race_time')
-        race_grade = race_data.get('race_grade')
+        race_grade = race_data.get('race_grade', '')
         race_distance = race_data.get('race_distance')
+
+        # 新しいカラム（レースタイプ判定用）
+        grade = race_data.get('grade', race_grade or '')  # gradeを優先、なければrace_grade
+        is_nighter = 1 if race_data.get('is_nighter', False) else 0
+        is_ladies = 1 if race_data.get('is_ladies', False) else 0
+        is_rookie = 1 if race_data.get('is_rookie', False) else 0
+        is_shinnyuu_kotei = 1 if race_data.get('is_shinnyuu_kotei', False) else 0
 
         # 日付をYYYY-MM-DD形式に変換（安全なユーティリティ使用）
         race_date_formatted = to_iso_format(race_date)
@@ -225,16 +232,21 @@ class DataManager:
             race_id = existing[0]
             cursor.execute("""
                 UPDATE races
-                SET race_time = ?, race_grade = ?, race_distance = ?
+                SET race_time = ?,
+                    grade = ?,
+                    is_nighter = ?,
+                    is_ladies = ?,
+                    is_rookie = ?,
+                    is_shinnyuu_kotei = ?
                 WHERE id = ?
-            """, (race_time, race_grade, race_distance, race_id))
+            """, (race_time, grade, is_nighter, is_ladies, is_rookie, is_shinnyuu_kotei, race_id))
             logger.info(f"レース情報を更新: race_id={race_id}")
         else:
             # 新規データを挿入
             cursor.execute("""
-                INSERT INTO races (venue_code, race_date, race_number, race_time, race_grade, race_distance)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (venue_code, race_date_formatted, race_number, race_time, race_grade, race_distance))
+                INSERT INTO races (venue_code, race_date, race_number, race_time, grade, is_nighter, is_ladies, is_rookie, is_shinnyuu_kotei)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (venue_code, race_date_formatted, race_number, race_time, grade, is_nighter, is_ladies, is_rookie, is_shinnyuu_kotei))
             race_id = cursor.lastrowid
             logger.info(f"レース情報を新規登録: race_id={race_id}")
 

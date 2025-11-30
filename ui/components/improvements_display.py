@@ -182,10 +182,19 @@ def render_first_place_lock_details(predictions: List[Dict]):
     # FirstPlaceLockAnalyzerを使用して判定
     lock_analyzer = FirstPlaceLockAnalyzer()
 
-    # 推定勝率を取得（仮に total_score から計算）
-    total_score = pit1.get('total_score', pit1.get('score', 50))
-    estimated_win_rate = pit1.get('estimated_win_rate', total_score / 100.0)
-    data_completeness = pit1.get('data_completeness_score', 50)
+    # 推定勝率を計算（スコアベースで全艇の相対値から算出）
+    total_scores = {p['pit_number']: p.get('total_score', p.get('score', 50)) for p in predictions}
+    min_score = min(total_scores.values())
+    adjusted_scores = {pit: score - min_score for pit, score in total_scores.items()}
+    total = sum(adjusted_scores.values())
+    if total > 0:
+        estimated_win_rate = adjusted_scores.get(1, 0) / total
+    else:
+        estimated_win_rate = 1.0 / len(predictions)
+
+    # データ充実度: 予測データにあればそれを使用、なければ高い値を仮定
+    # （DBに保存された予測にはこの列がないため、予測が生成された時点で十分なデータがあったと判断）
+    data_completeness = pit1.get('data_completeness_score', 80)
 
     result = lock_analyzer.should_lock_first_place(
         pit_number=1,

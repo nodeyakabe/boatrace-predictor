@@ -4,14 +4,40 @@ Phase 2: 選手の調子波とモーター性能の経時変化
 """
 import pandas as pd
 import numpy as np
+import sqlite3
 from datetime import datetime, timedelta
 
 
 class TimeseriesFeatureGenerator:
     """時系列特徴量生成クラス"""
 
-    def __init__(self, db_connection):
-        self.conn = db_connection
+    def __init__(self, db_connection_or_path):
+        """
+        初期化
+
+        Args:
+            db_connection_or_path: DB接続またはDBパス
+                - sqlite3.Connection: 既存の接続（後方互換）
+                - str: DBファイルパス（スレッドセーフ）
+        """
+        if isinstance(db_connection_or_path, str):
+            self.db_path = db_connection_or_path
+            self.conn = None  # 接続は都度作成
+        else:
+            # 後方互換: 既存の接続を使用
+            self.db_path = None
+            self.conn = db_connection_or_path
+
+    def _get_connection(self):
+        """スレッドセーフなDB接続を取得"""
+        if self.db_path:
+            return sqlite3.connect(self.db_path)
+        return self.conn
+
+    def _close_connection(self, conn):
+        """接続を閉じる（db_pathモードの場合のみ）"""
+        if self.db_path and conn:
+            conn.close()
 
     def calculate_racer_momentum(self, racer_number, target_date, window_days=30):
         """
@@ -41,9 +67,11 @@ class TimeseriesFeatureGenerator:
             ORDER BY r.race_date ASC
         """
 
-        cursor = self.conn.cursor()
+        conn = self._get_connection()
+        cursor = conn.cursor()
         cursor.execute(query, (racer_number, start_date, target_date))
         results = cursor.fetchall()
+        self._close_connection(conn)
 
         if len(results) < 3:
             return {
@@ -107,9 +135,11 @@ class TimeseriesFeatureGenerator:
             ORDER BY r.race_date ASC
         """
 
-        cursor = self.conn.cursor()
+        conn = self._get_connection()
+        cursor = conn.cursor()
         cursor.execute(query, (motor_number, venue_code, motor_start_date, target_date))
         results = cursor.fetchall()
+        self._close_connection(conn)
 
         if len(results) < 5:
             return {
@@ -168,9 +198,11 @@ class TimeseriesFeatureGenerator:
             ORDER BY race_date ASC
         """
 
-        cursor = self.conn.cursor()
+        conn = self._get_connection()
+        cursor = conn.cursor()
         cursor.execute(query, (venue_code, start_date, target_date))
         results = cursor.fetchall()
+        self._close_connection(conn)
 
         if len(results) < 2:
             return {

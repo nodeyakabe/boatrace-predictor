@@ -194,18 +194,10 @@ class BeforeInfoFetcher:
         racers = []
 
         try:
-            # 選手情報のテーブルを探す
-            racer_table = soup.find('table', class_=re.compile('.*table.*'))
-
-            if not racer_table:
-                # 別の構造を試す
-                racer_rows = soup.find_all('tr', class_=re.compile('.*racer.*|.*row.*'))
-            else:
-                racer_rows = racer_table.find_all('tr')[1:]  # ヘッダーをスキップ
-
-            for row in racer_rows:
+            # 枠番1-6を持つtdを探して、その親trから情報を抽出
+            for pit_num in range(1, 7):
                 racer_data = {
-                    'pit_number': None,
+                    'pit_number': pit_num,
                     'racer_number': None,
                     'racer_name': None,
                     'weight': None,          # 体重
@@ -216,70 +208,43 @@ class BeforeInfoFetcher:
                     'course': None           # 実際のコース
                 }
 
-                try:
-                    # 枠番
-                    pit_elem = row.find('td', class_=re.compile('.*pit.*|.*waku.*'))
-                    if not pit_elem:
-                        pit_elem = row.find('div', class_=re.compile('.*pit.*|.*waku.*'))
-                    if pit_elem:
-                        pit_text = pit_elem.get_text(strip=True)
-                        match = re.search(r'(\d)', pit_text)
-                        if match:
-                            racer_data['pit_number'] = int(match.group(1))
+                # is-boatColorN クラスを持つtdを探す
+                pit_td = soup.find('td', class_=f'is-boatColor{pit_num}')
+                if not pit_td:
+                    continue
 
-                    # 選手名
-                    name_elem = row.find('a', class_=re.compile('.*name.*'))
-                    if not name_elem:
-                        name_elem = row.find('td', class_=re.compile('.*name.*'))
-                    if name_elem:
-                        racer_data['racer_name'] = name_elem.get_text(strip=True)
+                # 親のtrを取得
+                tr = pit_td.find_parent('tr')
+                if not tr:
+                    continue
 
-                    # 体重（例: 52.2kg）
-                    weight_elem = row.find(string=re.compile(r'\d+\.\d+kg'))
-                    if weight_elem:
-                        match = re.search(r'(\d+\.\d+)', str(weight_elem))
+                # tr内の全tdのテキストを取得
+                tds = tr.find_all('td')
+                texts = [td.get_text(strip=True) for td in tds]
+
+                for text in texts:
+                    # 展示タイム（6.72のような形式）
+                    if racer_data['exhibition_time'] is None and re.match(r'^\d+\.\d{2}$', text):
+                        racer_data['exhibition_time'] = float(text)
+
+                    # 体重（53.0kgのような形式）
+                    if racer_data['weight'] is None and 'kg' in text:
+                        match = re.search(r'(\d+\.\d+)', text)
                         if match:
                             racer_data['weight'] = float(match.group(1))
 
-                    # 展示タイム（例: 6.82）
-                    time_elem = row.find('td', class_=re.compile('.*time.*|.*exhibition.*'))
-                    if time_elem:
-                        time_text = time_elem.get_text(strip=True)
-                        match = re.search(r'(\d+\.\d+)', time_text)
-                        if match:
-                            racer_data['exhibition_time'] = float(match.group(1))
+                    # チルト角度（-0.5, 0.0のような形式、展示タイムより短い）
+                    if racer_data['tilt'] is None and re.match(r'^-?\d+\.\d$', text):
+                        racer_data['tilt'] = float(text)
 
-                    # スタート展示（ST）（例: 0.07）
-                    st_elem = row.find('td', class_=re.compile('.*st.*'))
-                    if st_elem:
-                        st_text = st_elem.get_text(strip=True)
-                        match = re.search(r'(\d+\.\d+)', st_text)
-                        if match:
-                            racer_data['start_timing'] = float(match.group(1))
+                # 選手名を探す（リンク内のテキスト）
+                name_link = tr.find('a')
+                if name_link:
+                    racer_data['racer_name'] = name_link.get_text(strip=True)
 
-                    # チルト角度（例: 0.0）
-                    tilt_elem = row.find('td', class_=re.compile('.*tilt.*'))
-                    if tilt_elem:
-                        tilt_text = tilt_elem.get_text(strip=True)
-                        match = re.search(r'(-?\d+\.\d+)', tilt_text)
-                        if match:
-                            racer_data['tilt'] = float(match.group(1))
-
-                    # コース
-                    course_elem = row.find('td', class_=re.compile('.*course.*'))
-                    if course_elem:
-                        course_text = course_elem.get_text(strip=True)
-                        match = re.search(r'(\d)', course_text)
-                        if match:
-                            racer_data['course'] = int(match.group(1))
-
-                    # データがある場合のみ追加
-                    if racer_data['pit_number']:
-                        racers.append(racer_data)
-
-                except Exception as e:
-                    print(f"⚠️ 選手情報抽出エラー（1行）: {e}")
-                    continue
+                # データがある場合のみ追加
+                if racer_data['exhibition_time'] is not None:
+                    racers.append(racer_data)
 
         except Exception as e:
             print(f"❌ 選手情報抽出エラー: {e}")

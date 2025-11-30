@@ -74,6 +74,11 @@ class Database:
         """)
 
         # レーステーブル
+        # is_shinnyuu_kotei: 進入固定レースか（1=固定、0=通常）
+        # grade: グレード（SG/G1/G2/G3/一般）
+        # is_nighter: ナイターレースか
+        # is_ladies: 女子戦か
+        # is_rookie: 新人戦か
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS races (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,6 +86,11 @@ class Database:
                 race_date DATE NOT NULL,
                 race_number INTEGER NOT NULL,
                 race_time TEXT,
+                grade TEXT DEFAULT '',
+                is_nighter INTEGER DEFAULT 0,
+                is_ladies INTEGER DEFAULT 0,
+                is_rookie INTEGER DEFAULT 0,
+                is_shinnyuu_kotei INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(venue_code, race_date, race_number),
                 FOREIGN KEY (venue_code) REFERENCES venues(code)
@@ -214,3 +224,48 @@ class Database:
         conn.commit()
         self.close()
         print(f"{len(venues_data)}件の競艇場情報を登録しました")
+
+    def migrate_add_race_columns(self):
+        """
+        既存のracesテーブルに新カラムを追加するマイグレーション
+
+        追加カラム:
+        - grade: グレード（SG/G1/G2/G3/一般）
+        - is_nighter: ナイターレースか
+        - is_ladies: 女子戦か
+        - is_rookie: 新人戦か
+        - is_shinnyuu_kotei: 進入固定レースか
+        """
+        conn = self.connect()
+        cursor = conn.cursor()
+
+        # 既存カラムを確認
+        cursor.execute("PRAGMA table_info(races)")
+        existing_columns = [row[1] for row in cursor.fetchall()]
+
+        new_columns = [
+            ('grade', "TEXT DEFAULT ''"),
+            ('is_nighter', 'INTEGER DEFAULT 0'),
+            ('is_ladies', 'INTEGER DEFAULT 0'),
+            ('is_rookie', 'INTEGER DEFAULT 0'),
+            ('is_shinnyuu_kotei', 'INTEGER DEFAULT 0'),
+        ]
+
+        added = []
+        for col_name, col_def in new_columns:
+            if col_name not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE races ADD COLUMN {col_name} {col_def}")
+                    added.append(col_name)
+                except sqlite3.OperationalError as e:
+                    print(f"カラム追加エラー ({col_name}): {e}")
+
+        conn.commit()
+        self.close()
+
+        if added:
+            print(f"racesテーブルにカラムを追加しました: {', '.join(added)}")
+        else:
+            print("追加するカラムはありませんでした（既に存在）")
+
+        return added
