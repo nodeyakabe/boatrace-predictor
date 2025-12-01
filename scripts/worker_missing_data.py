@@ -38,73 +38,135 @@ def main():
             complete_job(JOB_NAME, success=True, message='取得対象データがありません')
             return
 
-        total = len(missing_dates)
-        processed = 0
+        # カテゴリ別の補完スクリプトマッピング
+        CATEGORY_SCRIPTS = {
+            "レース基本情報": [],
+            "選手データ": [],
+            "モーター・ボート": [],
+            "天候・気象": [("補完_天候データ_改善版.py", "天候データ"), ("補完_風向データ_改善版.py", "風向データ")],
+            "水面・潮汐": [],
+            "レース展開": [("補完_展示タイム_全件_高速化.py", "展示タイム")],
+            "オッズ・人気": [],
+            "結果データ": [("補完_レース詳細データ_改善版v4.py", "レース詳細"), ("補完_決まり手データ_改善版.py", "決まり手")],
+            "直前情報": [("補完_展示タイム_全件_高速化.py", "直前情報")],
+            "払戻データ": [("補完_払戻金データ.py", "払戻金")]
+        }
+
         errors = 0
+        total_steps = 0
+        current_step = 0
 
+        # フェーズ1: レース基本情報の取得が必要な日付を抽出
+        missing_race_dates = []
         for item in missing_dates:
-            date_str = item['日付']
-            issues = item.get('問題', '')
+            if item.get('レース', 0) == 0:
+                missing_race_dates.append(item['日付'])
 
+        # フェーズ2: 補完スクリプトを収集（重複排除）
+        scripts_to_run = []
+        for category in check_types:
+            if category in CATEGORY_SCRIPTS:
+                for script_name, label in CATEGORY_SCRIPTS[category]:
+                    if script_name and (script_name, label, category) not in [(s[0], s[1], s[2]) for s in scripts_to_run]:
+                        scripts_to_run.append((script_name, label, category))
+
+        # 総ステップ数を計算
+        total_steps = len(missing_race_dates) + len(scripts_to_run)
+
+        if total_steps == 0:
+            complete_job(JOB_NAME, success=True, message='処理対象がありません')
+            return
+
+        # === フェーズ1: レース基本情報の取得 ===
+        if missing_race_dates:
             update_job_progress(JOB_NAME, {
                 'status': 'running',
-                'progress': int((processed / total) * 100),
-                'message': f'{date_str} を処理中... ({processed+1}/{total})',
-                'current_date': date_str,
-                'processed': processed,
-                'total': total,
-                'errors': errors
+                'progress': 0,
+                'message': f'フェーズ1: {len(missing_race_dates)}日分のレース情報を取得中...',
+                'phase': 1,
+                'total_steps': total_steps
             })
 
-            try:
-                # レース基本情報取得
-                if "レース情報なし" in issues:
-                    from src.scraper.bulk_scraper import BulkScraper
-                    scraper = BulkScraper()
+            from src.scraper.bulk_scraper import BulkScraper
+            scraper = BulkScraper()
+
+            for idx, date_str in enumerate(missing_race_dates, 1):
+                try:
+                    progress = int((current_step / total_steps) * 100)
+                    update_job_progress(JOB_NAME, {
+                        'status': 'running',
+                        'progress': progress,
+                        'message': f'{date_str} のレース情報を取得中... ({idx}/{len(missing_race_dates)})',
+                        'phase': 1,
+                        'current_date': date_str
+                    })
 
                     venue_codes = [f"{i:02d}" for i in range(1, 25)]
-                    date_formatted = date_str.replace('-', '')
-
                     scraper.fetch_multiple_venues(
                         venue_codes=venue_codes,
-                        race_date=date_formatted,
+                        race_date=date_str,
                         race_count=12
                     )
 
-                # 補完スクリプトの実行
-                scripts_to_run = []
+                    current_step += 1
 
-                if "結果不足" in issues or "詳細不足" in issues:
-                    scripts_to_run.append("補完_レース詳細データ_改善版v4.py")
+                except Exception as e:
+                    errors += 1
+                    current_step += 1
 
-                if "決まり手不足" in issues:
-                    scripts_to_run.append("補完_決まり手データ_改善版.py")
+        # === フェーズ2: 補完スクリプトの実行 ===
+        if scripts_to_run:
+            update_job_progress(JOB_NAME, {
+                'status': 'running',
+                'progress': int((current_step / total_steps) * 100),
+                'message': f'フェーズ2: {len(scripts_to_run)}種類の補完スクリプトを実行中...',
+                'phase': 2,
+                'total_steps': total_steps
+            })
 
-                if "天候不足" in issues:
-                    scripts_to_run.append("補完_天候データ_改善版.py")
+            for idx, (script_name, label, category) in enumerate(scripts_to_run, 1):
+                try:
+                    progress = int((current_step / total_steps) * 100)
+                    update_job_progress(JOB_NAME, {
+                        'status': 'running',
+                        'progress': progress,
+                        'message': f'[{category}] {label}を補完中... ({idx}/{len(scripts_to_run)})',
+                        'phase': 2,
+                        'current_script': label
+                    })
 
-                if "風向不足" in issues:
-                    scripts_to_run.append("補完_風向データ_改善版.py")
-
-                for script_name in scripts_to_run:
                     script_path = os.path.join(PROJECT_ROOT, script_name)
-                    if os.path.exists(script_path):
-                        # 出力をDEVNULLにリダイレクト（バッファブロック防止）
-                        subprocess.run(
-                            [sys.executable, script_path],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            cwd=PROJECT_ROOT,
-                            timeout=300
-                        )
 
-            except Exception as e:
-                errors += 1
+                    if not os.path.exists(script_path):
+                        errors += 1
+                        current_step += 1
+                        continue
 
-            processed += 1
+                    # スクリプトを実行（タイムアウト600秒）
+                    result = subprocess.run(
+                        [sys.executable, script_path],
+                        capture_output=True,
+                        text=True,
+                        cwd=PROJECT_ROOT,
+                        timeout=600,
+                        encoding='utf-8',
+                        errors='ignore'
+                    )
+
+                    if result.returncode != 0:
+                        errors += 1
+
+                    current_step += 1
+
+                except subprocess.TimeoutExpired:
+                    errors += 1
+                    current_step += 1
+                except Exception as e:
+                    errors += 1
+                    current_step += 1
 
         # 完了
-        message = f'{total}件の処理完了'
+        message = f'{total_steps}ステップ完了'
         if errors > 0:
             message += f'（エラー: {errors}件）'
 

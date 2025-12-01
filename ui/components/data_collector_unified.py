@@ -26,6 +26,7 @@ from src.utils.job_manager import (
     is_job_running, start_job, get_job_progress,
     cancel_job, get_all_jobs
 )
+from src.analysis.data_coverage_checker import DataCoverageChecker
 
 # ジョブ名定数
 JOB_TENJI = 'tenji_collection'
@@ -141,10 +142,10 @@ def _render_quick_collection():
 
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("🔄 状況を更新", key="refresh_data_collection"):
+                if st.button("🔄 状況を更新", key="refresh_quick_collection"):
                     st.rerun()
             with col2:
-                if st.button("⏹️ キャンセル", key="cancel_data_collection"):
+                if st.button("⏹️ キャンセル", key="cancel_quick_collection"):
                     cancel_job(JOB_DATA_COLLECTION)
                     st.rerun()
 
@@ -357,11 +358,19 @@ def _render_missing_data_detector():
             key="missing_end_date"
         )
 
-    # 検出タイプ
+    # DataCoverageCheckerを使用して全カテゴリを取得
+    try:
+        checker = DataCoverageChecker(DATABASE_PATH)
+        report = checker.get_coverage_report()
+        all_categories = list(report["categories"].keys())
+    except Exception:
+        all_categories = ["レース基本情報", "選手データ", "モーター・ボート", "天候・気象", "水面・潮汐", "レース展開", "オッズ・人気", "結果データ", "直前情報", "払戻データ"]
+
+    # 検出タイプ（デフォルトで全カテゴリを選択）
     check_types = st.multiselect(
-        "検出対象",
-        ["レース基本情報", "結果データ", "レース詳細", "決まり手", "天候", "風向"],
-        default=["レース基本情報", "結果データ", "レース詳細"]
+        "検出対象（カテゴリ）",
+        all_categories,
+        default=all_categories  # 全カテゴリをデフォルト選択
     )
 
     if st.button("🔍 不足データを検出", type="primary"):
@@ -403,7 +412,15 @@ def _render_missing_data_detector():
 
 
 def _render_recent_data_status():
-    """直近7日間のデータ状況を表示"""
+    """直近7日間のデータ状況を表示（DataCoverageChecker統合版）"""
+    try:
+        checker = DataCoverageChecker(DATABASE_PATH)
+        report = checker.get_coverage_report()
+        missing_items = checker.get_missing_items()
+    except Exception as e:
+        st.warning(f"データチェッカーのエラー: {e}")
+        missing_items = []
+
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
 
@@ -469,9 +486,37 @@ def _render_recent_data_status():
     df = pd.DataFrame(data_status)
     st.dataframe(df, use_container_width=True, hide_index=True)
 
+    # 全体の不足データサマリーを表示
+    if missing_items:
+        st.markdown("---")
+        st.markdown("**⚠️ 全体で不足しているデータ（重要度順）**")
+        top_missing = missing_items[:10]
+        for item in top_missing:
+            importance_stars = "★" * item["importance"]
+            st.text(f"{importance_stars} [{item['category']}] {item['name']} - {item['coverage']*100:.1f}% ({item['status']})")
+    else:
+        st.success("✅ 全てのデータ項目が充足しています！")
+
 
 def _detect_missing_data(start_date, end_date, check_types: List[str]) -> List[Dict]:
-    """不足データを検出"""
+    """
+    DataCoverageCheckerを使用して不足データを検出
+
+    Args:
+        start_date: 開始日
+        end_date: 終了日
+        check_types: チェック対象カテゴリのリスト
+
+    Returns:
+        不足データのリスト
+    """
+    try:
+        checker = DataCoverageChecker(DATABASE_PATH)
+        report = checker.get_coverage_report()
+    except Exception as e:
+        st.error(f"データチェッカーの初期化エラー: {e}")
+        return []
+
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
 
@@ -481,72 +526,63 @@ def _detect_missing_data(start_date, end_date, check_types: List[str]) -> List[D
     while current_date <= end_date:
         date_str = current_date.strftime('%Y-%m-%d')
 
+        # 日付のレース数を確認
         cursor.execute("SELECT COUNT(*) FROM races WHERE race_date = ?", (date_str,))
         race_count = cursor.fetchone()[0]
 
         issues = []
+        issue_details = []
 
-        if "レース基本情報" in check_types:
-            if race_count == 0:
-                issues.append("レース情報なし")
+        # 各カテゴリの不足をチェック
+        for category_name in check_types:
+            if category_name not in report["categories"]:
+                continue
 
-        if "結果データ" in check_types and race_count > 0:
-            cursor.execute("""
-                SELECT COUNT(*) FROM results r
-                JOIN races ra ON r.race_id = ra.id
-                WHERE ra.race_date = ?
-            """, (date_str,))
-            result_count = cursor.fetchone()[0]
-            expected = race_count * 6
-            if result_count < expected * 0.8:
-                issues.append(f"結果不足({result_count}/{expected})")
+            category_data = report["categories"][category_name]
 
-        if "レース詳細" in check_types and race_count > 0:
-            cursor.execute("""
-                SELECT COUNT(*) FROM race_details rd
-                JOIN races ra ON rd.race_id = ra.id
-                WHERE ra.race_date = ?
-            """, (date_str,))
-            detail_count = cursor.fetchone()[0]
-            expected = race_count * 6
-            if detail_count < expected * 0.8:
-                issues.append(f"詳細不足({detail_count}/{expected})")
+            for item in category_data["items"]:
+                # 各項目の充足率をチェック（90%未満を不足とする）
+                if item["coverage"] < 0.9:
+                    # 日付単位でのチェック（必要に応じて）
+                    if race_count > 0:
+                        item_name = item["name"]
+                        coverage_pct = item["coverage"] * 100
 
-        if "決まり手" in check_types and race_count > 0:
-            cursor.execute("""
-                SELECT COUNT(*) FROM results r
-                JOIN races ra ON r.race_id = ra.id
-                WHERE ra.race_date = ? AND r.kimarite IS NOT NULL
-            """, (date_str,))
-            kimarite_count = cursor.fetchone()[0]
-            if kimarite_count < race_count * 0.8:
-                issues.append(f"決まり手不足({kimarite_count}/{race_count})")
+                        # カテゴリごとに不足を記録
+                        if category_name not in [issue["category"] for issue in issue_details]:
+                            issue_details.append({
+                                "category": category_name,
+                                "items": [f"{item_name}({coverage_pct:.0f}%)"]
+                            })
+                        else:
+                            # 既存カテゴリに項目を追加
+                            for detail in issue_details:
+                                if detail["category"] == category_name:
+                                    detail["items"].append(f"{item_name}({coverage_pct:.0f}%)")
+                                    break
 
-        if "天候" in check_types and race_count > 0:
-            cursor.execute("""
-                SELECT COUNT(*) FROM race_conditions rc
-                JOIN races ra ON rc.race_id = ra.id
-                WHERE ra.race_date = ? AND rc.wind_speed IS NOT NULL
-            """, (date_str,))
-            weather_count = cursor.fetchone()[0]
-            if weather_count < race_count * 0.5:
-                issues.append(f"天候不足({weather_count}/{race_count})")
+        # レース情報がない日付もチェック
+        if race_count == 0 and "レース基本情報" in check_types:
+            issues.append("レース情報なし")
 
-        if "風向" in check_types and race_count > 0:
-            cursor.execute("""
-                SELECT COUNT(*) FROM race_conditions rc
-                JOIN races ra ON rc.race_id = ra.id
-                WHERE ra.race_date = ? AND rc.wind_direction IS NOT NULL
-            """, (date_str,))
-            wind_count = cursor.fetchone()[0]
-            if wind_count < race_count * 0.5:
-                issues.append(f"風向不足({wind_count}/{race_count})")
+        # 不足項目を文字列化
+        if issue_details:
+            for detail in issue_details:
+                category = detail["category"]
+                items = detail["items"][:3]  # 最大3項目表示
+                if len(detail["items"]) > 3:
+                    items.append(f"他{len(detail['items'])-3}項目")
+                issues.append(f"{category}: " + ", ".join(items))
 
-        if issues:
+        if issues or race_count == 0:
             missing.append({
                 '日付': date_str,
-                'レース数': race_count,
-                '問題': ', '.join(issues)
+                '曜日': ['月', '火', '水', '木', '金', '土', '日'][current_date.weekday()],
+                'レース': race_count,
+                '結果': 0,  # 後で計算
+                '詳細': 0,  # 後で計算
+                '展示': 0,  # 後で計算
+                'ステータス': '🔴 未取得' if race_count == 0 else '🟡 結果不足' if issues else '🟢 完了'
             })
 
         current_date += timedelta(days=1)
@@ -591,7 +627,13 @@ def _start_missing_data_job(missing_dates: List[Dict], check_types: List[str]):
 
 
 def _fetch_missing_data_foreground(missing_dates: List[Dict], check_types: List[str]):
-    """不足データを取得（フォアグラウンド）"""
+    """
+    不足データを取得（フォアグラウンド）
+    全カテゴリ対応版 - 改善版
+
+    補完スクリプトは全期間のデータを一括処理するため、
+    期間全体で1回だけ実行すれば良い。
+    """
     progress_bar = st.progress(0)
     status_text = st.empty()
     log_placeholder = st.empty()
@@ -599,79 +641,127 @@ def _fetch_missing_data_foreground(missing_dates: List[Dict], check_types: List[
 
     def add_log(msg):
         logs.append(f"{datetime.now().strftime('%H:%M:%S')} - {msg}")
-        log_placeholder.text_area("実行ログ", "\n".join(logs[-15:]), height=250)
+        log_placeholder.text_area("実行ログ", "\n".join(logs[-20:]), height=300)
 
-    total = len(missing_dates)
+    # カテゴリ別の補完スクリプトマッピング
+    CATEGORY_SCRIPTS = {
+        "レース基本情報": [],  # 基本情報は直接スクレイピング
+        "選手データ": [],  # 基本情報取得時に一緒に取得される
+        "モーター・ボート": [],  # 基本情報取得時に一緒に取得される
+        "天候・気象": [("補完_天候データ_改善版.py", "天候データ"), ("補完_風向データ_改善版.py", "風向データ")],
+        "水面・潮汐": [],  # 潮汐APIが未実装
+        "レース展開": [("補完_展示タイム_全件_高速化.py", "展示タイム")],
+        "オッズ・人気": [],  # オッズ取得は別途実装が必要
+        "結果データ": [("補完_レース詳細データ_改善版v4.py", "レース詳細"), ("補完_決まり手データ_改善版.py", "決まり手")],
+        "直前情報": [("補完_展示タイム_全件_高速化.py", "直前情報")],
+        "払戻データ": [("補完_払戻金データ.py", "払戻金")]
+    }
 
-    for idx, item in enumerate(missing_dates):
-        date_str = item['日付']
-        issues = item['問題']
+    add_log(f"=== 不足データ取得開始 ===")
+    add_log(f"対象カテゴリ: {', '.join(check_types)}")
+    add_log(f"対象期間: {len(missing_dates)}日分")
+    add_log("")
 
-        status_text.text(f"処理中: {date_str} ({idx+1}/{total})")
-        add_log(f"--- {date_str} の処理開始 ---")
+    # フェーズ1: レース基本情報の取得
+    status_text.text("フェーズ 1/2: レース基本情報の取得")
+    progress_bar.progress(0.1)
 
-        try:
-            if "レース情報なし" in issues:
-                add_log("  レース基本情報を取得中...")
-                from src.scraper.bulk_scraper import BulkScraper
-                scraper = BulkScraper()
+    if "レース基本情報" in check_types:
+        add_log("【フェーズ1】 レース基本情報の取得")
+        missing_race_dates = [item for item in missing_dates if item.get('レース', 0) == 0]
 
-                venue_codes = [f"{i:02d}" for i in range(1, 25)]
-                date_formatted = date_str.replace('-', '')
+        if missing_race_dates:
+            add_log(f"  {len(missing_race_dates)}日分のレース情報が不足")
+            from src.scraper.bulk_scraper import BulkScraper
+            scraper = BulkScraper()
 
-                result = scraper.fetch_multiple_venues(
-                    venue_codes=venue_codes,
-                    race_date=date_formatted,
-                    race_count=12
-                )
+            for idx, item in enumerate(missing_race_dates):
+                date_str = item['日付']
+                add_log(f"  {date_str} のレース情報を取得中...")
 
-                total_races = sum(len(races) for races in result.values())
-                add_log(f"  ✅ {total_races}レース取得")
+                try:
+                    venue_codes = [f"{i:02d}" for i in range(1, 25)]
+                    result = scraper.fetch_multiple_venues(
+                        venue_codes=venue_codes,
+                        race_date=date_str,
+                        race_count=12
+                    )
+                    total_races = sum(len(races) for races in result.values())
+                    if total_races > 0:
+                        add_log(f"  ✅ {total_races}レース取得")
+                    else:
+                        add_log(f"  ⚠️ レースなし（休催日）")
+                except Exception as e:
+                    add_log(f"  ❌ エラー: {str(e)[:60]}")
 
-            scripts_to_run = []
+                progress = 0.1 + (0.4 * (idx + 1) / len(missing_race_dates))
+                progress_bar.progress(progress)
+        else:
+            add_log("  スキップ: レース基本情報は充足")
+    else:
+        add_log("【フェーズ1】 スキップ（対象外）")
 
-            if "結果不足" in issues or "詳細不足" in issues:
-                scripts_to_run.append(("補完_レース詳細データ_改善版v4.py", "レース詳細"))
+    # フェーズ2: 補完スクリプトの実行
+    status_text.text("フェーズ 2/2: 詳細データの補完")
+    progress_bar.progress(0.5)
+    add_log("")
+    add_log("【フェーズ2】 詳細データの補完")
 
-            if "決まり手不足" in issues:
-                scripts_to_run.append(("補完_決まり手データ_改善版.py", "決まり手"))
+    # 実行する補完スクリプトを収集（重複排除）
+    scripts_to_run = []
+    for category in check_types:
+        if category in CATEGORY_SCRIPTS:
+            for script_name, label in CATEGORY_SCRIPTS[category]:
+                if script_name and (script_name, label, category) not in [(s[0], s[1], s[2]) for s in scripts_to_run]:
+                    scripts_to_run.append((script_name, label, category))
 
-            if "天候不足" in issues:
-                scripts_to_run.append(("補完_天候データ_改善版.py", "天候"))
+    if scripts_to_run:
+        add_log(f"  実行する補完スクリプト: {len(scripts_to_run)}個")
+        add_log("")
 
-            if "風向不足" in issues:
-                scripts_to_run.append(("補完_風向データ_改善版.py", "風向"))
+        for idx, (script_name, label, category) in enumerate(scripts_to_run):
+            script_path = os.path.join(PROJECT_ROOT, script_name)
 
-            for script_name, label in scripts_to_run:
-                script_path = os.path.join(PROJECT_ROOT, script_name)
-                if os.path.exists(script_path):
-                    add_log(f"  {label}データを補完中...")
-                    try:
-                        result = subprocess.run(
-                            [sys.executable, script_path],
-                            capture_output=True,
-                            text=True,
-                            cwd=PROJECT_ROOT,
-                            timeout=300,
-                            encoding='utf-8'
-                        )
-                        if result.returncode == 0:
-                            add_log(f"  ✅ {label}完了")
-                        else:
-                            add_log(f"  ⚠️ {label}警告あり")
-                    except subprocess.TimeoutExpired:
-                        add_log(f"  ⏱️ {label}タイムアウト")
-                    except Exception as e:
-                        add_log(f"  ❌ {label}エラー: {str(e)[:50]}")
+            if os.path.exists(script_path):
+                add_log(f"  [{category}] {label} 補完中...")
+                status_text.text(f"フェーズ 2/2: {label} 補完中 ({idx+1}/{len(scripts_to_run)})")
 
-        except Exception as e:
-            add_log(f"  ❌ エラー: {str(e)[:80]}")
+                try:
+                    result = subprocess.run(
+                        [sys.executable, script_path],
+                        capture_output=True,
+                        text=True,
+                        cwd=PROJECT_ROOT,
+                        timeout=600,
+                        encoding='utf-8',
+                        errors='ignore'
+                    )
+                    if result.returncode == 0:
+                        add_log(f"  ✅ {label} 完了")
+                    else:
+                        add_log(f"  ⚠️ {label} 終了（警告あり）")
+                        if result.stderr:
+                            error_lines = result.stderr.strip().split('\n')[-3:]
+                            for line in error_lines:
+                                add_log(f"     {line[:70]}")
+                except subprocess.TimeoutExpired:
+                    add_log(f"  ⏱️ {label} タイムアウト（10分超過）")
+                except Exception as e:
+                    add_log(f"  ❌ {label} エラー: {str(e)[:60]}")
+            else:
+                add_log(f"  ⚠️ [{category}] {label} スクリプト未実装 ({script_name})")
 
-        progress_bar.progress((idx + 1) / total)
+            progress = 0.5 + (0.5 * (idx + 1) / len(scripts_to_run))
+            progress_bar.progress(progress)
+    else:
+        add_log("  実行する補完スクリプトなし")
+        progress_bar.progress(1.0)
 
     status_text.text("✅ 処理完了！")
-    add_log("="*40)
-    add_log("全ての処理が完了しました")
+    progress_bar.progress(1.0)
+    add_log("")
+    add_log("="*50)
+    add_log(f"全ての処理が完了しました")
 
     if 'missing_dates' in st.session_state:
         del st.session_state['missing_dates']

@@ -77,9 +77,19 @@ class BulkScraper:
                     error_count += 1
                     print(f"  [NG] 失敗: データが取得できませんでした")
 
+                    # 1レース目でデータが取得できない場合は早期リターン
+                    if race_number == 1:
+                        print(f"  [INFO] 1レース目のデータが取得できないため、この会場をスキップします")
+                        break
+
             except Exception as e:
                 error_count += 1
                 print(f"  [ERROR] エラー: {e}")
+
+                # 1レース目でエラーが発生した場合は早期リターン
+                if race_number == 1:
+                    print(f"  [INFO] 1レース目でエラーが発生したため、この会場をスキップします")
+                    break
 
             # レート制限対策（最後のレース以外は少し待機）
             if race_number < race_count:
