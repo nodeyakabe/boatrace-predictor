@@ -1,10 +1,10 @@
 {
-  "status": "completed",
-  "progress": 100,
-  "message": "2025-11-28 の収集完了 ",
-  "started_at": "2025-11-29T17:45:06.162330",
-  "updated_at": "2025-11-29T17:45:08.532630",
-  "target_date": "2025-11-28",
-  "cancelled_at": "2025-11-26T16:44:21.399549",
+  "status": "cancelled",
+  "progress": 10,
+  "message": "キャンセルされました",
+  "started_at": "2025-11-30T14:44:23.047283",
+  "updated_at": "2025-11-30T14:52:30.510139",
+  "target_date": "2025-11-29",
+  "cancelled_at": "2025-11-30T14:52:30.510139",
   "completed_at": "2025-11-29T17:45:08.517771"
 }

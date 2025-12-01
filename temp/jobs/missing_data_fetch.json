@@ -1,11 +1,16 @@
 {
   "status": "running",
-  "progress": 28,
-  "message": "2025-11-10 を処理中... (9/28)",
-  "started_at": "2025-11-29T17:48:29.812790",
-  "updated_at": "2025-11-29T22:21:36.884695",
+  "progress": 0,
+  "message": "1812レースの結果データを取得中...",
+  "started_at": "2025-12-01T22:27:54.542882",
+  "updated_at": "2025-12-01T22:27:54.964983",
   "current_date": "2025-11-10",
   "processed": 8,
   "total": 28,
-  "errors": 8
+  "errors": 8,
+  "phase": 2,
+  "total_steps": 2,
+  "current_script": "レース詳細",
+  "completed_at": "2025-12-01T22:18:39.878180",
+  "step": "フェーズ1.5"
 }

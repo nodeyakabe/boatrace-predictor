@@ -497,7 +497,9 @@ class CompoundBuffSystem:
 
         # スタートタイミング（平均ST）
         overall_stats = racer_analysis.get("overall_stats", {})
-        avg_st = overall_stats.get("avg_st", 0.15)
+        avg_st = overall_stats.get("avg_st")
+        if avg_st is None:
+            avg_st = 0.15  # デフォルト値
         if avg_st <= 0.12:
             context["start_timing"] = "早い"
         elif avg_st >= 0.18:

@@ -282,11 +282,24 @@ def _render_missing_data_detector():
             key="missing_end_date"
         )
 
-    # 検出タイプ
+    # 検出タイプ（2カテゴリ設計）
+    st.markdown("""
+    **取得対象を選択:**
+
+    📋 **直前情報取得** - レース前に取得可能なデータ
+    - 展示タイム・チルト・部品交換
+    - 天候・風向・潮位
+    - オッズ（当日レースのみ）
+
+    ✅ **当日確定情報** - レース後に確定するデータ
+    - レース基本情報・結果・ST・進入コース
+    - 決まり手・払戻金
+    """)
+
     check_types = st.multiselect(
-        "検出対象",
-        ["レース基本情報", "結果データ", "レース詳細", "決まり手", "天候", "風向"],
-        default=["レース基本情報", "結果データ", "レース詳細"]
+        "取得対象",
+        ["直前情報取得", "当日確定情報"],
+        default=["当日確定情報"]
     )
 
     if st.button("🔍 不足データを検出", type="primary"):
@@ -308,34 +321,27 @@ def _render_missing_data_detector():
             df = pd.DataFrame(missing_dates)
             st.dataframe(df, use_container_width=True, hide_index=True)
 
-        # 取得ボタン（バックグラウンド実行）
-        col1, col2 = st.columns(2)
-
-        with col1:
-            if st.button("📥 バックグラウンドで取得", type="primary"):
-                _start_missing_data_job(
-                    missing_dates,
-                    st.session_state.get('missing_check_types', [])
-                )
-
-        with col2:
-            if st.button("📥 フォアグラウンドで取得"):
-                _fetch_missing_data_foreground(
-                    missing_dates,
-                    st.session_state.get('missing_check_types', [])
-                )
+        # 取得ボタン（バックグラウンド実行のみ）
+        if st.button("📥 不足データを取得", type="primary", use_container_width=True):
+            _start_missing_data_job(
+                missing_dates,
+                st.session_state.get('missing_check_types', [])
+            )
 
     elif 'missing_dates' in st.session_state:
         st.success("✅ 不足データはありません！")
 
 
 def _detect_missing_data(start_date, end_date, check_types: List[str]) -> List[Dict]:
-    """不足データを検出"""
+    """不足データを検出（2カテゴリ設計）"""
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
 
     missing = []
     current_date = start_date
+
+    is_beforeinfo_mode = "直前情報取得" in check_types
+    is_confirmed_mode = "当日確定情報" in check_types
 
     while current_date <= end_date:
         date_str = current_date.strftime('%Y-%m-%d')
@@ -348,43 +354,53 @@ def _detect_missing_data(start_date, end_date, check_types: List[str]) -> List[D
 
         issues = []
 
-        if "レース基本情報" in check_types:
+        # ========================================
+        # 【当日確定情報】モードのチェック
+        # ========================================
+        if is_confirmed_mode:
+            # レース基本情報（常にチェック）
             if race_count == 0:
                 issues.append("レース情報なし")
 
-        if "結果データ" in check_types and race_count > 0:
-            cursor.execute("""
-                SELECT COUNT(*) FROM results r
-                JOIN races ra ON r.race_id = ra.id
-                WHERE ra.race_date = ?
-            """, (date_str,))
-            result_count = cursor.fetchone()[0]
-            expected = race_count * 6
-            if result_count < expected * 0.8:
-                issues.append(f"結果不足({result_count}/{expected})")
+            # 結果データ
+            if race_count > 0:
+                cursor.execute("""
+                    SELECT COUNT(*) FROM results r
+                    JOIN races ra ON r.race_id = ra.id
+                    WHERE ra.race_date = ?
+                """, (date_str,))
+                result_count = cursor.fetchone()[0]
+                expected = race_count * 6
+                if result_count < expected * 0.8:
+                    issues.append(f"結果不足({result_count}/{expected})")
 
-        if "レース詳細" in check_types and race_count > 0:
+            # 払戻データ
+            if race_count > 0:
+                cursor.execute("""
+                    SELECT COUNT(DISTINCT p.race_id) FROM payouts p
+                    JOIN races ra ON p.race_id = ra.id
+                    WHERE ra.race_date = ?
+                """, (date_str,))
+                payout_count = cursor.fetchone()[0]
+                if payout_count < race_count * 0.8:
+                    issues.append(f"払戻不足({payout_count}/{race_count})")
+
+        # ========================================
+        # 【直前情報取得】モードのチェック
+        # ========================================
+        if is_beforeinfo_mode and race_count > 0:
+            # 直前情報（展示タイム）
             cursor.execute("""
                 SELECT COUNT(*) FROM race_details rd
                 JOIN races ra ON rd.race_id = ra.id
-                WHERE ra.race_date = ?
+                WHERE ra.race_date = ? AND rd.exhibition_time IS NOT NULL
             """, (date_str,))
-            detail_count = cursor.fetchone()[0]
+            exhibition_count = cursor.fetchone()[0]
             expected = race_count * 6
-            if detail_count < expected * 0.8:
-                issues.append(f"詳細不足({detail_count}/{expected})")
+            if exhibition_count < expected * 0.5:
+                issues.append(f"直前情報不足({exhibition_count}/{expected})")
 
-        if "決まり手" in check_types and race_count > 0:
-            cursor.execute("""
-                SELECT COUNT(*) FROM results r
-                JOIN races ra ON r.race_id = ra.id
-                WHERE ra.race_date = ? AND r.kimarite IS NOT NULL
-            """, (date_str,))
-            kimarite_count = cursor.fetchone()[0]
-            if kimarite_count < race_count * 0.8:
-                issues.append(f"決まり手不足({kimarite_count}/{race_count})")
-
-        if "天候" in check_types and race_count > 0:
+            # 天候・風向
             cursor.execute("""
                 SELECT COUNT(*) FROM race_conditions rc
                 JOIN races ra ON rc.race_id = ra.id
@@ -394,20 +410,53 @@ def _detect_missing_data(start_date, end_date, check_types: List[str]) -> List[D
             if weather_count < race_count * 0.5:
                 issues.append(f"天候不足({weather_count}/{race_count})")
 
-        if "風向" in check_types and race_count > 0:
+            # 潮位（海水場のみ）
+            SEAWATER_VENUES = ['15', '16', '17', '18', '20', '22', '24']
             cursor.execute("""
-                SELECT COUNT(*) FROM race_conditions rc
-                JOIN races ra ON rc.race_id = ra.id
-                WHERE ra.race_date = ? AND rc.wind_direction IS NOT NULL
-            """, (date_str,))
-            wind_count = cursor.fetchone()[0]
-            if wind_count < race_count * 0.5:
-                issues.append(f"風向不足({wind_count}/{race_count})")
+                SELECT COUNT(DISTINCT r.venue_code) FROM races r
+                WHERE r.race_date = ? AND r.venue_code IN ({})
+            """.format(','.join(['?']*len(SEAWATER_VENUES))),
+            (date_str,) + tuple(SEAWATER_VENUES))
+            seawater_venue_count = cursor.fetchone()[0]
+
+            if seawater_venue_count > 0:
+                # tideテーブルが存在するかチェック
+                cursor.execute("""
+                    SELECT name FROM sqlite_master
+                    WHERE type='table' AND name='tide'
+                """)
+                if cursor.fetchone():
+                    cursor.execute("""
+                        SELECT COUNT(DISTINCT t.venue_code) FROM tide t
+                        WHERE t.tide_date = ? AND t.venue_code IN ({})
+                    """.format(','.join(['?']*len(SEAWATER_VENUES))),
+                    (date_str,) + tuple(SEAWATER_VENUES))
+                    tide_count = cursor.fetchone()[0]
+                    if tide_count < seawater_venue_count * 0.5:
+                        issues.append(f"潮位不足({tide_count}/{seawater_venue_count}海水場)")
+
+            # オッズ（当日レースのみ）
+            today = datetime.now().strftime('%Y-%m-%d')
+            if date_str == today:
+                # oddsテーブルが存在するかチェック
+                cursor.execute("""
+                    SELECT name FROM sqlite_master
+                    WHERE type='table' AND name='odds'
+                """)
+                if cursor.fetchone():
+                    cursor.execute("""
+                        SELECT COUNT(DISTINCT o.race_id) FROM odds o
+                        JOIN races ra ON o.race_id = ra.id
+                        WHERE ra.race_date = ?
+                    """, (date_str,))
+                    odds_count = cursor.fetchone()[0]
+                    if odds_count < race_count * 0.5:
+                        issues.append(f"オッズ不足({odds_count}/{race_count})")
 
         if issues:
             missing.append({
                 '日付': date_str,
-                'レース数': race_count,
+                'レース': race_count,
                 '問題': ', '.join(issues)
             })
 
@@ -455,99 +504,6 @@ def _start_missing_data_job(missing_dates: List[Dict], check_types: List[str]):
         st.error(f"❌ {result['message']}")
 
 
-def _fetch_missing_data_foreground(missing_dates: List[Dict], check_types: List[str]):
-    """不足データを取得（フォアグラウンド）"""
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    log_placeholder = st.empty()
-    logs = []
-
-    def add_log(msg):
-        logs.append(f"{datetime.now().strftime('%H:%M:%S')} - {msg}")
-        log_placeholder.text_area("実行ログ", "\n".join(logs[-15:]), height=250)
-
-    total = len(missing_dates)
-
-    for idx, item in enumerate(missing_dates):
-        date_str = item['日付']
-        issues = item['問題']
-
-        status_text.text(f"処理中: {date_str} ({idx+1}/{total})")
-        add_log(f"--- {date_str} の処理開始 ---")
-
-        try:
-            # レース基本情報取得
-            if "レース情報なし" in issues:
-                add_log("  レース基本情報を取得中...")
-                from src.scraper.bulk_scraper import BulkScraper
-                scraper = BulkScraper()
-
-                venue_codes = [f"{i:02d}" for i in range(1, 25)]
-                date_formatted = date_str.replace('-', '')
-
-                result = scraper.fetch_multiple_venues(
-                    venue_codes=venue_codes,
-                    race_date=date_formatted,
-                    race_count=12
-                )
-
-                total_races = sum(len(races) for races in result.values())
-                add_log(f"  ✅ {total_races}レース取得")
-
-            # 補完スクリプトの実行
-            scripts_to_run = []
-
-            if "結果不足" in issues or "詳細不足" in issues:
-                scripts_to_run.append(("補完_レース詳細データ_改善版v4.py", "レース詳細"))
-
-            if "決まり手不足" in issues:
-                scripts_to_run.append(("補完_決まり手データ_改善版.py", "決まり手"))
-
-            if "天候不足" in issues:
-                scripts_to_run.append(("補完_天候データ_改善版.py", "天候"))
-
-            if "風向不足" in issues:
-                scripts_to_run.append(("補完_風向データ_改善版.py", "風向"))
-
-            for script_name, label in scripts_to_run:
-                script_path = os.path.join(PROJECT_ROOT, script_name)
-                if os.path.exists(script_path):
-                    add_log(f"  {label}データを補完中...")
-                    try:
-                        result = subprocess.run(
-                            [sys.executable, script_path],
-                            capture_output=True,
-                            text=True,
-                            cwd=PROJECT_ROOT,
-                            timeout=300,
-                            encoding='utf-8'
-                        )
-                        if result.returncode == 0:
-                            add_log(f"  ✅ {label}完了")
-                        else:
-                            add_log(f"  ⚠️ {label}警告あり")
-                    except subprocess.TimeoutExpired:
-                        add_log(f"  ⏱️ {label}タイムアウト")
-                    except Exception as e:
-                        add_log(f"  ❌ {label}エラー: {str(e)[:50]}")
-
-        except Exception as e:
-            add_log(f"  ❌ エラー: {str(e)[:80]}")
-
-        progress_bar.progress((idx + 1) / total)
-
-    status_text.text("✅ 処理完了！")
-    add_log("="*40)
-    add_log("全ての処理が完了しました")
-
-    # セッションステートをクリア
-    if 'missing_dates' in st.session_state:
-        del st.session_state['missing_dates']
-
-    st.success("✅ 不足データの取得が完了しました！")
-    st.button("🔄 データ状況を更新", on_click=st.rerun)
-
-
 def _render_original_tenji():
     """オリジナル展示データ収集"""
     st.subheader("オリジナル展示データ収集")
@@ -580,32 +536,17 @@ def _render_original_tenji():
     ⚠️ **注意**: オリジナル展示データは限られた期間のみ公開されます。過去データは取得できません。
     """)
 
-    # 実行モード選択
-    st.markdown("---")
-    run_mode = st.radio(
-        "実行モード",
-        ["バックグラウンド（推奨）", "フォアグラウンド"],
-        horizontal=True,
-        help="バックグラウンド: タブ移動しても継続 / フォアグラウンド: 完了まで待機"
-    )
-
     # クイックボタン
     st.markdown("---")
     col1, col2 = st.columns(2)
 
     with col1:
         if st.button("📅 今日", key="tenji_today", type="primary", use_container_width=True):
-            if "バックグラウンド" in run_mode:
-                _start_tenji_job(0)
-            else:
-                _run_tenji_collection_foreground(0)
+            _start_tenji_job(0)
 
     with col2:
         if st.button("📅 昨日", key="tenji_yesterday", use_container_width=True):
-            if "バックグラウンド" in run_mode:
-                _start_tenji_job(-1)
-            else:
-                _run_tenji_collection_foreground(-1)
+            _start_tenji_job(-1)
 
     st.caption("※ オリジナル展示データは今日と昨日のみ取得可能です")
 
@@ -667,48 +608,6 @@ def _start_tenji_job(days_offset: int):
         st.rerun()
     else:
         st.error(f"❌ {result['message']}")
-
-
-def _run_tenji_collection_foreground(days_offset: int):
-    """オリジナル展示収集を実行（フォアグラウンド - 最適化版）"""
-    target_date = datetime.now().date() + timedelta(days=days_offset)
-
-    with st.spinner(f"オリジナル展示データを収集中... ({target_date})"):
-        try:
-            script_path = os.path.join(PROJECT_ROOT, 'fetch_original_tenji_daily.py')
-
-            if not os.path.exists(script_path):
-                st.error(f"スクリプトが見つかりません: {script_path}")
-                return
-
-            # 日付引数を準備
-            if days_offset == 0:
-                date_args = ['--today']
-            else:
-                target_date_str = target_date.strftime('%Y-%m-%d')
-                date_args = ['--date', target_date_str]
-
-            result = subprocess.run(
-                [sys.executable, script_path] + date_args,
-                capture_output=True,
-                text=True,
-                timeout=600,
-                cwd=PROJECT_ROOT,
-                encoding='utf-8'
-            )
-
-            if result.returncode == 0:
-                st.success(f"✅ {target_date} のオリジナル展示データ収集完了！")
-                with st.expander("詳細ログ"):
-                    st.code(result.stdout)
-            else:
-                st.error("❌ 収集に失敗しました")
-                st.code(result.stderr)
-
-        except subprocess.TimeoutExpired:
-            st.error("❌ タイムアウト（10分経過）")
-        except Exception as e:
-            st.error(f"❌ エラー: {e}")
 
 
 def _render_bulk_collector():

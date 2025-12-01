@@ -8,6 +8,8 @@ from .schedule_scraper import ScheduleScraper
 from datetime import datetime
 import time
 
+from src.database.race_checker import RaceChecker
+
 
 class BulkScraper:
     """一括スクレイピングクラス"""
@@ -23,6 +25,10 @@ class BulkScraper:
             self.schedule_scraper = ScheduleScraper()
             print("[DEBUG] ScheduleScraperインスタンス化完了")
 
+            print("[DEBUG] RaceCheckerインスタンス化中...")
+            self.race_checker = RaceChecker()
+            print("[DEBUG] RaceCheckerインスタンス化完了")
+
             print(f"[DEBUG] BulkScraper初期化完了: scraper={type(self.scraper)}, schedule_scraper={type(self.schedule_scraper)}")
         except Exception as e:
             print(f"[ERROR] BulkScraper初期化エラー: {e}")
@@ -35,15 +41,16 @@ class BulkScraper:
                 delattr(self, 'schedule_scraper')
             raise
 
-    def fetch_all_races(self, venue_code, race_date, race_count=12, callback=None):
+    def fetch_all_races(self, venue_code, race_date, race_count=12, callback=None, skip_existing=False):
         """
         指定日・指定場の全レースを取得
 
         Args:
             venue_code: 競艇場コード
-            race_date: レース日付（YYYYMMDD形式）
+            race_date: レース日付（YYYY-MM-DD または YYYYMMDD形式）
             race_count: 取得するレース数（デフォルト12）
             callback: 進捗コールバック関数 callback(race_number, total, race_data)
+            skip_existing: 既存データをスキップするか（デフォルトFalse）
 
         Returns:
             取得したレースデータのリスト
@@ -51,15 +58,30 @@ class BulkScraper:
         all_races = []
         success_count = 0
         error_count = 0
+        skipped_count = 0
+
+        # 日付形式を正規化（YYYY-MM-DD形式に統一）
+        race_date_normalized = race_date
+        if len(race_date) == 8 and '-' not in race_date:
+            race_date_normalized = f"{race_date[:4]}-{race_date[4:6]}-{race_date[6:8]}"
 
         print(f"\n{'='*60}")
         print(f"全レース取得開始")
         print(f"競艇場コード: {venue_code}")
         print(f"日付: {race_date}")
         print(f"対象レース: 1R～{race_count}R")
+        if skip_existing:
+            print(f"スキップモード: ON（既存データをスキップ）")
         print(f"{'='*60}\n")
 
         for race_number in range(1, race_count + 1):
+            # 既存データスキップチェック
+            if skip_existing:
+                if self.race_checker.is_race_collected(venue_code, race_date_normalized, race_number):
+                    print(f"[{race_number}/{race_count}] {race_number}R [SKIP] 既に収集済み")
+                    skipped_count += 1
+                    continue
+
             print(f"[{race_number}/{race_count}] {race_number}R 取得中...")
 
             try:
@@ -97,35 +119,39 @@ class BulkScraper:
 
         print(f"\n{'='*60}")
         print(f"全レース取得完了")
-        print(f"成功: {success_count}件 / 失敗: {error_count}件")
+        print(f"成功: {success_count}件 / 失敗: {error_count}件 / スキップ: {skipped_count}件")
         print(f"{'='*60}\n")
 
         return all_races
 
-    def fetch_multiple_venues(self, venue_codes, race_date, race_count=12):
+    def fetch_multiple_venues(self, venue_codes, race_date, race_count=12, skip_existing=False):
         """
         複数競艇場の全レースを取得
 
         Args:
             venue_codes: 競艇場コードのリスト
-            race_date: レース日付（YYYYMMDD形式）
+            race_date: レース日付（YYYY-MM-DD または YYYYMMDD形式）
             race_count: 各場のレース数（デフォルト12）
+            skip_existing: 既存データをスキップするか（デフォルトFalse）
 
         Returns:
             {venue_code: [race_data, ...]} の辞書
         """
         all_venue_data = {}
 
+        if skip_existing:
+            print(f"\n[INFO] スキップモード有効: 既存データをスキップします")
+
         for i, venue_code in enumerate(venue_codes):
             print(f"\n{'#'*60}")
             print(f"競艇場 {i+1}/{len(venue_codes)}: コード={venue_code}")
             print(f"{'#'*60}")
 
-            races = self.fetch_all_races(venue_code, race_date, race_count)
+            races = self.fetch_all_races(venue_code, race_date, race_count, skip_existing=skip_existing)
             all_venue_data[venue_code] = races
 
-            # 次の競艇場に移る前に少し待機
-            if i < len(venue_codes) - 1:
+            # 次の競艇場に移る前に少し待機（レースを取得した場合のみ）
+            if i < len(venue_codes) - 1 and races:
                 print(f"\n次の競艇場へ移動します（2秒待機）...")
                 time.sleep(2)
 

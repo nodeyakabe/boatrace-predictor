@@ -596,10 +596,28 @@ def _start_missing_data_job(missing_dates: List[Dict], check_types: List[str]):
     jobs_dir = os.path.join(PROJECT_ROOT, 'temp', 'jobs')
     os.makedirs(jobs_dir, exist_ok=True)
 
+    # UIカテゴリをワークフロー用のcheck_typesに変換
+    # ワークフローは "直前情報取得" と "当日確定情報" の2種類のみ認識
+    workflow_check_types = []
+
+    # 直前情報取得が必要なカテゴリ
+    beforeinfo_categories = {"直前情報", "レース展開", "オッズ・人気", "天候・気象", "水面・潮汐"}
+    # 当日確定情報が必要なカテゴリ
+    confirmed_categories = {"レース基本情報", "選手データ", "モーター・ボート", "結果データ", "払戻データ"}
+
+    if any(cat in check_types for cat in beforeinfo_categories):
+        workflow_check_types.append("直前情報取得")
+    if any(cat in check_types for cat in confirmed_categories):
+        workflow_check_types.append("当日確定情報")
+
+    # デフォルトで当日確定情報を含める（結果データ取得のため）
+    if not workflow_check_types:
+        workflow_check_types = ["当日確定情報"]
+
     config_path = os.path.join(jobs_dir, f'{JOB_MISSING_DATA}_config.json')
     config = {
         'missing_dates': missing_dates,
-        'check_types': check_types
+        'check_types': workflow_check_types
     }
 
     with open(config_path, 'w', encoding='utf-8') as f:

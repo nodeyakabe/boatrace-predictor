@@ -1,0 +1,10 @@
+{
+  "pid": 16400,
+  "job_name": "missing_data_fetch",
+  "script": "c:\\Users\\seizo\\Desktop\\BoatRace\\scripts\\worker_missing_data.py",
+  "args": [
+    "--config",
+    "c:\\Users\\seizo\\Desktop\\BoatRace\\temp\\jobs\\missing_data_fetch_config.json"
+  ],
+  "started_at": "2025-12-01T22:27:54.542882"
+}

@@ -6,6 +6,8 @@
   --start: 開始日 (YYYY-MM-DD)
   --end: 終了日 (YYYY-MM-DD)
   --venues: 会場コード (カンマ区切り、省略時は全会場)
+  --skip-existing: 既存データをスキップ（デフォルトON）
+  --no-skip: 既存データもすべて再取得
 """
 import os
 import sys
@@ -33,9 +35,10 @@ def update_progress(step: str, message: str, progress: int):
     print(f"[{progress}%] {step}: {message}")
 
 
-def collect_today():
+def collect_today(skip_existing: bool = True):
     """今日のデータを収集"""
-    update_progress("データ収集", "今日のデータを収集中...", 5)
+    mode_str = "（スキップモード）" if skip_existing else "（全件取得）"
+    update_progress("データ収集", f"今日のデータを収集中...{mode_str}", 5)
 
     from src.scraper.bulk_scraper import BulkScraper
 
@@ -62,7 +65,8 @@ def collect_today():
             result = scraper.fetch_multiple_venues(
                 venue_codes=[venue_code],
                 race_date=today,
-                race_count=12
+                race_count=12,
+                skip_existing=skip_existing
             )
             if venue_code in result:
                 total_races += len(result[venue_code])
@@ -73,9 +77,10 @@ def collect_today():
     return total_races
 
 
-def collect_week():
+def collect_week(skip_existing: bool = True):
     """今週のデータを収集"""
-    update_progress("データ収集", "今週のデータを収集中...", 5)
+    mode_str = "（スキップモード）" if skip_existing else "（全件取得）"
+    update_progress("データ収集", f"今週のデータを収集中...{mode_str}", 5)
 
     from src.scraper.bulk_scraper import BulkScraper
 
@@ -84,6 +89,7 @@ def collect_week():
     start_date = today - timedelta(days=7)
 
     total_races = 0
+    skipped_total = 0
     date_range = []
     current = start_date
     while current <= today:
@@ -101,7 +107,8 @@ def collect_week():
             result = scraper.fetch_multiple_venues(
                 venue_codes=[f"{i:02d}" for i in range(1, 25)],
                 race_date=date_str,
-                race_count=12
+                race_count=12,
+                skip_existing=skip_existing
             )
             for venue_code, races in result.items():
                 total_races += len(races)
@@ -112,9 +119,10 @@ def collect_week():
     return total_races
 
 
-def collect_period(start_date: str, end_date: str, venue_codes: list = None):
+def collect_period(start_date: str, end_date: str, venue_codes: list = None, skip_existing: bool = True):
     """期間指定でデータを収集"""
-    update_progress("データ収集", f"{start_date}〜{end_date}を収集中...", 5)
+    mode_str = "（スキップモード）" if skip_existing else "（全件取得）"
+    update_progress("データ収集", f"{start_date}〜{end_date}を収集中...{mode_str}", 5)
 
     from src.scraper.bulk_scraper import BulkScraper
 
@@ -146,7 +154,8 @@ def collect_period(start_date: str, end_date: str, venue_codes: list = None):
                 result = scraper.fetch_multiple_venues(
                     venue_codes=[venue_code],
                     race_date=date_str,
-                    race_count=12
+                    race_count=12,
+                    skip_existing=skip_existing
                 )
                 if venue_code in result:
                     total_races += len(result[venue_code])
@@ -166,23 +175,29 @@ def main():
     parser.add_argument('--start', help='開始日 (YYYY-MM-DD)')
     parser.add_argument('--end', help='終了日 (YYYY-MM-DD)')
     parser.add_argument('--venues', help='会場コード (カンマ区切り)')
+    parser.add_argument('--no-skip', action='store_true', dest='no_skip',
+                       help='既存データもすべて再取得（デフォルトはスキップ）')
 
     args = parser.parse_args()
 
+    # スキップモードの判定（デフォルトはスキップON）
+    skip_existing = not args.no_skip
+
     print("=" * 60)
     print(f"データ収集 - バックグラウンド処理 ({args.type})")
+    print(f"スキップモード: {'OFF（全件取得）' if args.no_skip else 'ON（既存スキップ）'}")
     print("=" * 60)
 
     try:
         if args.type == 'today':
-            total_races = collect_today()
+            total_races = collect_today(skip_existing=skip_existing)
         elif args.type == 'week':
-            total_races = collect_week()
+            total_races = collect_week(skip_existing=skip_existing)
         elif args.type == 'period':
             if not args.start or not args.end:
                 raise ValueError("期間指定には --start と --end が必要です")
             venue_codes = args.venues.split(',') if args.venues else None
-            total_races = collect_period(args.start, args.end, venue_codes)
+            total_races = collect_period(args.start, args.end, venue_codes, skip_existing=skip_existing)
         else:
             raise ValueError(f"不明な収集タイプ: {args.type}")
 
