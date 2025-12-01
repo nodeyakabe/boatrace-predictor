@@ -73,6 +73,32 @@ class Database:
             )
         """)
 
+        # 選手マスタテーブル
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS racers (
+                racer_number TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                name_kana TEXT,
+                gender TEXT,
+                birth_date DATE,
+                height REAL,
+                weight REAL,
+                blood_type TEXT,
+                branch TEXT,
+                hometown TEXT,
+                registration_period INTEGER,
+                rank TEXT,
+                win_rate REAL,
+                second_rate REAL,
+                third_rate REAL,
+                ability_index REAL,
+                average_st REAL,
+                wins INTEGER,
+                updated_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # レーステーブル
         # is_shinnyuu_kotei: 進入固定レースか（1=固定、0=通常）
         # grade: グレード（SG/G1/G2/G3/一般）

@@ -997,13 +997,16 @@ class RacePredictor:
         wind_direction = wind_row[0] if wind_row and wind_row[0] else ''
 
         # 出走情報を取得（racer_rank, genderを含む）
+        # racersテーブルから性別を取得、なければ名前から推測
         cursor.execute("""
             SELECT e.pit_number, e.racer_number, e.racer_name, e.racer_rank, rd.actual_course,
+                   COALESCE(r.gender,
                    CASE WHEN e.racer_name LIKE '%子' OR e.racer_name LIKE '%美' OR e.racer_name LIKE '%香'
                         OR e.racer_name LIKE '%奈' OR e.racer_name LIKE '%恵' OR e.racer_name LIKE '%代'
-                        THEN '女' ELSE '' END as gender_guess
+                        THEN 'female' ELSE 'male' END) as gender
             FROM entries e
             LEFT JOIN race_details rd ON e.race_id = rd.race_id AND e.pit_number = rd.pit_number
+            LEFT JOIN racers r ON e.racer_number = r.racer_number
             WHERE e.race_id = ?
             ORDER BY e.pit_number
         """, (race_id,))
@@ -1013,12 +1016,15 @@ class RacePredictor:
         # エントリー情報を構築
         entries = []
         for pit, racer_num, racer_name, racer_rank, course, gender in entries_data:
+            # genderをルールエンジン用の形式に変換（female -> 女）
+            gender_display = '女' if gender == 'female' else ''
+
             entries.append({
                 'pit_number': pit,
                 'racer_number': racer_num,
                 'racer_name': racer_name,
                 'racer_rank': racer_rank if racer_rank else '',
-                'gender': gender if gender else '',
+                'gender': gender_display,
                 'actual_course': course if course else pit
             })
 
