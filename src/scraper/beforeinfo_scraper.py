@@ -7,6 +7,7 @@ import requests
 from bs4 import BeautifulSoup
 import time
 import re
+from src.utils.retry_handler import retry_with_backoff, SCRAPER_CONFIG
 
 
 class BeforeInfoScraper:
@@ -54,12 +55,8 @@ class BeforeInfoScraper:
         }
 
         try:
-            response = self.session.get(
-                self.base_url,
-                params=params,
-                timeout=15
-            )
-            response.raise_for_status()
+            # リトライ付きHTTPリクエスト
+            response = self._fetch_with_retry(params)
             time.sleep(self.delay)
 
             soup = BeautifulSoup(response.text, 'html.parser')
@@ -94,6 +91,28 @@ class BeforeInfoScraper:
         except Exception as e:
             print(f"事前情報取得エラー ({venue_code}, {date_str}, R{race_number}): {e}")
             return None
+
+    @retry_with_backoff(
+        config=SCRAPER_CONFIG,
+        exceptions=(requests.exceptions.Timeout, requests.exceptions.ConnectionError)
+    )
+    def _fetch_with_retry(self, params):
+        """
+        リトライ付きHTTPリクエスト
+
+        Args:
+            params: リクエストパラメータ
+
+        Returns:
+            requests.Response: レスポンス
+        """
+        response = self.session.get(
+            self.base_url,
+            params=params,
+            timeout=30  # タイムアウトを15秒→30秒に延長
+        )
+        response.raise_for_status()
+        return response
 
     def _check_data_published(self, soup):
         """

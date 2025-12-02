@@ -1,5 +1,5 @@
 """
-決まり手データの補完スクリプト（改善版）
+決まり手データの補完スクリプト（改善版 - 期間フィルター対応）
 
 改善点:
 1. ThreadPoolExecutor使用（HTTP I/Oに最適）
@@ -7,11 +7,13 @@
 3. セッション再利用で高速化
 4. バッチDB更新でロック競合を回避
 5. リトライ機能追加
+6. 期間フィルター対応（--start-date, --end-date）
 """
 import sys
 import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
+import argparse
 import sqlite3
 import requests
 from bs4 import BeautifulSoup
@@ -31,9 +33,14 @@ def get_session():
         })
     return thread_local.session
 
-def get_races_without_kimarite(db_path="data/boatrace.db"):
+def get_races_without_kimarite(db_path="data/boatrace.db", start_date=None, end_date=None):
     """
     決まり手が欠損しているレースを取得
+
+    Args:
+        db_path: データベースパス
+        start_date: 開始日 (YYYY-MM-DD)
+        end_date: 終了日 (YYYY-MM-DD)
 
     Returns:
         list: [(race_id, venue_code, race_date, race_number), ...]
@@ -41,8 +48,27 @@ def get_races_without_kimarite(db_path="data/boatrace.db"):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
+    # 期間フィルター条件を構築
+    date_filter = ""
+    params = []
+
+    if start_date and end_date:
+        date_filter = "AND r.race_date BETWEEN ? AND ?"
+        params = [start_date, end_date]
+        print(f"期間フィルター: {start_date} ～ {end_date}")
+    elif start_date:
+        date_filter = "AND r.race_date >= ?"
+        params = [start_date]
+        print(f"期間フィルター: {start_date} 以降")
+    elif end_date:
+        date_filter = "AND r.race_date <= ?"
+        params = [end_date]
+        print(f"期間フィルター: {end_date} まで")
+    else:
+        print("期間フィルターなし（全期間対象）")
+
     # 結果データはあるが、決まり手がNULLのレースを抽出
-    query = """
+    query = f"""
         SELECT DISTINCT
             r.id,
             r.venue_code,
@@ -53,10 +79,11 @@ def get_races_without_kimarite(db_path="data/boatrace.db"):
         WHERE res.kimarite IS NULL
           AND res.rank = '1'
           AND res.is_invalid = 0
+          {date_filter}
         ORDER BY r.race_date DESC, r.venue_code, r.race_number
     """
 
-    cursor.execute(query)
+    cursor.execute(query, params)
     rows = cursor.fetchall()
 
     conn.close()
@@ -176,12 +203,21 @@ def update_kimarite_batch(conn, results):
     conn.commit()
 
 def main():
+    # コマンドライン引数の解析
+    parser = argparse.ArgumentParser(description='決まり手データ補完（期間指定対応）')
+    parser.add_argument('--start-date', type=str, help='開始日 (YYYY-MM-DD)')
+    parser.add_argument('--end-date', type=str, help='終了日 (YYYY-MM-DD)')
+    args = parser.parse_args()
+
     print("="*80)
-    print("決まり手データ補完スクリプト（改善版）")
+    print("決まり手データ補完スクリプト（改善版 - 期間フィルター対応）")
     print("="*80)
 
     # 1. 決まり手が欠損しているレースを取得
-    races = get_races_without_kimarite()
+    races = get_races_without_kimarite(
+        start_date=args.start_date,
+        end_date=args.end_date
+    )
 
     if len(races) == 0:
         print("\n補完が必要なレースはありません。")

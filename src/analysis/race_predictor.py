@@ -18,11 +18,15 @@ from .exhibition_analyzer import ExhibitionAnalyzer
 from .extended_scorer import ExtendedScorer
 from .compound_buff_system import CompoundBuffSystem
 from .beforeinfo_scorer import BeforeInfoScorer
+from .dynamic_integration import DynamicIntegrator
+from .entry_prediction_model import EntryPredictionModel
+from .probability_calibrator import ProbabilityCalibrator
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from src.utils.scoring_config import ScoringConfig
 from src.prediction.rule_based_engine import RuleBasedEngine
+from config.feature_flags import is_feature_enabled
 # 階層的確率モデル（条件付き確率）
 try:
     from src.prediction.hierarchical_predictor import HierarchicalPredictor
@@ -76,6 +80,9 @@ class RacePredictor:
         self.extended_scorer = ExtendedScorer(db_path, batch_loader=self.batch_loader)
         self.compound_buff_system = CompoundBuffSystem(db_path)
         self.beforeinfo_scorer = BeforeInfoScorer(db_path)
+        self.dynamic_integrator = DynamicIntegrator(db_path)
+        self.entry_prediction_model = EntryPredictionModel(db_path)
+        self.probability_calibrator = ProbabilityCalibrator(db_path)
 
         # 階層的確率モデル（条件付き確率ベースの三連単予測）
         self.hierarchical_predictor = None
@@ -819,6 +826,19 @@ class RacePredictor:
             venue_code
         )
 
+        # ========================================
+        # 進入予測モデルを適用（機能フラグで制御）
+        # ========================================
+        predictions = self._apply_entry_prediction(
+            predictions,
+            race_id
+        )
+
+        # ========================================
+        # 確率キャリブレーション適用（機能フラグで制御）
+        # ========================================
+        predictions = self._apply_probability_calibration(predictions)
+
         # スコア順にソート
         predictions.sort(key=lambda x: x['total_score'], reverse=True)
 
@@ -1428,7 +1448,9 @@ class RacePredictor:
         """
         直前情報スコアリングと統合を適用
 
-        統合式: FINAL_SCORE = PRE_SCORE * 0.6 + BEFORE_SCORE * 0.4
+        統合式:
+        - 動的統合有効時: DynamicIntegratorが条件に応じて重みを決定
+        - レガシーモード: FINAL_SCORE = PRE_SCORE * 0.6 + BEFORE_SCORE * 0.4
 
         Args:
             predictions: 予測結果リスト（PRE_SCOREが格納されている）
@@ -1438,6 +1460,22 @@ class RacePredictor:
         Returns:
             統合スコア適用後の予測結果
         """
+        # 動的統合が有効かチェック
+        use_dynamic_integration = is_feature_enabled('dynamic_integration')
+
+        # 直前情報データを収集（動的統合用）
+        beforeinfo_data = self._collect_beforeinfo_data(race_id) if use_dynamic_integration else None
+
+        # 動的重みを決定（動的統合有効時のみ）
+        integration_weights = None
+        if use_dynamic_integration and beforeinfo_data:
+            integration_weights = self.dynamic_integrator.determine_weights(
+                race_id=race_id,
+                beforeinfo_data=beforeinfo_data,
+                pre_predictions=predictions,
+                venue_code=venue_code
+            )
+
         # BeforeInfoScorerでスコア計算
         for pred in predictions:
             pit_number = pred['pit_number']
@@ -1453,13 +1491,35 @@ class RacePredictor:
             before_confidence = beforeinfo_result['confidence']  # 0.0-1.0
             data_completeness = beforeinfo_result['data_completeness']  # 0.0-1.0
 
-            # 統合式を適用: FINAL_SCORE = PRE_SCORE * 0.6 + BEFORE_SCORE * 0.4
-            final_score = pre_score * 0.6 + before_score * 0.4
+            # 統合式を適用
+            if use_dynamic_integration and integration_weights:
+                # 動的統合モード
+                final_score = self.dynamic_integrator.integrate_scores(
+                    pre_score=pre_score,
+                    before_score=before_score,
+                    weights=integration_weights
+                )
+                # 統合情報を記録
+                pred['integration_mode'] = 'dynamic'
+                pred['integration_condition'] = integration_weights.condition.value
+                pred['integration_reason'] = integration_weights.reason
+                pred['pre_weight'] = round(integration_weights.pre_weight, 3)
+                pred['before_weight'] = round(integration_weights.before_weight, 3)
+            else:
+                # レガシーモード（固定重み）
+                final_score = pre_score * 0.6 + before_score * 0.4
 
-            # 直前情報データが不足している場合（data_completeness < 0.5）は、PRE_SCOREの比重を上げる
-            if data_completeness < 0.5:
-                # データ不足時は PRE_SCORE * 0.8 + BEFORE_SCORE * 0.2 に調整
-                final_score = pre_score * 0.8 + before_score * 0.2
+                # 直前情報データが不足している場合（data_completeness < 0.5）は、PRE_SCOREの比重を上げる
+                if data_completeness < 0.5:
+                    # データ不足時は PRE_SCORE * 0.8 + BEFORE_SCORE * 0.2 に調整
+                    final_score = pre_score * 0.8 + before_score * 0.2
+                    pred['integration_mode'] = 'legacy_adjusted'
+                    pred['pre_weight'] = 0.8
+                    pred['before_weight'] = 0.2
+                else:
+                    pred['integration_mode'] = 'legacy'
+                    pred['pre_weight'] = 0.6
+                    pred['before_weight'] = 0.4
 
             # スコアを更新
             pred['pre_score'] = round(pre_score, 1)  # 統合前のスコアを保存
@@ -1479,6 +1539,81 @@ class RacePredictor:
             }
 
         return predictions
+
+    def _collect_beforeinfo_data(self, race_id: int) -> Dict:
+        """
+        動的統合に必要な直前情報データを収集
+
+        Args:
+            race_id: レースID
+
+        Returns:
+            直前情報データ辞書
+        """
+        import sqlite3
+
+        beforeinfo_data = {
+            'is_published': False,
+            'exhibition_times': {},
+            'start_timings': {},
+            'exhibition_courses': {},
+            'tilt_angles': {},
+            'weather': {},
+            'previous_race': {}
+        }
+
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            # 展示タイム、ST、進入コースを取得
+            cursor.execute("""
+                SELECT
+                    pit_number,
+                    exhibition_time,
+                    start_timing,
+                    exhibition_course,
+                    tilt_angle
+                FROM beforeinfo
+                WHERE race_id = ?
+            """, (race_id,))
+
+            rows = cursor.fetchall()
+            if rows:
+                beforeinfo_data['is_published'] = True
+                for row in rows:
+                    pit = row['pit_number']
+                    if row['exhibition_time']:
+                        beforeinfo_data['exhibition_times'][pit] = row['exhibition_time']
+                    if row['start_timing'] is not None:
+                        beforeinfo_data['start_timings'][pit] = row['start_timing']
+                    if row['exhibition_course']:
+                        beforeinfo_data['exhibition_courses'][pit] = row['exhibition_course']
+                    if row['tilt_angle'] is not None:
+                        beforeinfo_data['tilt_angles'][pit] = row['tilt_angle']
+
+            # 天候データを取得
+            cursor.execute("""
+                SELECT wind_speed, wave_height
+                FROM races
+                WHERE race_id = ?
+            """, (race_id,))
+
+            weather_row = cursor.fetchone()
+            if weather_row:
+                if weather_row['wind_speed']:
+                    beforeinfo_data['weather']['wind_speed'] = weather_row['wind_speed']
+                if weather_row['wave_height']:
+                    beforeinfo_data['weather']['wave_height'] = weather_row['wave_height']
+
+            conn.close()
+
+        except Exception as e:
+            # エラーが発生しても空のデータで続行
+            pass
+
+        return beforeinfo_data
 
     def _apply_exhibition_adjustment(
         self,
@@ -1538,6 +1673,126 @@ class RacePredictor:
             except Exception:
                 # 展示データがない場合は補正なしで続行
                 pass
+
+        return predictions
+
+    def _apply_entry_prediction(
+        self,
+        predictions: List[Dict],
+        race_id: int
+    ) -> List[Dict]:
+        """
+        進入予測モデルを適用してスコアを調整
+
+        Args:
+            predictions: 予測結果リスト
+            race_id: レースID
+
+        Returns:
+            進入予測適用後の予測結果
+        """
+        # 機能フラグチェック
+        if not is_feature_enabled('entry_prediction_model'):
+            return predictions
+
+        try:
+            # エントリー情報を取得
+            import sqlite3
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT pit_number, racer_number
+                FROM entries
+                WHERE race_id = ?
+                ORDER BY pit_number
+            """, (race_id,))
+
+            entries = [dict(row) for row in cursor.fetchall()]
+            conn.close()
+
+            if len(entries) < 6:
+                return predictions
+
+            # 進入予測を実行
+            entry_predictions = self.entry_prediction_model.predict_race_entries(
+                race_id=race_id,
+                entries=entries
+            )
+
+            # 各予測に進入影響スコアを適用
+            for pred in predictions:
+                pit_number = pred['pit_number']
+
+                if pit_number in entry_predictions:
+                    entry_pred = entry_predictions[pit_number]
+
+                    # 進入影響スコアを計算
+                    impact = self.entry_prediction_model.calculate_entry_impact_score(
+                        pit_number=pit_number,
+                        prediction=entry_pred,
+                        max_score=10.0  # 最大10点の影響
+                    )
+
+                    # スコアに反映
+                    original_score = pred['total_score']
+                    adjusted_score = original_score + impact['score']
+
+                    # 0-100の範囲に制限
+                    adjusted_score = max(0.0, min(adjusted_score, 100.0))
+
+                    pred['total_score'] = round(adjusted_score, 1)
+                    pred['entry_impact_score'] = round(impact['score'], 1)
+                    pred['entry_impact_type'] = impact['impact_type']
+                    pred['predicted_course'] = entry_pred.predicted_course
+                    pred['entry_confidence'] = round(entry_pred.confidence, 3)
+                    pred['is_front_entry_prone'] = entry_pred.is_front_entry_prone
+                    pred['front_entry_rate'] = round(entry_pred.front_entry_rate, 3)
+
+        except Exception as e:
+            # エラーが発生しても処理を継続
+            pass
+
+        return predictions
+
+    def _apply_probability_calibration(
+        self,
+        predictions: List[Dict]
+    ) -> List[Dict]:
+        """
+        確率キャリブレーションを適用
+
+        スコアを実際の勝率に較正する
+
+        Args:
+            predictions: 予測結果リスト
+
+        Returns:
+            キャリブレーション適用後の予測結果
+        """
+        # 機能フラグチェック
+        if not is_feature_enabled('probability_calibration'):
+            return predictions
+
+        try:
+            for pred in predictions:
+                score = pred['total_score']
+
+                # スコアを0-1の確率に変換してキャリブレーション
+                raw_prob = score / 100.0
+                calibrated_prob = self.probability_calibrator.calibrate(raw_prob)
+
+                # キャリブレーション後の確率をスコアに戻す
+                calibrated_score = calibrated_prob * 100.0
+
+                pred['calibrated_score'] = round(calibrated_score, 1)
+                pred['calibrated_probability'] = round(calibrated_prob, 4)
+                pred['raw_probability'] = round(raw_prob, 4)
+
+        except Exception as e:
+            # エラーが発生しても処理を継続
+            pass
 
         return predictions
 

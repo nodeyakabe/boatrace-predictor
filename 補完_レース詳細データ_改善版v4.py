@@ -1,13 +1,13 @@
 """
-レース詳細データ補完スクリプト（改善版v4）
+レース詳細データ補完スクリプト（改善版v4 - 期間フィルター対応）
 ST time、actual_course、チルト角、展示タイム等を一括補完
 最適化: ワーカー数増加(12)、タイムアウト短縮(15秒)、バッチサイズ200維持
-推定時間: 4-6時間（v3: 10.5時間）
 
 改善点:
 - max_workers: 6 → 12（サーバーレイテンシを並列化でマスク）
 - timeout: (5, 25) → (5, 15)（失敗検出を高速化）
 - 進捗表示: 500件 → 100件（より細かく進捗を確認）
+- 期間フィルター: --start-date, --end-date オプションで対象期間を指定可能
 """
 import sys
 import io
@@ -22,16 +22,41 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 import threading
 import random
+import argparse
+
+# コマンドライン引数のパース
+parser = argparse.ArgumentParser(description='レース詳細データ補完（期間指定対応）')
+parser.add_argument('--start-date', type=str, help='開始日 (YYYY-MM-DD)')
+parser.add_argument('--end-date', type=str, help='終了日 (YYYY-MM-DD)')
+args = parser.parse_args()
 
 print("="*80)
-print("レース詳細データ補完スクリプト（改善版v4）")
+print("レース詳細データ補完スクリプト（改善版v4 - 期間フィルター対応）")
 print("="*80)
 
 # DBからST timeまたはactual_courseが欠けているレースを取得
 conn = sqlite3.connect('data/boatrace.db')
 cursor = conn.cursor()
 
-cursor.execute("""
+# 期間フィルター条件を構築
+date_filter = ""
+params = []
+if args.start_date and args.end_date:
+    date_filter = "AND r.race_date BETWEEN ? AND ?"
+    params = [args.start_date, args.end_date]
+    print(f"期間フィルター: {args.start_date} ～ {args.end_date}")
+elif args.start_date:
+    date_filter = "AND r.race_date >= ?"
+    params = [args.start_date]
+    print(f"期間フィルター: {args.start_date} 以降")
+elif args.end_date:
+    date_filter = "AND r.race_date <= ?"
+    params = [args.end_date]
+    print(f"期間フィルター: {args.end_date} 以前")
+else:
+    print("期間フィルターなし（全期間対象）")
+
+query = f"""
     SELECT DISTINCT r.id, r.venue_code, r.race_date, r.race_number
     FROM races r
     WHERE EXISTS (
@@ -39,8 +64,11 @@ cursor.execute("""
         WHERE rd.race_id = r.id
         AND (rd.st_time IS NULL OR rd.actual_course IS NULL)
     )
+    {date_filter}
     ORDER BY r.race_date DESC, r.venue_code, r.race_number
-""")
+"""
+
+cursor.execute(query, params)
 
 rows = cursor.fetchall()
 conn.close()

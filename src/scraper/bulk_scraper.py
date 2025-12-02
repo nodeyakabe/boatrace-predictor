@@ -7,6 +7,7 @@ from .race_scraper_v2 import RaceScraperV2
 from .schedule_scraper import ScheduleScraper
 from datetime import datetime
 import time
+import concurrent.futures
 
 from src.database.race_checker import RaceChecker
 
@@ -74,48 +75,68 @@ class BulkScraper:
             print(f"スキップモード: ON（既存データをスキップ）")
         print(f"{'='*60}\n")
 
+        # スキップ対象のレースを事前チェック
+        races_to_fetch = []
         for race_number in range(1, race_count + 1):
-            # 既存データスキップチェック
             if skip_existing:
                 if self.race_checker.is_race_collected(venue_code, race_date_normalized, race_number):
                     print(f"[{race_number}/{race_count}] {race_number}R [SKIP] 既に収集済み")
                     skipped_count += 1
                     continue
+            races_to_fetch.append(race_number)
 
-            print(f"[{race_number}/{race_count}] {race_number}R 取得中...")
+        if not races_to_fetch:
+            print(f"  [INFO] 取得対象のレースがありません")
+            return all_races
 
+        # 並列処理用の関数
+        def fetch_single_race(race_number):
+            """1レース分のデータを取得"""
             try:
                 race_data = self.scraper.get_race_card(venue_code, race_date, race_number)
 
                 if race_data and race_data.get('entries'):
-                    all_races.append(race_data)
+                    return {
+                        'success': True,
+                        'race_number': race_number,
+                        'race_data': race_data
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'race_number': race_number,
+                        'error': 'データが取得できませんでした'
+                    }
+            except Exception as e:
+                return {
+                    'success': False,
+                    'race_number': race_number,
+                    'error': str(e)
+                }
+
+        # ThreadPoolExecutorで並列処理（4スレッド）
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {
+                executor.submit(fetch_single_race, race_num): race_num
+                for race_num in races_to_fetch
+            }
+
+            for future in concurrent.futures.as_completed(futures, timeout=1800):
+                result = future.result()
+                race_number = result['race_number']
+
+                if result['success']:
+                    all_races.append(result['race_data'])
                     success_count += 1
-                    print(f"  [OK] 成功: 選手数={len(race_data['entries'])}名")
+                    entry_count = len(result['race_data']['entries'])
+                    print(f"[{race_number}/{race_count}] {race_number}R [OK] 成功: 選手数={entry_count}名")
 
                     # コールバック実行
                     if callback:
-                        callback(race_number, race_count, race_data)
+                        callback(race_number, race_count, result['race_data'])
                 else:
                     error_count += 1
-                    print(f"  [NG] 失敗: データが取得できませんでした")
-
-                    # 1レース目でデータが取得できない場合は早期リターン
-                    if race_number == 1:
-                        print(f"  [INFO] 1レース目のデータが取得できないため、この会場をスキップします")
-                        break
-
-            except Exception as e:
-                error_count += 1
-                print(f"  [ERROR] エラー: {e}")
-
-                # 1レース目でエラーが発生した場合は早期リターン
-                if race_number == 1:
-                    print(f"  [INFO] 1レース目でエラーが発生したため、この会場をスキップします")
-                    break
-
-            # レート制限対策（最後のレース以外は少し待機）
-            if race_number < race_count:
-                time.sleep(0.5)
+                    print(f"[{race_number}/{race_count}] {race_number}R [NG] 失敗: {result['error']}")
 
         print(f"\n{'='*60}")
         print(f"全レース取得完了")

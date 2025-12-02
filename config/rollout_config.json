@@ -1,0 +1,18 @@
+{
+  "rollout_stage": "disabled",
+  "feature_rollouts": {
+    "dynamic_integration": {
+      "stage": "100%",
+      "enabled_at": "2025-11-01"
+    },
+    "entry_prediction_model": {
+      "stage": "100%",
+      "enabled_at": "2025-11-15"
+    },
+    "probability_calibration": {
+      "stage": "10%",
+      "enabled_at": "2025-12-02"
+    }
+  },
+  "updated_at": "2025-12-02 16:12:02"
+}

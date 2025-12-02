@@ -1,8 +1,7 @@
 """
 オリジナル展示収集ワーカー（バックグラウンド実行用）
 
-このスクリプトはジョブマネージャーから呼び出され、
-進捗をファイルに書き込みながら処理を行う
+共通ワークフロークラスを使用し、進捗をジョブマネージャーに記録
 """
 import os
 import sys
@@ -14,8 +13,20 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, PROJECT_ROOT)
 
 from src.utils.job_manager import update_job_progress, complete_job
+from src.workflow.tenji_collection import TenjiCollectionWorkflow
 
 JOB_NAME = 'tenji_collection'
+
+
+def progress_callback(step: str, message: str, progress: int):
+    """ジョブマネージャーに進捗を記録"""
+    update_job_progress(JOB_NAME, {
+        'status': 'running',
+        'step': step,
+        'message': message,
+        'progress': progress
+    })
+    print(f"[{progress}%] {step}: {message}")
 
 
 def main():
@@ -24,77 +35,42 @@ def main():
                         help='日数オフセット（0=今日, -1=昨日）')
     args = parser.parse_args()
 
-    days_offset = args.days_offset
-    target_date = datetime.now().date() + timedelta(days=days_offset)
+    print("=" * 60)
+    print("オリジナル展示データ収集 - バックグラウンド処理")
+    print("=" * 60)
 
     try:
-        update_job_progress(JOB_NAME, {
-            'status': 'running',
-            'progress': 10,
-            'message': f'{target_date} のオリジナル展示データを収集開始',
-            'target_date': str(target_date)
-        })
+        # 共通ワークフローを使用
+        workflow = TenjiCollectionWorkflow(
+            db_path=os.path.join(PROJECT_ROOT, 'data/boatrace.db'),
+            project_root=PROJECT_ROOT,
+            progress_callback=progress_callback
+        )
 
-        # 実際の収集処理を呼び出し（最適化版）
-        script_path = os.path.join(PROJECT_ROOT, 'fetch_original_tenji_daily.py')
+        result = workflow.run(days_offset=args.days_offset)
 
-        if not os.path.exists(script_path):
-            complete_job(JOB_NAME, success=False, message='収集スクリプトが見つかりません')
-            return
-
-        import subprocess
-        import tempfile
-
-        # 出力をファイルにリダイレクト（バッファブロック防止）
-        log_dir = os.path.join(PROJECT_ROOT, 'temp', 'jobs')
-        os.makedirs(log_dir, exist_ok=True)
-        log_file = os.path.join(log_dir, f'{JOB_NAME}_output.log')
-
-        # 日付引数を準備
-        if days_offset == 0:
-            date_args = ['--today']
+        if result['success']:
+            complete_job(
+                JOB_NAME,
+                success=True,
+                message=result.get('message', '処理完了')
+            )
+            print("=" * 60)
+            print("処理完了")
+            print(f"  収集数: {result['races_collected']}")
+            print(f"  会場: {result['venues_success']}/{result['venues_total']}")
+            print("=" * 60)
         else:
-            target_date_str = (datetime.now().date() + timedelta(days=days_offset)).strftime('%Y-%m-%d')
-            date_args = ['--date', target_date_str]
-
-        with open(log_file, 'w', encoding='utf-8') as f:
-            result = subprocess.run(
-                [sys.executable, script_path] + date_args,
-                stdout=f,
-                stderr=subprocess.STDOUT,
-                timeout=600,
-                cwd=PROJECT_ROOT
+            complete_job(
+                JOB_NAME,
+                success=False,
+                message=result.get('message', 'エラー発生')
             )
 
-        # ログファイルから結果を読み取り
-        output = ''
-        try:
-            with open(log_file, 'r', encoding='utf-8') as f:
-                output = f.read()
-        except:
-            pass
-
-        if result.returncode == 0:
-            # 成功件数を抽出
-            success_line = ''
-            if "成功:" in output:
-                for line in output.split('\n'):
-                    if '成功:' in line:
-                        success_line = line
-                        break
-
-            complete_job(JOB_NAME, success=True,
-                        message=f'{target_date} の収集完了 {success_line}')
-        else:
-            # エラー内容をログから抽出
-            error_msg = output[-500:] if output else '不明なエラー'
-            complete_job(JOB_NAME, success=False,
-                        message=f'収集エラー: {error_msg[:200]}')
-
-    except subprocess.TimeoutExpired:
-        complete_job(JOB_NAME, success=False, message='タイムアウト（10分経過）')
     except Exception as e:
-        complete_job(JOB_NAME, success=False, message=f'エラー: {str(e)[:200]}')
+        complete_job(JOB_NAME, success=False, message=f'エラー: {str(e)}')
+        print(f"エラー発生: {e}")
+        raise
 
 
 if __name__ == '__main__':

@@ -61,6 +61,18 @@ def disable_feature(feature_name: str):
         FEATURE_FLAGS[feature_name] = False
 
 
+def set_feature_flag(feature_name: str, enabled: bool):
+    """
+    機能フラグを設定
+
+    Args:
+        feature_name: 機能名
+        enabled: 有効/無効のフラグ
+    """
+    if feature_name in FEATURE_FLAGS:
+        FEATURE_FLAGS[feature_name] = enabled
+
+
 def get_all_features() -> dict:
     """
     全機能の状態を取得

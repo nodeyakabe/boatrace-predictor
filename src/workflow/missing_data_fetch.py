@@ -101,6 +101,19 @@ class MissingDataFetchWorkflow:
         missing_dates = missing_dates or []
         check_types = check_types or []
 
+        # 期間情報を抽出（補完スクリプトに渡すため）
+        if missing_dates:
+            dates = [item['日付'] for item in missing_dates if '日付' in item]
+            if dates:
+                self.start_date = min(dates)
+                self.end_date = max(dates)
+            else:
+                self.start_date = None
+                self.end_date = None
+        else:
+            self.start_date = None
+            self.end_date = None
+
         result = {
             'success': False,
             'processed': 0,
@@ -454,14 +467,15 @@ class MissingDataFetchWorkflow:
 
         total = len(races_without_beforeinfo)
 
-        # ThreadPoolExecutorで並列処理（8スレッド）
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        # ThreadPoolExecutorで並列処理（4スレッド - サーバー負荷軽減）
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
             futures = {
                 executor.submit(fetch_single_beforeinfo, race): race
                 for race in races_without_beforeinfo
             }
 
-            for idx, future in enumerate(concurrent.futures.as_completed(futures, timeout=600), 1):
+            # タイムアウト30分（大量データ対応）
+            for idx, future in enumerate(concurrent.futures.as_completed(futures, timeout=1800), 1):
                 try:
                     if future.result():
                         beforeinfo_success += 1
@@ -559,25 +573,27 @@ class MissingDataFetchWorkflow:
             int((current_step / total_steps) * 100)
         )
 
-        for idx, (script_name, label) in enumerate(scripts, 1):
+        # 並列実行用の関数
+        def run_single_script(script_info):
+            """1つのスクリプトを実行"""
+            script_name, label = script_info
+            script_path = os.path.join(self.project_root, script_name)
+
+            if not os.path.exists(script_path):
+                return {'success': False, 'label': label, 'error': 'スクリプトが見つかりません'}
+
             try:
-                progress = int((current_step / total_steps) * 100)
-                self._update_progress(
-                    phase_name,
-                    f'{label}を実行中... ({idx}/{len(scripts)})',
-                    progress
-                )
+                # コマンドライン引数を構築
+                args = [sys.executable, script_path]
 
-                script_path = os.path.join(self.project_root, script_name)
-
-                if not os.path.exists(script_path):
-                    logger.warning(f"スクリプトが見つかりません: {script_name}")
-                    errors += 1
-                    current_step += 1
-                    continue
+                # 期間フィルターを追加（補完スクリプトに渡す）
+                if hasattr(self, 'start_date') and self.start_date:
+                    args.extend(['--start-date', self.start_date])
+                if hasattr(self, 'end_date') and self.end_date:
+                    args.extend(['--end-date', self.end_date])
 
                 result = subprocess.run(
-                    [sys.executable, script_path],
+                    args,
                     capture_output=True,
                     text=True,
                     cwd=self.project_root,
@@ -587,20 +603,50 @@ class MissingDataFetchWorkflow:
                 )
 
                 if result.returncode != 0:
-                    logger.warning(f"{label} 失敗: {result.stderr[:200]}")
-                    errors += 1
+                    return {'success': False, 'label': label, 'error': result.stderr[:200]}
                 else:
-                    processed += 1
-
-                current_step += 1
+                    return {'success': True, 'label': label}
 
             except subprocess.TimeoutExpired:
-                logger.warning(f"{label} タイムアウト")
-                errors += 1
-                current_step += 1
+                return {'success': False, 'label': label, 'error': 'タイムアウト'}
             except Exception as e:
-                logger.warning(f"{label} エラー: {e}")
-                errors += 1
-                current_step += 1
+                return {'success': False, 'label': label, 'error': str(e)}
+
+        # ThreadPoolExecutorで並列実行（3スレッド - subprocess負荷を考慮）
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {
+                executor.submit(run_single_script, script_info): script_info
+                for script_info in scripts
+            }
+
+            # 完了したスクリプトから順次処理
+            for idx, future in enumerate(concurrent.futures.as_completed(futures, timeout=1800), 1):
+                try:
+                    result = future.result()
+
+                    progress = int((current_step / total_steps) * 100)
+                    self._update_progress(
+                        phase_name,
+                        f'{result["label"]}完了 ({idx}/{len(scripts)})',
+                        progress
+                    )
+
+                    if result['success']:
+                        processed += 1
+                    else:
+                        logger.warning(f"{result['label']} 失敗: {result.get('error', '不明')}")
+                        errors += 1
+
+                    current_step += 1
+
+                except concurrent.futures.TimeoutError:
+                    logger.error(f"並列実行タイムアウト（30分）")
+                    errors += len(scripts) - idx + 1
+                    current_step += len(scripts) - idx + 1
+                    break
+                except Exception as e:
+                    logger.warning(f"スクリプト実行エラー: {e}")
+                    errors += 1
+                    current_step += 1
 
         return current_step, processed, errors
