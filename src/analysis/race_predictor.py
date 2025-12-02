@@ -17,6 +17,7 @@ from .tide_adjuster import TideAdjuster
 from .exhibition_analyzer import ExhibitionAnalyzer
 from .extended_scorer import ExtendedScorer
 from .compound_buff_system import CompoundBuffSystem
+from .beforeinfo_scorer import BeforeInfoScorer
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -74,6 +75,7 @@ class RacePredictor:
         self.exhibition_analyzer = ExhibitionAnalyzer()
         self.extended_scorer = ExtendedScorer(db_path, batch_loader=self.batch_loader)
         self.compound_buff_system = CompoundBuffSystem(db_path)
+        self.beforeinfo_scorer = BeforeInfoScorer(db_path)
 
         # 階層的確率モデル（条件付き確率ベースの三連単予測）
         self.hierarchical_predictor = None
@@ -808,6 +810,15 @@ class RacePredictor:
             race_time
         )
 
+        # ========================================
+        # 直前情報スコアリングと統合（FINAL_SCORE = PRE_SCORE * 0.6 + BEFORE_SCORE * 0.4）
+        # ========================================
+        predictions = self._apply_beforeinfo_integration(
+            predictions,
+            race_id,
+            venue_code
+        )
+
         # スコア順にソート
         predictions.sort(key=lambda x: x['total_score'], reverse=True)
 
@@ -1405,6 +1416,67 @@ class RacePredictor:
                 pred['tide_adjustment'] = round(score_adjustment, 1)
                 pred['tide_reason'] = adj_result['reason']
                 pred['tide_phase'] = adj_result['tide_phase']
+
+        return predictions
+
+    def _apply_beforeinfo_integration(
+        self,
+        predictions: List[Dict],
+        race_id: int,
+        venue_code: str
+    ) -> List[Dict]:
+        """
+        直前情報スコアリングと統合を適用
+
+        統合式: FINAL_SCORE = PRE_SCORE * 0.6 + BEFORE_SCORE * 0.4
+
+        Args:
+            predictions: 予測結果リスト（PRE_SCOREが格納されている）
+            race_id: レースID
+            venue_code: 会場コード
+
+        Returns:
+            統合スコア適用後の予測結果
+        """
+        # BeforeInfoScorerでスコア計算
+        for pred in predictions:
+            pit_number = pred['pit_number']
+            pre_score = pred['total_score']  # 既存の総合スコア = PRE_SCORE
+
+            # 直前情報スコアを計算（BeforeInfoScorerが内部でDBから取得）
+            beforeinfo_result = self.beforeinfo_scorer.calculate_beforeinfo_score(
+                race_id=race_id,
+                pit_number=pit_number
+            )
+
+            before_score = beforeinfo_result['total_score']  # 0-100点
+            before_confidence = beforeinfo_result['confidence']  # 0.0-1.0
+            data_completeness = beforeinfo_result['data_completeness']  # 0.0-1.0
+
+            # 統合式を適用: FINAL_SCORE = PRE_SCORE * 0.6 + BEFORE_SCORE * 0.4
+            final_score = pre_score * 0.6 + before_score * 0.4
+
+            # 直前情報データが不足している場合（data_completeness < 0.5）は、PRE_SCOREの比重を上げる
+            if data_completeness < 0.5:
+                # データ不足時は PRE_SCORE * 0.8 + BEFORE_SCORE * 0.2 に調整
+                final_score = pre_score * 0.8 + before_score * 0.2
+
+            # スコアを更新
+            pred['pre_score'] = round(pre_score, 1)  # 統合前のスコアを保存
+            pred['total_score'] = round(final_score, 1)  # 最終スコア
+
+            # 直前情報の詳細を追加
+            pred['beforeinfo_score'] = round(before_score, 1)
+            pred['beforeinfo_confidence'] = round(before_confidence, 3)
+            pred['beforeinfo_completeness'] = round(data_completeness, 3)
+            pred['beforeinfo_detail'] = {
+                'exhibition_time': round(beforeinfo_result['exhibition_time_score'], 1),
+                'st': round(beforeinfo_result['st_score'], 1),
+                'entry': round(beforeinfo_result['entry_score'], 1),
+                'prev_race': round(beforeinfo_result['prev_race_score'], 1),
+                'tilt_wind': round(beforeinfo_result['tilt_wind_score'], 1),
+                'parts_weight': round(beforeinfo_result['parts_weight_score'], 1)
+            }
 
         return predictions
 
