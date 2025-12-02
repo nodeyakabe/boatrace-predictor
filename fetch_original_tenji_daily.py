@@ -221,63 +221,96 @@ def fetch_tomorrow_tenji(target_date=None, test_mode=False, limit_races=None, ti
         'skipped': 0
     }
 
-    scraper = None
     start_time = time.time()
 
+    # 並列処理用の関数
+    def fetch_single_race(race_info):
+        """1レース分のオリジナル展示を取得"""
+        venue_code, race_number, venue_name = race_info
+        result = {
+            'venue_code': venue_code,
+            'race_number': race_number,
+            'success': False,
+            'data': None,
+            'error': None
+        }
+
+        scraper = None
+        try:
+            # スレッドごとにスクレイパーインスタンスを作成
+            if boaters_only:
+                from src.scraper.original_tenji_browser import OriginalTenjiBrowserScraper
+                scraper = OriginalTenjiBrowserScraper(headless=True, timeout=timeout)
+            else:
+                scraper = UnifiedTenjiCollector(headless=True, timeout=timeout)
+
+            data = scraper.get_original_tenji(venue_code, target_str, race_number)
+
+            if data and len(data) > 0:
+                result['success'] = True
+                result['data'] = data
+
+                # DB保存
+                if not test_mode:
+                    save_original_tenji_to_db(venue_code, target_str, race_number, data)
+
+        except Exception as e:
+            result['error'] = str(e)[:50]
+        finally:
+            if scraper:
+                try:
+                    scraper.close()
+                except:
+                    pass
+
+        return result
+
     try:
-        # 収集器を初期化
-        if boaters_only:
-            print('Boaters専用モードで起動中（高速）...')
-            from src.scraper.original_tenji_browser import OriginalTenjiBrowserScraper
-            scraper = OriginalTenjiBrowserScraper(headless=True, timeout=timeout)
-            print('[OK] Boaters収集器起動完了\n')
-        else:
-            print('統合収集器を起動中（Boaters + 各場HP対応）...')
-            scraper = UnifiedTenjiCollector(headless=True, timeout=timeout)
-            print('[OK] 統合収集器起動完了\n')
+        print('並列処理モードで起動（最大4スレッド）...\n')
 
-        for idx, (venue_code, race_number, venue_name) in enumerate(scheduled_races, 1):
-            elapsed = time.time() - start_time
-            avg_time = elapsed / idx if idx > 0 else 0
-            remaining = (len(scheduled_races) - idx) * avg_time
+        import concurrent.futures
 
-            print(f'[{idx}/{len(scheduled_races)}] {venue_name or f"会場{venue_code}"} {race_number}R', end=' ')
-            print(f'(経過: {int(elapsed)}秒, 残り推定: {int(remaining)}秒)')
+        # ThreadPoolExecutorで並列処理（4スレッド）
+        # ※ブラウザ操作は重いので、8ではなく4に抑える
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {executor.submit(fetch_single_race, race): race for race in scheduled_races}
 
-            try:
-                data = scraper.get_original_tenji(venue_code, target_str, race_number)
+            for idx, future in enumerate(concurrent.futures.as_completed(futures, timeout=900), 1):
+                elapsed = time.time() - start_time
+                avg_time = elapsed / idx if idx > 0 else 0
+                remaining = (len(scheduled_races) - idx) * avg_time
 
-                if data and len(data) > 0:
-                    stats['success_races'] += 1
-                    stats['success_boats'] += len(data)
+                race_info = futures[future]
+                venue_code, race_number, venue_name = race_info
 
-                    print(f'  [OK] 取得成功: {len(data)}艇')
+                print(f'[{idx}/{len(scheduled_races)}] {venue_name or f"会場{venue_code}"} {race_number}R', end=' ')
+                print(f'(経過: {int(elapsed)}秒, 残り推定: {int(remaining)}秒)')
 
-                    # DB保存
-                    if not test_mode:
-                        if save_original_tenji_to_db(venue_code, target_str, race_number, data):
+                try:
+                    result = future.result()
+
+                    if result['success']:
+                        stats['success_races'] += 1
+                        stats['success_boats'] += len(result['data'])
+                        if not test_mode:
                             stats['db_saved'] += 1
-                            print(f'  [DB] 保存完了')
-                else:
-                    stats['skipped'] += 1
-                    print(f'  [!] データなし（未発売または終了済み）')
+                        print(f'  [OK] 取得成功: {len(result["data"])}艇')
+                    elif result['error']:
+                        stats['failed_races'] += 1
+                        print(f'  [X] エラー: {result["error"]}')
+                    else:
+                        stats['skipped'] += 1
+                        print(f'  [!] データなし（未発売または終了済み）')
 
-            except KeyboardInterrupt:
-                print('\n\n[!] ユーザーによる中断')
-                raise
-            except Exception as e:
-                stats['failed_races'] += 1
-                print(f'  [X] エラー: {str(e)[:50]}')
+                except Exception as e:
+                    stats['failed_races'] += 1
+                    print(f'  [X] 並列処理エラー: {str(e)[:50]}')
 
-            # レート制限
-            if idx < len(scheduled_races):
-                time.sleep(delay)
-
+    except KeyboardInterrupt:
+        print('\n\n[!] ユーザーによる中断')
+        raise
     finally:
-        if scraper:
-            print('\nブラウザを終了中...')
-            scraper.close()
-            print('[OK] ブラウザ終了完了')
+        pass  # 各スレッドで個別にcloseしているため不要
 
     total_time = time.time() - start_time
 

@@ -34,6 +34,11 @@ def _get_progress_path(job_name: str) -> str:
     return os.path.join(JOBS_DIR, f'{job_name}.json')
 
 
+def _get_log_path(job_name: str) -> str:
+    """ログファイルのパスを取得"""
+    return os.path.join(JOBS_DIR, f'{job_name}_output.log')
+
+
 def is_process_running(pid: int) -> bool:
     """プロセスが実行中か確認"""
     try:
@@ -100,21 +105,25 @@ def start_job(job_name: str, script_path: str, args: list = None) -> Dict[str, A
         if args:
             cmd.extend([str(a) for a in args])
 
+        # ログファイルにリダイレクト
+        log_path = _get_log_path(job_name)
+        log_file = open(log_path, 'w', encoding='utf-8')
+
         # Windowsの場合はCREATE_NEW_PROCESS_GROUPを使用
         if sys.platform == 'win32':
             process = subprocess.Popen(
                 cmd,
                 cwd=PROJECT_ROOT,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,  # stderrもstdoutに統合
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
             )
         else:
             process = subprocess.Popen(
                 cmd,
                 cwd=PROJECT_ROOT,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,  # stderrもstdoutに統合
                 start_new_session=True
             )
 
@@ -264,3 +273,31 @@ def get_all_jobs() -> Dict[str, Dict[str, Any]]:
                 jobs[job_name] = progress
 
     return jobs
+
+
+def get_job_log(job_name: str, tail_lines: int = None) -> str:
+    """
+    ジョブのログを取得
+
+    Args:
+        job_name: ジョブ名
+        tail_lines: 末尾から何行取得するか（Noneの場合は全行）
+
+    Returns:
+        ログ内容（文字列）
+    """
+    _ensure_jobs_dir()
+    log_path = _get_log_path(job_name)
+
+    if not os.path.exists(log_path):
+        return ""
+
+    try:
+        with open(log_path, 'r', encoding='utf-8') as f:
+            if tail_lines is None:
+                return f.read()
+            else:
+                lines = f.readlines()
+                return ''.join(lines[-tail_lines:])
+    except Exception:
+        return ""

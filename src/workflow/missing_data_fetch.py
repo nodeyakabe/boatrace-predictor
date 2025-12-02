@@ -6,19 +6,25 @@
 === 2カテゴリ設計 ===
 
 【直前情報取得】（レース前に取得可能）
-- 展示タイム・チルト・部品交換 → BeforeInfoScraperで直接取得
-- オッズ → OddsScraperで直接取得（当日のみ）
+- BeforeInfoScraperで直接取得:
+  - 展示タイム、チルト、部品交換
+  - 調整重量、ST、展示進入コース
+  - 天候、風向、気温、水温、風速、波高
+  - 前走成績（進入コース・ST・着順）
+- OddsScraperで取得: オッズ（当日のみ）
+- 補完スクリプト: 潮位データ（海水場のみ）
 
 【当日確定情報】（レース後に取得）
-- レース基本情報 → BulkScraperで取得
-- 結果データ → ResultScraperで取得
-- 補完スクリプト → 決まり手、払戻、天候、風向など
+- BulkScraperで取得: レース基本情報
+- ResultScraperで取得: 結果データ
+- 補完スクリプト: 決まり手、払戻、レース詳細（ST/コース）
 """
 import os
 import sys
 import sqlite3
 import subprocess
 import time
+import concurrent.futures
 from datetime import datetime
 from typing import Dict, List, Optional, Callable
 import logging
@@ -33,11 +39,9 @@ CONFIRMED_DATA_SCRIPTS = [
 ]
 
 # 直前情報取得で実行する補完スクリプト（結果に依存しない）
+# ※展示タイム、天候、風向はBeforeInfoScraperで取得するため削除済み
 BEFOREINFO_SCRIPTS = [
-    ("補完_展示タイム_全件_高速化.py", "展示タイム"),
-    ("補完_天候データ_改善版.py", "天候データ"),
-    ("補完_風向データ_改善版.py", "風向データ"),
-    ("収集_潮位データ_最新.py", "潮位データ"),
+    ("収集_潮位データ_最新.py", "潮位データ"),  # BeforeInfoでは取得できないため必要
 ]
 
 
@@ -427,69 +431,57 @@ class MissingDataFetchWorkflow:
         beforeinfo_success = 0
         beforeinfo_error = 0
 
-        for idx, (race_id, venue_code, race_date, race_number) in enumerate(races_without_beforeinfo, 1):
+        # 並列処理用の関数
+        def fetch_single_beforeinfo(race_info):
+            """1レース分の直前情報を取得"""
+            race_id, venue_code, race_date, race_number = race_info
             try:
                 date_str = race_date.replace('-', '')
-                scraper = BeforeInfoScraper()
+                scraper = BeforeInfoScraper(delay=0.05)
                 beforeinfo = scraper.get_race_beforeinfo(venue_code, date_str, race_number)
 
-                if beforeinfo:
-                    exhibition_times = beforeinfo.get('exhibition_times', {})
-                    tilt_angles = beforeinfo.get('tilt_angles', {})
-                    parts_replacements = beforeinfo.get('parts_replacements', {})
+                # 新しいDB保存メソッドを使用（気象データ、調整重量、前走成績も保存）
+                if beforeinfo and beforeinfo.get('is_published'):
+                    success = scraper.save_to_db(race_id, beforeinfo, self.db_path)
+                    scraper.close()
+                    return success
+                else:
+                    scraper.close()
+                    return False
+            except Exception as e:
+                logger.warning(f"直前情報取得エラー (race_id={race_id}): {e}")
+                return False
 
-                    if exhibition_times:
-                        conn = sqlite3.connect(self.db_path)
-                        cursor = conn.cursor()
+        total = len(races_without_beforeinfo)
 
-                        for pit in range(1, 7):
-                            ex_time = exhibition_times.get(pit)
-                            tilt = tilt_angles.get(pit)
-                            parts = parts_replacements.get(pit)
+        # ThreadPoolExecutorで並列処理（8スレッド）
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {
+                executor.submit(fetch_single_beforeinfo, race): race
+                for race in races_without_beforeinfo
+            }
 
-                            if ex_time or tilt or parts:
-                                cursor.execute("""
-                                    SELECT id FROM race_details WHERE race_id = ? AND pit_number = ?
-                                """, (race_id, pit))
-                                existing = cursor.fetchone()
-
-                                if existing:
-                                    cursor.execute("""
-                                        UPDATE race_details
-                                        SET exhibition_time = COALESCE(?, exhibition_time),
-                                            tilt_angle = COALESCE(?, tilt_angle),
-                                            parts_replacement = COALESCE(?, parts_replacement)
-                                        WHERE race_id = ? AND pit_number = ?
-                                    """, (ex_time, tilt, parts, race_id, pit))
-                                else:
-                                    cursor.execute("""
-                                        INSERT INTO race_details (race_id, pit_number, exhibition_time, tilt_angle, parts_replacement)
-                                        VALUES (?, ?, ?, ?, ?)
-                                    """, (race_id, pit, ex_time, tilt, parts))
-
-                        conn.commit()
-                        conn.close()
+            for idx, future in enumerate(concurrent.futures.as_completed(futures, timeout=600), 1):
+                try:
+                    if future.result():
                         beforeinfo_success += 1
                     else:
                         beforeinfo_error += 1
-                else:
+                except Exception as e:
                     beforeinfo_error += 1
+                    logger.warning(f"並列処理エラー: {e}")
 
+                # 100件ごとに進捗更新
                 if idx % 100 == 0:
                     current_step += 1
                     progress = int((current_step / total_steps) * 100)
                     self._update_progress(
                         "フェーズ2",
-                        f'直前情報を取得中... ({idx}/{len(races_without_beforeinfo)})',
+                        f'直前情報を取得中... ({idx}/{total})',
                         progress
                     )
 
-                time.sleep(0.1)
-
-            except Exception as e:
-                beforeinfo_error += 1
-
-        remaining_steps = beforeinfo_steps - (len(races_without_beforeinfo) // 100)
+        remaining_steps = beforeinfo_steps - (total // 100)
         current_step += max(1, remaining_steps)
         processed += beforeinfo_success
         errors += beforeinfo_error

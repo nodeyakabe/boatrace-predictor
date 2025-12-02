@@ -55,7 +55,7 @@ class TodayPredictionWorkflow:
 
     def run(self) -> Dict:
         """
-        ワークフロー全体を実行
+        ワークフロー全体を実行（並列化最適化版）
 
         Returns:
             実行結果の辞書
@@ -73,19 +73,44 @@ class TodayPredictionWorkflow:
             today_schedule = self.fetch_today_data()
             result['races_fetched'] = self._count_today_races()
 
-            # Step 2: DBビュー更新
-            self.update_db_views()
+            if not today_schedule:
+                logger.warning("今日のスケジュールが取得できませんでした")
+                result['success'] = True
+                return result
 
-            # Step 3: オッズ取得
-            if today_schedule:
-                result['odds_fetched'] = self.fetch_odds(today_schedule)
+            # Step 2-3: 並列実行（DBビュー更新、直前情報取得、オッズ取得）
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                # 3つの独立した処理を並列実行
+                future_db_views = executor.submit(self.update_db_views)
+                future_beforeinfo = executor.submit(self.fetch_beforeinfo, today_schedule)
+                future_odds = executor.submit(self.fetch_odds, today_schedule)
+
+                # 完了を待機
+                concurrent.futures.wait([future_db_views, future_beforeinfo, future_odds])
+
+                # 結果を取得（エラーがあっても続行）
+                try:
+                    future_db_views.result()
+                except Exception as e:
+                    logger.warning(f"DBビュー更新エラー: {e}")
+
+                try:
+                    result['beforeinfo_fetched'] = future_beforeinfo.result()
+                except Exception as e:
+                    logger.warning(f"直前情報取得エラー: {e}")
+                    result['beforeinfo_fetched'] = 0
+
+                try:
+                    result['odds_fetched'] = future_odds.result()
+                except Exception as e:
+                    logger.warning(f"オッズ取得エラー: {e}")
+                    result['odds_fetched'] = 0
 
             # Step 4: 法則再解析
             self.reanalyze_rules()
 
             # Step 5: 予測生成
-            if today_schedule:
-                self.generate_predictions(today_schedule)
+            self.generate_predictions(today_schedule)
 
             # Step 6: 統計更新
             stats = self.update_stats()
@@ -210,6 +235,91 @@ class TodayPredictionWorkflow:
             self._update_progress("Step 2/6", "DBビュー更新完了", 25)
         except Exception as e:
             logger.warning(f"DBビュー更新エラー: {e}")
+
+    def fetch_beforeinfo(self, today_schedule: Dict[str, str]) -> int:
+        """
+        Step 2.5: 直前情報を取得
+
+        Returns:
+            取得成功したレース数
+        """
+        self._update_progress("Step 2.5/6", "直前情報を取得中...", 26)
+
+        from src.scraper.beforeinfo_scraper import BeforeInfoScraper
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        all_races = []
+        for venue_code, race_date in today_schedule.items():
+            race_date_iso = f"{race_date[:4]}-{race_date[4:6]}-{race_date[6:8]}"
+            cursor.execute("""
+                SELECT id, race_number FROM races
+                WHERE venue_code = ? AND race_date = ?
+                ORDER BY race_number
+            """, (venue_code, race_date_iso))
+
+            for row in cursor.fetchall():
+                all_races.append({
+                    'race_id': row[0],
+                    'venue_code': venue_code,
+                    'race_date': race_date,
+                    'race_number': row[1]
+                })
+        conn.close()
+
+        if not all_races:
+            self._update_progress("Step 2.5/6", "直前情報取得対象なし", 29)
+            return 0
+
+        def fetch_single_beforeinfo(race_info):
+            try:
+                scraper = BeforeInfoScraper(delay=0.2)
+                beforeinfo = scraper.get_race_beforeinfo(
+                    race_info['venue_code'],
+                    race_info['race_date'],
+                    race_info['race_number']
+                )
+
+                if beforeinfo and beforeinfo.get('is_published'):
+                    # DB保存
+                    success = scraper.save_to_db(
+                        race_info['race_id'],
+                        beforeinfo,
+                        self.db_path
+                    )
+                    scraper.close()
+                    return success
+                else:
+                    scraper.close()
+                    return False
+            except Exception:
+                return False
+
+        success_count = 0
+        total = len(all_races)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {executor.submit(fetch_single_beforeinfo, race): race for race in all_races}
+
+            for i, future in enumerate(concurrent.futures.as_completed(futures, timeout=300), 1):
+                if future.result():
+                    success_count += 1
+
+                if i % 10 == 0:
+                    pct = 26 + int((i / total) * 3)
+                    self._update_progress(
+                        "Step 2.5/6",
+                        f"直前情報取得中... ({i}/{total})",
+                        pct
+                    )
+
+        self._update_progress(
+            "Step 2.5/6",
+            f"直前情報取得完了 ({success_count}/{total}レース)",
+            29
+        )
+        return success_count
 
     def fetch_odds(self, today_schedule: Dict[str, str]) -> int:
         """

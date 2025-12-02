@@ -27,7 +27,7 @@ sys.path.insert(0, PROJECT_ROOT)
 from config.settings import DATABASE_PATH
 from src.utils.job_manager import (
     is_job_running, start_job, get_job_progress,
-    cancel_job, get_all_jobs
+    cancel_job, get_all_jobs, get_job_log
 )
 
 # ジョブ名定数
@@ -123,9 +123,6 @@ def _render_job_status_bar():
                 pass
 
 
-# 直近7日間のデータ状況表示は削除（不足データ取得時に自動検出されるため不要）
-
-
 def _render_missing_data_detector():
     """不足データ検出・取得"""
     st.subheader("不足データの検出と取得")
@@ -147,9 +144,16 @@ def _render_missing_data_detector():
                 if st.button("⏹️ キャンセル", key="cancel_missing"):
                     cancel_job(JOB_MISSING_DATA)
                     st.rerun()
-        return
 
-    # データ状況サマリーは「データ参照」タブの「データ品質」と重複するため削除
+            # ログ表示
+            st.markdown("---")
+            with st.expander("📋 実行ログを表示", expanded=False):
+                log_content = get_job_log(JOB_MISSING_DATA, tail_lines=100)
+                if log_content:
+                    st.code(log_content, language="text")
+                else:
+                    st.info("ログはまだ生成されていません")
+        return
 
     st.markdown("**期間指定で不足データを検出・取得**")
 
@@ -415,6 +419,15 @@ def _render_original_tenji():
                 if st.button("⏹️ キャンセル", key="cancel_tenji"):
                     cancel_job(JOB_TENJI)
                     st.rerun()
+
+            # ログ表示
+            st.markdown("---")
+            with st.expander("📋 実行ログを表示", expanded=False):
+                log_content = get_job_log(JOB_TENJI, tail_lines=100)
+                if log_content:
+                    st.code(log_content, language="text")
+                else:
+                    st.info("ログはまだ生成されていません")
         return
 
     st.markdown("""

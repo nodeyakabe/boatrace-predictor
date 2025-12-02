@@ -333,11 +333,6 @@ def _render_missing_data_detector():
                     st.rerun()
         return
 
-    # 直近7日間の状況
-    st.markdown("**直近7日間のデータ状況**")
-    _render_recent_data_status()
-
-    st.markdown("---")
     st.markdown("**期間指定で不足データを検出・取得**")
 
     # 期間選択
@@ -409,93 +404,6 @@ def _render_missing_data_detector():
 
     elif 'missing_dates' in st.session_state:
         st.success("✅ 不足データはありません！")
-
-
-def _render_recent_data_status():
-    """直近7日間のデータ状況を表示（DataCoverageChecker統合版）"""
-    try:
-        checker = DataCoverageChecker(DATABASE_PATH)
-        report = checker.get_coverage_report()
-        missing_items = checker.get_missing_items()
-    except Exception as e:
-        st.warning(f"データチェッカーのエラー: {e}")
-        missing_items = []
-
-    conn = sqlite3.connect(DATABASE_PATH)
-    cursor = conn.cursor()
-
-    today = datetime.now().date()
-    data_status = []
-
-    for i in range(7):
-        target_date = today - timedelta(days=i)
-        date_str = target_date.strftime('%Y-%m-%d')
-
-        cursor.execute("SELECT COUNT(*) FROM races WHERE race_date = ?", (date_str,))
-        race_count = cursor.fetchone()[0]
-
-        cursor.execute("""
-            SELECT COUNT(*) FROM results r
-            JOIN races ra ON r.race_id = ra.id
-            WHERE ra.race_date = ?
-        """, (date_str,))
-        result_count = cursor.fetchone()[0]
-
-        cursor.execute("""
-            SELECT COUNT(*) FROM race_details rd
-            JOIN races ra ON rd.race_id = ra.id
-            WHERE ra.race_date = ?
-        """, (date_str,))
-        detail_count = cursor.fetchone()[0]
-
-        tenji_count = 0
-        try:
-            cursor.execute("""
-                SELECT COUNT(*) FROM original_exhibition oe
-                JOIN races ra ON oe.race_id = ra.id
-                WHERE ra.race_date = ?
-            """, (date_str,))
-            tenji_count = cursor.fetchone()[0]
-        except Exception:
-            pass
-
-        if race_count == 0:
-            status = "⚪ 未取得"
-        elif result_count < race_count * 5:
-            status = "🟡 結果不足"
-        elif detail_count < race_count * 5:
-            status = "🟡 詳細不足"
-        elif tenji_count == 0:
-            status = "🟠 展示なし"
-        else:
-            status = "🟢 完了"
-
-        data_status.append({
-            '日付': date_str,
-            '曜日': ['月', '火', '水', '木', '金', '土', '日'][target_date.weekday()],
-            'レース': race_count,
-            '結果': result_count,
-            '詳細': detail_count,
-            '展示': tenji_count,
-            'ステータス': status
-        })
-
-    conn.close()
-
-    import pandas as pd
-    df = pd.DataFrame(data_status)
-    st.dataframe(df, use_container_width=True, hide_index=True)
-
-    # 全体の不足データサマリーを表示
-    if missing_items:
-        st.markdown("---")
-        st.markdown("**⚠️ 全体で不足しているデータ（重要度順）**")
-        top_missing = missing_items[:10]
-        for item in top_missing:
-            importance_stars = "★" * item["importance"]
-            st.text(f"{importance_stars} [{item['category']}] {item['name']} - {item['coverage']*100:.1f}% ({item['status']})")
-    else:
-        st.success("✅ 全てのデータ項目が充足しています！")
 
 
 def _detect_missing_data(start_date, end_date, check_types: List[str]) -> List[Dict]:

@@ -622,6 +622,173 @@ class BeforeInfoScraper:
             'weather': weather
         }
 
+    def save_to_db(self, race_id: int, beforeinfo_data: dict, db_path: str = None):
+        """
+        直前情報をDBに保存
+
+        Args:
+            race_id: レースID
+            beforeinfo_data: get_race_beforeinfo()の戻り値
+            db_path: データベースパス（Noneの場合はデフォルトパス使用）
+
+        Returns:
+            bool: 保存成功したかどうか
+        """
+        if not beforeinfo_data or not beforeinfo_data.get('is_published'):
+            return False
+
+        import sqlite3
+        import os
+
+        if db_path is None:
+            # デフォルトパスを使用
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+            db_path = os.path.join(project_root, 'data/boatrace.db')
+
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            # race_detailsテーブルに選手ごとのデータを保存
+            for pit in range(1, 7):
+                ex_time = beforeinfo_data.get('exhibition_times', {}).get(pit)
+                tilt = beforeinfo_data.get('tilt_angles', {}).get(pit)
+                parts = beforeinfo_data.get('parts_replacements', {}).get(pit)
+                adj_weight = beforeinfo_data.get('adjusted_weights', {}).get(pit)
+                ex_course = beforeinfo_data.get('exhibition_courses', {}).get(pit)
+                st = beforeinfo_data.get('start_timings', {}).get(pit)
+
+                # 前走成績
+                prev_race = beforeinfo_data.get('previous_race', {}).get(pit, {})
+                prev_course = prev_race.get('course')
+                prev_st = prev_race.get('st')
+                prev_rank = prev_race.get('rank')
+
+                # データが1つでもあればUPSERT
+                if any([ex_time, tilt, parts, adj_weight, ex_course, st, prev_course, prev_st, prev_rank]):
+                    cursor.execute("""
+                        SELECT id FROM race_details WHERE race_id = ? AND pit_number = ?
+                    """, (race_id, pit))
+                    existing = cursor.fetchone()
+
+                    if existing:
+                        # 既存レコードを更新（NULLでない値のみ上書き）
+                        cursor.execute("""
+                            UPDATE race_details
+                            SET exhibition_time = COALESCE(?, exhibition_time),
+                                tilt_angle = COALESCE(?, tilt_angle),
+                                parts_replacement = COALESCE(?, parts_replacement),
+                                adjusted_weight = COALESCE(?, adjusted_weight),
+                                exhibition_course = COALESCE(?, exhibition_course),
+                                st_time = COALESCE(?, st_time),
+                                prev_race_course = COALESCE(?, prev_race_course),
+                                prev_race_st = COALESCE(?, prev_race_st),
+                                prev_race_rank = COALESCE(?, prev_race_rank)
+                            WHERE race_id = ? AND pit_number = ?
+                        """, (ex_time, tilt, parts, adj_weight, ex_course, st,
+                              prev_course, prev_st, prev_rank, race_id, pit))
+                    else:
+                        # 新規挿入
+                        cursor.execute("""
+                            INSERT INTO race_details (
+                                race_id, pit_number, exhibition_time, tilt_angle,
+                                parts_replacement, adjusted_weight, exhibition_course,
+                                st_time, prev_race_course, prev_race_st, prev_race_rank
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (race_id, pit, ex_time, tilt, parts, adj_weight,
+                              ex_course, st, prev_course, prev_st, prev_rank))
+
+            # race_conditionsテーブルに気象データを保存
+            weather = beforeinfo_data.get('weather', {})
+            if weather:
+                temp = weather.get('temperature')
+                water_temp = weather.get('water_temp')
+                wind_speed = weather.get('wind_speed')
+                wave_height = weather.get('wave_height')
+                weather_code = weather.get('weather_code')
+                wind_dir_code = weather.get('wind_dir_code')
+
+                # 天候コード・風向コードをテキストに変換
+                weather_text = self._weather_code_to_text(weather_code) if weather_code else None
+                wind_dir_text = self._wind_dir_code_to_text(wind_dir_code) if wind_dir_code else None
+
+                # データがあればUPSERT
+                if any([temp, water_temp, wind_speed, wave_height, weather_text, wind_dir_text]):
+                    cursor.execute("""
+                        SELECT id FROM race_conditions WHERE race_id = ?
+                    """, (race_id,))
+                    existing = cursor.fetchone()
+
+                    if existing:
+                        # 既存レコードを更新
+                        cursor.execute("""
+                            UPDATE race_conditions
+                            SET temperature = COALESCE(?, temperature),
+                                water_temperature = COALESCE(?, water_temperature),
+                                wind_speed = COALESCE(?, wind_speed),
+                                wave_height = COALESCE(?, wave_height),
+                                weather = COALESCE(?, weather),
+                                wind_direction = COALESCE(?, wind_direction)
+                            WHERE race_id = ?
+                        """, (temp, water_temp, wind_speed, wave_height,
+                              weather_text, wind_dir_text, race_id))
+                    else:
+                        # 新規挿入
+                        cursor.execute("""
+                            INSERT INTO race_conditions (
+                                race_id, temperature, water_temperature,
+                                wind_speed, wave_height, weather, wind_direction
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, (race_id, temp, water_temp, wind_speed, wave_height,
+                              weather_text, wind_dir_text))
+
+            conn.commit()
+            conn.close()
+            return True
+
+        except Exception as e:
+            print(f"DB保存エラー (race_id={race_id}): {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def _weather_code_to_text(self, code: int) -> str:
+        """天候コードをテキストに変換"""
+        weather_map = {
+            1: '晴',
+            2: '曇',
+            3: '雨',
+            4: '雪',
+            5: '霧',
+            6: '台風'
+        }
+        return weather_map.get(code, '不明')
+
+    def _wind_dir_code_to_text(self, code: int) -> str:
+        """風向コードをテキストに変換"""
+        wind_dir_map = {
+            1: '無風',
+            2: '北',
+            3: '北北東',
+            4: '北東',
+            5: '東北東',
+            6: '東',
+            7: '東南東',
+            8: '南東',
+            9: '南南東',
+            10: '南',
+            11: '南南西',
+            12: '南西',
+            13: '西南西',
+            14: '西',
+            15: '西北西',
+            16: '北西',
+            17: '北北西'
+        }
+        return wind_dir_map.get(code, '不明')
+
     def close(self):
         """セッションを閉じる"""
         self.session.close()
