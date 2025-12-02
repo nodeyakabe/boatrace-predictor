@@ -123,77 +123,7 @@ def _render_job_status_bar():
                 pass
 
 
-def _render_recent_data_status():
-    """直近7日間のデータ状況を表示"""
-    conn = sqlite3.connect(DATABASE_PATH)
-    cursor = conn.cursor()
-
-    today = datetime.now().date()
-    data_status = []
-
-    for i in range(7):
-        target_date = today - timedelta(days=i)
-        date_str = target_date.strftime('%Y-%m-%d')
-
-        # レース数
-        cursor.execute("SELECT COUNT(*) FROM races WHERE race_date = ?", (date_str,))
-        race_count = cursor.fetchone()[0]
-
-        # 結果データ数
-        cursor.execute("""
-            SELECT COUNT(*) FROM results r
-            JOIN races ra ON r.race_id = ra.id
-            WHERE ra.race_date = ?
-        """, (date_str,))
-        result_count = cursor.fetchone()[0]
-
-        # レース詳細数
-        cursor.execute("""
-            SELECT COUNT(*) FROM race_details rd
-            JOIN races ra ON rd.race_id = ra.id
-            WHERE ra.race_date = ?
-        """, (date_str,))
-        detail_count = cursor.fetchone()[0]
-
-        # オリジナル展示数
-        tenji_count = 0
-        try:
-            cursor.execute("""
-                SELECT COUNT(*) FROM original_exhibition oe
-                JOIN races ra ON oe.race_id = ra.id
-                WHERE ra.race_date = ?
-            """, (date_str,))
-            tenji_count = cursor.fetchone()[0]
-        except Exception:
-            pass
-
-        # ステータス判定
-        if race_count == 0:
-            status = "⚪ 未取得"
-        elif result_count < race_count * 5:
-            status = "🟡 結果不足"
-        elif detail_count < race_count * 5:
-            status = "🟡 詳細不足"
-        elif tenji_count == 0:
-            status = "🟠 展示なし"
-        else:
-            status = "🟢 完了"
-
-        data_status.append({
-            '日付': date_str,
-            '曜日': ['月', '火', '水', '木', '金', '土', '日'][target_date.weekday()],
-            'レース': race_count,
-            '結果': result_count,
-            '詳細': detail_count,
-            '展示': tenji_count,
-            'ステータス': status
-        })
-
-    conn.close()
-
-    import pandas as pd
-    df = pd.DataFrame(data_status)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+# 直近7日間のデータ状況表示は削除（不足データ取得時に自動検出されるため不要）
 
 
 def _render_missing_data_detector():
@@ -219,48 +149,8 @@ def _render_missing_data_detector():
                     st.rerun()
         return
 
-    # データ状況サマリー
-    conn = sqlite3.connect(DATABASE_PATH)
-    cursor = conn.cursor()
+    # データ状況サマリーは「データ参照」タブの「データ品質」と重複するため削除
 
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        cursor.execute("SELECT MIN(race_date), MAX(race_date) FROM races")
-        result = cursor.fetchone()
-        if result[0]:
-            st.metric("データ期間", f"{result[0][:10]}")
-            st.caption(f"～ {result[1][:10]}")
-        else:
-            st.metric("データ期間", "なし")
-
-    with col2:
-        cursor.execute("SELECT COUNT(*) FROM races")
-        total_races = cursor.fetchone()[0]
-        st.metric("総レース数", f"{total_races:,}")
-
-    with col3:
-        cursor.execute("SELECT COUNT(DISTINCT race_date) FROM races")
-        total_days = cursor.fetchone()[0]
-        st.metric("データ日数", f"{total_days:,}日")
-
-    with col4:
-        try:
-            cursor.execute("SELECT COUNT(*) FROM original_exhibition")
-            tenji_count = cursor.fetchone()[0]
-        except:
-            tenji_count = 0
-        st.metric("オリジナル展示", f"{tenji_count:,}")
-
-    conn.close()
-
-    st.markdown("---")
-
-    # 直近7日間の状況
-    st.markdown("**直近7日間のデータ状況**")
-    _render_recent_data_status()
-
-    st.markdown("---")
     st.markdown("**期間指定で不足データを検出・取得**")
 
     # 期間選択

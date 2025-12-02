@@ -842,10 +842,10 @@ def _fetch_and_update_beforeinfo(target_races: List[Dict], skip_fetched: bool = 
         progress_bar = st.progress(0)
         status_text = st.empty()
 
-        # BeforeInfoFetcher をインポート
-        from src.scraper.beforeinfo_fetcher import BeforeInfoFetcher
+        # BeforeInfoScraper をインポート
+        from src.scraper.beforeinfo_scraper import BeforeInfoScraper
 
-        fetcher = BeforeInfoFetcher(delay=0.2)  # 高速化: 0.5→0.2秒
+        scraper = BeforeInfoScraper(delay=0.2)  # 高速化: 0.5→0.2秒
 
         total = len(races_to_fetch)
         success_count = 0
@@ -859,26 +859,32 @@ def _fetch_and_update_beforeinfo(target_races: List[Dict], skip_fetched: bool = 
 
             try:
                 # 直前情報を取得
-                beforeinfo = fetcher.fetch_beforeinfo(today_ymd, race['venue_code'], race['race_number'])
+                raw_data = scraper.get_race_beforeinfo(race['venue_code'], today_ymd, race['race_number'])
 
-                if beforeinfo:
-                    # 実際にデータがあるかチェック
-                    racers = beforeinfo.get('racers', [])
-                    has_actual_data = any(r.get('exhibition_time') for r in racers)
+                if raw_data and raw_data.get('is_published'):
+                    # UI形式に変換
+                    beforeinfo = scraper.to_ui_format(raw_data)
 
-                    if has_actual_data:
-                        fetched_data.append({
-                            'race_id': race['race_id'],
-                            'venue_code': race['venue_code'],
-                            'venue_name': venue_name,
-                            'race_number': race['race_number'],
-                            'beforeinfo': beforeinfo
-                        })
-                        success_count += 1
+                    if beforeinfo:
+                        # 実際にデータがあるかチェック
+                        racers = beforeinfo.get('racers', [])
+                        has_actual_data = any(r.get('exhibition_time') for r in racers)
+
+                        if has_actual_data:
+                            fetched_data.append({
+                                'race_id': race['race_id'],
+                                'venue_code': race['venue_code'],
+                                'venue_name': venue_name,
+                                'race_number': race['race_number'],
+                                'beforeinfo': beforeinfo
+                            })
+                            success_count += 1
+                        else:
+                            no_data_count += 1
                     else:
                         no_data_count += 1
                 else:
-                    error_count += 1
+                    no_data_count += 1
 
             except Exception as e:
                 logger.error(f"直前情報取得エラー ({venue_name} {race['race_number']}R): {e}")
@@ -1031,7 +1037,7 @@ def _update_predictions_with_beforeinfo(fetched_data: List[Dict]):
 
 def _save_beforeinfo_to_db(fetched_data: List[Dict]) -> int:
     """
-    取得した直前情報をDBに保存
+    取得した直前情報をDBに保存 (race_details & weather テーブルに保存)
 
     Args:
         fetched_data: 取得した直前情報リスト
@@ -1046,16 +1052,21 @@ def _save_beforeinfo_to_db(fetched_data: List[Dict]) -> int:
                         'exhibition_time': float,
                         'start_timing': float,
                         'tilt': float,
-                        'weight': float,
+                        'parts_replacement': str,
+                        'adjusted_weight': float,
+                        'exhibition_course': int,
+                        'prev_race_course': int,
+                        'prev_race_st': float,
+                        'prev_race_rank': int
                         ...
                     }, ...],
                     'weather': {
                         'temperature': float,
                         'water_temp': float,
                         'wind_speed': int,
-                        'wind_direction': str,
                         'wave_height': int,
-                        'weather': str
+                        'weather_code': int,
+                        'wind_dir_code': int
                     }
                 }
             }, ...]
@@ -1073,111 +1084,112 @@ def _save_beforeinfo_to_db(fetched_data: List[Dict]) -> int:
         conn = sqlite3.connect(DATABASE_PATH)
         cursor = conn.cursor()
 
-        # 現在時刻
-        collected_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
         for data in fetched_data:
             race_id = data['race_id']
+            venue_code = data['venue_code']
             beforeinfo = data['beforeinfo']
             racers = beforeinfo.get('racers', [])
             weather = beforeinfo.get('weather', {})
 
-            # 天候データを保存（race_conditions テーブル）
-            if any(weather.values()):
+            # 天候データを保存（weather テーブル）
+            # weather_dateを取得する必要がある
+            cursor.execute("SELECT race_date FROM races WHERE id = ?", (race_id,))
+            race_row = cursor.fetchone()
+            if race_row and any(weather.values()):
+                weather_date = race_row[0]
+
+                # 既存レコード確認
                 cursor.execute("""
-                    SELECT id FROM race_conditions WHERE race_id = ?
-                """, (race_id,))
+                    SELECT id FROM weather
+                    WHERE venue_code = ? AND weather_date = ?
+                """, (venue_code, weather_date))
 
                 existing_weather = cursor.fetchone()
 
                 if existing_weather:
+                    # 更新
                     cursor.execute("""
-                        UPDATE race_conditions
-                        SET weather = COALESCE(?, weather),
-                            wind_speed = COALESCE(?, wind_speed),
-                            wind_direction = COALESCE(?, wind_direction),
-                            wave_height = COALESCE(?, wave_height),
-                            temperature = COALESCE(?, temperature),
+                        UPDATE weather
+                        SET temperature = COALESCE(?, temperature),
                             water_temperature = COALESCE(?, water_temperature),
-                            collected_at = ?
-                        WHERE race_id = ?
+                            wind_speed = COALESCE(?, wind_speed),
+                            wave_height = COALESCE(?, wave_height),
+                            weather_code = COALESCE(?, weather_code),
+                            wind_dir_code = COALESCE(?, wind_dir_code)
+                        WHERE venue_code = ? AND weather_date = ?
                     """, (
-                        weather.get('weather'),
-                        weather.get('wind_speed'),
-                        weather.get('wind_direction'),
-                        weather.get('wave_height'),
                         weather.get('temperature'),
                         weather.get('water_temp'),
-                        collected_at,
-                        race_id
+                        weather.get('wind_speed'),
+                        weather.get('wave_height'),
+                        weather.get('weather_code'),
+                        weather.get('wind_dir_code'),
+                        venue_code,
+                        weather_date
                     ))
                 else:
+                    # 新規挿入
                     cursor.execute("""
-                        INSERT INTO race_conditions
-                        (race_id, weather, wind_speed, wind_direction, wave_height, temperature, water_temperature, collected_at)
+                        INSERT INTO weather
+                        (venue_code, weather_date, temperature, water_temperature, wind_speed, wave_height, weather_code, wind_dir_code)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
-                        race_id,
-                        weather.get('weather'),
-                        weather.get('wind_speed'),
-                        weather.get('wind_direction'),
-                        weather.get('wave_height'),
+                        venue_code,
+                        weather_date,
                         weather.get('temperature'),
                         weather.get('water_temp'),
-                        collected_at
+                        weather.get('wind_speed'),
+                        weather.get('wave_height'),
+                        weather.get('weather_code'),
+                        weather.get('wind_dir_code')
                     ))
 
+            # 選手データを保存（race_details テーブル）
             for racer in racers:
                 pit_number = racer.get('pit_number')
                 if not pit_number:
                     continue
 
+                # 更新する値
                 exhibition_time = racer.get('exhibition_time')
-                start_timing = racer.get('start_timing')
-                tilt = racer.get('tilt')
-                weight = racer.get('weight')
+                st_time = racer.get('start_timing')
+                tilt_angle = racer.get('tilt')
+                parts_replacement = racer.get('parts_replacement', '')
+                adjusted_weight = racer.get('adjusted_weight')
+                exhibition_course = racer.get('exhibition_course')
+                prev_race_course = racer.get('prev_race_course')
+                prev_race_st = racer.get('prev_race_st')
+                prev_race_rank = racer.get('prev_race_rank')
 
-                # 既存レコードを確認
+                # race_details の既存レコードを更新
                 cursor.execute("""
-                    SELECT id FROM exhibition_data
+                    UPDATE race_details
+                    SET exhibition_time = COALESCE(?, exhibition_time),
+                        st_time = COALESCE(?, st_time),
+                        tilt_angle = COALESCE(?, tilt_angle),
+                        parts_replacement = COALESCE(?, parts_replacement),
+                        adjusted_weight = COALESCE(?, adjusted_weight),
+                        exhibition_course = COALESCE(?, exhibition_course),
+                        prev_race_course = COALESCE(?, prev_race_course),
+                        prev_race_st = COALESCE(?, prev_race_st),
+                        prev_race_rank = COALESCE(?, prev_race_rank)
                     WHERE race_id = ? AND pit_number = ?
-                """, (race_id, pit_number))
+                """, (
+                    exhibition_time,
+                    st_time,
+                    tilt_angle,
+                    parts_replacement,
+                    adjusted_weight,
+                    exhibition_course,
+                    prev_race_course,
+                    prev_race_st,
+                    prev_race_rank,
+                    race_id,
+                    pit_number
+                ))
 
-                existing = cursor.fetchone()
-
-                if existing:
-                    # 更新
-                    cursor.execute("""
-                        UPDATE exhibition_data
-                        SET exhibition_time = COALESCE(?, exhibition_time),
-                            start_timing = COALESCE(?, start_timing),
-                            weight_change = COALESCE(?, weight_change),
-                            collected_at = ?
-                        WHERE race_id = ? AND pit_number = ?
-                    """, (
-                        exhibition_time,
-                        int(start_timing * 100) if start_timing else None,  # ST展示は0.15などの秒→15の整数
-                        weight,
-                        collected_at,
-                        race_id,
-                        pit_number
-                    ))
-                else:
-                    # 新規挿入
-                    cursor.execute("""
-                        INSERT INTO exhibition_data
-                        (race_id, pit_number, exhibition_time, start_timing, weight_change, collected_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (
-                        race_id,
-                        pit_number,
-                        exhibition_time,
-                        int(start_timing * 100) if start_timing else None,
-                        weight,
-                        collected_at
-                    ))
-
-                saved_count += 1
+                if cursor.rowcount > 0:
+                    saved_count += 1
 
         conn.commit()
         conn.close()
