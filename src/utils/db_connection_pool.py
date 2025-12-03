@@ -41,6 +41,29 @@ class DBConnectionPool:
             )
             self._local.connection.row_factory = sqlite3.Row
 
+            # SQLite最適化設定
+            cursor = self._local.connection.cursor()
+
+            # WALモード有効化（並行読み取り性能向上）
+            cursor.execute("PRAGMA journal_mode=WAL")
+
+            # メモリキャッシュサイズ増加（64MB）
+            cursor.execute("PRAGMA cache_size=-64000")
+
+            # 同期モード最適化（安全性は保ちつつ高速化）
+            cursor.execute("PRAGMA synchronous=NORMAL")
+
+            # メモリマップI/O有効化（256MB）
+            cursor.execute("PRAGMA mmap_size=268435456")
+
+            # 一時ファイルをメモリに配置
+            cursor.execute("PRAGMA temp_store=MEMORY")
+
+            # クエリプランナーの最適化
+            cursor.execute("PRAGMA optimize")
+
+            cursor.close()
+
         return self._local.connection
 
     @contextmanager
