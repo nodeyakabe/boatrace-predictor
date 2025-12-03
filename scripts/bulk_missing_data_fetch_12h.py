@@ -98,7 +98,7 @@ def main():
         print("=" * 80)
         print("フェーズ1: 決まり手・払戻金の完全補完（全期間）")
         print("=" * 80)
-        print("  優先度: 🔴 最高")
+        print("  優先度: [最高]")
         print("  対象: 決まり手、払戻金")
         print("  期間: 全期間（期間制限なし）")
         print("  推定時間: 30-60分")
@@ -126,12 +126,12 @@ def main():
         print("フェーズ1 完了")
         print("=" * 80)
         if result1['success']:
-            print(f"✅ 成功: {result1.get('message', '処理完了')}")
+            print(f"[OK] 成功: {result1.get('message', '処理完了')}")
             print(f"   処理数: {result1.get('processed', 0)}件")
             print(f"   エラー: {result1.get('errors', 0)}件")
         else:
-            print(f"❌ 失敗: {result1.get('message', 'エラー')}")
-            print("   ⚠️ 次のフェーズに進みます")
+            print(f"[NG] 失敗: {result1.get('message', 'エラー')}")
+            print("   [!] 次のフェーズに進みます")
         print()
 
     # ========== フェーズ2: 結果データとレース詳細（全期間） ==========
@@ -139,7 +139,7 @@ def main():
         print("=" * 80)
         print("フェーズ2: 結果データとレース詳細の補完（全期間）")
         print("=" * 80)
-        print("  優先度: 🟠 高")
+        print("  優先度: [高]")
         print("  対象: 結果データ、レース詳細（ST/コース）")
         print("  期間: 全期間（期間制限なし）")
         print("  推定時間: 1-2時間")
@@ -167,12 +167,12 @@ def main():
         print("フェーズ2 完了")
         print("=" * 80)
         if result2['success']:
-            print(f"✅ 成功: {result2.get('message', '処理完了')}")
+            print(f"[OK] 成功: {result2.get('message', '処理完了')}")
             print(f"   処理数: {result2.get('processed', 0)}件")
             print(f"   エラー: {result2.get('errors', 0)}件")
         else:
-            print(f"❌ 失敗: {result2.get('message', 'エラー')}")
-            print("   ⚠️ 次のフェーズに進みます")
+            print(f"[NG] 失敗: {result2.get('message', 'エラー')}")
+            print("   [!] 次のフェーズに進みます")
         print()
 
     # ========== フェーズ3: 直前情報（2024年以降または全期間） ==========
@@ -183,18 +183,18 @@ def main():
     if args.recent_only:
         start_date = '2024-01-01'
         end_date = datetime.now().strftime('%Y-%m-%d')
-        print("  優先度: 🟡 中（2024年以降のみ）")
+        print("  優先度: [中]（2024年以降のみ）")
         print(f"  期間: {start_date} ～ {end_date}")
         print("  推定時間: 2-4時間")
     elif args.start_date and args.end_date:
         start_date = args.start_date
         end_date = args.end_date
-        print("  優先度: 🟡 中（指定期間）")
+        print("  優先度: [中]（指定期間）")
         print(f"  期間: {start_date} ～ {end_date}")
     else:
         start_date = None
         end_date = None
-        print("  優先度: 🟡 中（全期間）")
+        print("  優先度: [中]（全期間）")
         print("  期間: 全期間（期間制限なし）")
         print("  推定時間: 8-10時間（大量）")
 
@@ -223,11 +223,11 @@ def main():
     print("フェーズ3 完了")
     print("=" * 80)
     if result3['success']:
-        print(f"✅ 成功: {result3.get('message', '処理完了')}")
+        print(f"[OK] 成功: {result3.get('message', '処理完了')}")
         print(f"   処理数: {result3.get('processed', 0)}件")
         print(f"   エラー: {result3.get('errors', 0)}件")
     else:
-        print(f"❌ 失敗: {result3.get('message', 'エラー')}")
+        print(f"[NG] 失敗: {result3.get('message', 'エラー')}")
     print()
 
     # ========== 最終サマリー ==========

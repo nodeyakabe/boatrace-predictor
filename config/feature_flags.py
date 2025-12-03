@@ -7,18 +7,26 @@
 
 # 機能フラグ設定
 FEATURE_FLAGS = {
-    # Phase 1: 高優先度改善
-    'dynamic_integration': True,      # 動的合成比
-    'entry_prediction_model': True,   # 進入予測モデル
+    # Phase 1: 高優先度改善（全て実装完了・有効化）
+    'dynamic_integration': True,      # 動的合成比（DynamicIntegrator）
+    'entry_prediction_model': True,   # 進入予測モデル（EntryPredictionModel）
     'confidence_refinement': True,    # 信頼度細分化
+    'st_course_interaction': True,    # ST×course交互作用（新規追加）
 
-    # Phase 2: 中優先度改善
-    'auto_buff_learning': False,      # 複合バフ自動学習
-    'probability_calibration': False, # キャリブレーション
+    # Phase 2: 中優先度改善（実装完了・有効化）
+    'lightgbm_ranking': True,         # LightGBMランキングモデル（ConditionalRankModel）
+    'kelly_betting': True,            # Kelly基準投資戦略（KellyBettingStrategy）
+    'optuna_optimization': True,      # Optunaパラメータ最適化
+    'interaction_features': True,     # 交互作用特徴量（InteractionFeatureGenerator）
+    'auto_buff_learning': False,      # 複合バフ自動学習（未実装）
+    'probability_calibration': False, # キャリブレーション（未実装）
 
-    # Phase 3: 低優先度改善（将来的な実装）
-    'bayesian_hierarchical': False,   # ベイズ階層モデル
-    'reinforcement_learning': False,  # 強化学習最適化
+    # Phase 3: 長期改善（実装完了・有効化）
+    'venue_specific_models': True,    # 会場別専用モデル（VenueSpecificFeatureGenerator）
+    'hierarchical_predictor': True,   # 階層的条件確率モデル（HierarchicalPredictor）
+    'shap_explainability': True,      # SHAP説明可能性（SHAPExplainer）
+    'bayesian_hierarchical': False,   # ベイズ階層モデル（将来実装）
+    'reinforcement_learning': False,  # 強化学習最適化（将来実装）
 
     # デバッグ・テスト用
     'verbose_logging': False,         # 詳細ログ出力

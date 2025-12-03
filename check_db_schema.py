@@ -1,113 +1,85 @@
-"""データベーススキーマを詳細確認"""
-import sys
-sys.path.append('src')
-import sqlite3
-from config.settings import DATABASE_PATH
+"""
+データベーススキーマ確認スクリプト
+"""
 
-conn = sqlite3.connect(DATABASE_PATH)
+import sqlite3
+
+conn = sqlite3.connect('data/boatrace.db')
 cursor = conn.cursor()
 
-print("="*70)
+print("=" * 80)
 print("データベーススキーマ確認")
-print("="*70)
+print("=" * 80)
+print()
 
-# 全テーブルリスト
-cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-tables = [row[0] for row in cursor.fetchall()]
-print(f"\n全テーブル ({len(tables)}個):")
-for table in tables:
-    print(f"  - {table}")
-
-# 主要テーブルの詳細スキーマ
-important_tables = ['races', 'race_details', 'results', 'entries']
-
-for table in important_tables:
-    if table in tables:
-        print(f"\n{'='*70}")
-        print(f"テーブル: {table}")
-        print('-'*70)
-
-        cursor.execute(f"PRAGMA table_info({table})")
-        columns = cursor.fetchall()
-
-        print(f"カラム数: {len(columns)}")
-        for col in columns:
-            cid, name, type_, notnull, default, pk = col
-            pk_mark = " [PK]" if pk else ""
-            null_mark = " NOT NULL" if notnull else ""
-            default_mark = f" DEFAULT {default}" if default else ""
-            print(f"  {name:25s} {type_:15s}{pk_mark}{null_mark}{default_mark}")
-
-        # レコード数
-        cursor.execute(f"SELECT COUNT(*) FROM {table}")
-        count = cursor.fetchone()[0]
-        print(f"\nレコード数: {count:,}")
-
-        # サンプルデータ（最初の1行）
-        if count > 0:
-            cursor.execute(f"SELECT * FROM {table} LIMIT 1")
-            sample = cursor.fetchone()
-            print("\nサンプルデータ:")
-            for i, col in enumerate(columns):
-                print(f"  {col[1]:25s} = {sample[i]}")
-
-# race_detailsの特殊カラムをチェック
-print(f"\n{'='*70}")
-print("race_details の finish_position と kimarite をチェック")
-print('-'*70)
-
+# race_detailsテーブルのカラム一覧
+print("【race_detailsテーブル】")
 cursor.execute("PRAGMA table_info(race_details)")
-rd_columns = [col[1] for col in cursor.fetchall()]
+columns = cursor.fetchall()
+for col in columns:
+    print(f"  {col[1]:30s} {col[2]:15s} {'NOT NULL' if col[3] else ''}")
+print()
 
-if 'finish_position' in rd_columns:
-    print("✓ finish_position カラムが存在します")
-    cursor.execute("SELECT COUNT(*) FROM race_details WHERE finish_position IS NOT NULL")
-    count = cursor.fetchone()[0]
-    print(f"  データ件数: {count:,}")
-else:
-    print("✗ finish_position カラムが存在しません")
+# racesテーブルのカラム一覧
+print("【racesテーブル】")
+cursor.execute("PRAGMA table_info(races)")
+columns = cursor.fetchall()
+for col in columns:
+    print(f"  {col[1]:30s} {col[2]:15s} {'NOT NULL' if col[3] else ''}")
+print()
 
-if 'kimarite' in rd_columns:
-    print("✓ kimarite カラムが存在します")
-    cursor.execute("SELECT COUNT(*) FROM race_details WHERE kimarite IS NOT NULL")
-    count = cursor.fetchone()[0]
-    print(f"  データ件数: {count:,}")
-else:
-    print("✗ kimarite カラムが存在しません")
+# データの期間を確認
+print("【データ期間】")
+cursor.execute("SELECT MIN(race_date), MAX(race_date) FROM races")
+min_date, max_date = cursor.fetchone()
+print(f"  最古: {min_date}")
+print(f"  最新: {max_date}")
+print()
 
-# resultsの特殊カラムをチェック
-print(f"\n{'='*70}")
-print("results の kimarite をチェック")
-print('-'*70)
+# 結果データのある期間
+print("【結果データのある期間】")
+cursor.execute("""
+    SELECT MIN(r.race_date), MAX(r.race_date), COUNT(DISTINCT r.id)
+    FROM races r
+    JOIN results res ON r.id = res.race_id
+    WHERE res.rank IS NOT NULL AND res.is_invalid = 0
+""")
+min_date, max_date, race_count = cursor.fetchone()
+print(f"  最古: {min_date}")
+print(f"  最新: {max_date}")
+print(f"  総レース数: {race_count}")
+print()
 
-cursor.execute("PRAGMA table_info(results)")
-results_columns = [col[1] for col in cursor.fetchall()]
+# 直前情報のある期間
+print("【race_detailsデータのある期間】")
+cursor.execute("""
+    SELECT MIN(r.race_date), MAX(r.race_date), COUNT(DISTINCT r.id)
+    FROM races r
+    JOIN race_details rd ON r.id = rd.race_id
+    WHERE rd.exhibition_course IS NOT NULL
+""")
+min_date, max_date, race_count = cursor.fetchone()
+print(f"  最古: {min_date}")
+print(f"  最新: {max_date}")
+print(f"  総レース数: {race_count}")
+print()
 
-if 'kimarite' in results_columns:
-    print("✓ kimarite カラムが存在します")
-    cursor.execute("SELECT COUNT(*) FROM results WHERE kimarite IS NOT NULL")
-    count = cursor.fetchone()[0]
-    print(f"  データ件数: {count:,}")
-else:
-    print("✗ kimarite カラムが存在しません")
-
-# fast_data_manager の race_results テーブル確認
-if 'race_results' in tables:
-    print(f"\n{'='*70}")
-    print("⚠️ race_results テーブルが存在します（fast_data_manager用）")
-    print('-'*70)
-    cursor.execute("PRAGMA table_info(race_results)")
-    rr_columns = cursor.fetchall()
-    print(f"カラム数: {len(rr_columns)}")
-    for col in rr_columns:
-        print(f"  {col[1]:25s} {col[2]:15s}")
-
-    cursor.execute("SELECT COUNT(*) FROM race_results")
-    count = cursor.fetchone()[0]
-    print(f"レコード数: {count:,}")
+# 両方揃っているレース
+print("【race_details + results 両方あるレース】")
+cursor.execute("""
+    SELECT MIN(r.race_date), MAX(r.race_date), COUNT(DISTINCT r.id)
+    FROM races r
+    JOIN race_details rd ON r.id = rd.race_id
+    JOIN results res ON r.id = res.race_id
+    WHERE rd.exhibition_course IS NOT NULL
+    AND res.rank IS NOT NULL AND res.is_invalid = 0
+""")
+min_date, max_date, race_count = cursor.fetchone()
+print(f"  最古: {min_date}")
+print(f"  最新: {max_date}")
+print(f"  総レース数: {race_count}")
+print()
 
 conn.close()
 
-print("\n" + "="*70)
-print("チェック完了")
-print("="*70)
+print("=" * 80)

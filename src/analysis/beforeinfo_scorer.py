@@ -178,11 +178,15 @@ class BeforeInfoScorer:
         0.19-0.25: 0点
         0.26-: -10点
         フライング（負の値）: -25点追加
+
+        交互作用（Opus推奨）:
+        ST×(6-course): 外コースほどSTの重要度が高い
         """
         if not start_timings or pit_number not in start_timings:
             return 0.0
 
         st = start_timings[pit_number]
+        course = exhibition_courses.get(pit_number, pit_number)  # デフォルトは枠なり
 
         # フライングチェック
         if st < 0:
@@ -199,6 +203,11 @@ class BeforeInfoScorer:
             score = 0.0
         else:
             score = -10.0
+
+        # ST×courseの交互作用（外コースほどSTが重要）
+        # course 1-3: 係数0.8-1.0, course 4-6: 係数1.0-1.3
+        course_importance = 0.8 + (6 - course) * 0.1
+        score = score * course_importance
 
         # 25点満点に正規化（30点が最大なので調整）
         return min(score * (25.0 / 30.0), 25.0)
