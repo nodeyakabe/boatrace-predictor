@@ -6,6 +6,7 @@
 import sqlite3
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
+from src.utils.db_connection_pool import get_connection
 
 
 class KimariteAnalyzer:
@@ -25,8 +26,8 @@ class KimariteAnalyzer:
         self.db_path = db_path
 
     def _connect(self):
-        """データベース接続"""
-        conn = sqlite3.connect(self.db_path)
+        """データベース接続（接続プールから取得）"""
+        conn = get_connection(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -78,7 +79,7 @@ class KimariteAnalyzer:
 
         cursor.execute(query, (racer_number, start_date.isoformat(), end_date.isoformat()))
         rows = cursor.fetchall()
-        conn.close()
+        cursor.close()
 
         if not rows:
             return {
@@ -167,7 +168,7 @@ class KimariteAnalyzer:
 
         cursor.execute(query, (venue_code, start_date.isoformat(), end_date.isoformat()))
         rows = cursor.fetchall()
-        conn.close()
+        cursor.close()
 
         if not rows:
             return {
@@ -249,7 +250,7 @@ class KimariteAnalyzer:
 
         cursor.execute(query, (venue_code, course, start_date.isoformat(), end_date.isoformat()))
         rows = cursor.fetchall()
-        conn.close()
+        cursor.close()
 
         if not rows:
             return {
@@ -322,7 +323,7 @@ class KimariteAnalyzer:
 
         cursor.execute(query, (racer_number, start_date.isoformat(), end_date.isoformat()))
         rows = cursor.fetchall()
-        conn.close()
+        cursor.close()
 
         course_affinity = {}
         course_stats = {}

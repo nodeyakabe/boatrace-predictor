@@ -10,6 +10,7 @@ from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 from collections import defaultdict
 import math
+from src.utils.db_connection_pool import get_connection
 
 
 @dataclass
@@ -95,7 +96,7 @@ class EntryPredictionModel:
         if racer_number in self._entry_cache:
             return self._entry_cache[racer_number]
 
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cursor = conn.cursor()
 
         try:
@@ -160,7 +161,7 @@ class EntryPredictionModel:
             return pattern
 
         finally:
-            conn.close()
+            cursor.close()
 
     def _predict_single_entry(
         self,

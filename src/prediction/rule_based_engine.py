@@ -8,6 +8,7 @@
 import sqlite3
 import numpy as np
 from typing import Dict, List, Tuple, Optional
+from src.utils.db_connection_pool import get_connection
 
 
 class RuleBasedEngine:
@@ -33,7 +34,7 @@ class RuleBasedEngine:
         Returns:
             法則のリスト
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         c = conn.cursor()
 
         query = """
@@ -55,7 +56,7 @@ class RuleBasedEngine:
         c.execute(query, (venue_code, is_active))
         results = c.fetchall()
 
-        conn.close()
+        c.close()
 
         rules = []
         for row in results:
@@ -89,7 +90,7 @@ class RuleBasedEngine:
         Returns:
             法則のリスト
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         c = conn.cursor()
 
         # 基本クエリ
@@ -124,7 +125,7 @@ class RuleBasedEngine:
         c.execute(query, params)
         results = c.fetchall()
 
-        conn.close()
+        c.close()
 
         rules = []
         for row in results:

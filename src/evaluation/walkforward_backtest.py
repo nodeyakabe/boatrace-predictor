@@ -211,7 +211,7 @@ class WalkForwardBacktest:
         for row in cursor.fetchall():
             results.append({
                 'pit_number': row[0],
-                'rank': row[1],
+                'rank': int(row[1]) if row[1] else 999,  # TEXT型をintに変換
             })
 
         conn.close()

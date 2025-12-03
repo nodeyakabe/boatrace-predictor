@@ -18,6 +18,7 @@
 from typing import Dict, List, Optional, Tuple
 import sqlite3
 from pathlib import Path
+from src.utils.db_connection_pool import get_connection
 
 
 class BeforeInfoScorer:
@@ -456,7 +457,7 @@ class BeforeInfoScorer:
             BeforeInfoScraper.get_race_beforeinfo()と同じ形式
         """
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = get_connection(self.db_path)
             cursor = conn.cursor()
 
             # race_detailsから選手別データを取得
@@ -534,7 +535,7 @@ class BeforeInfoScorer:
                     'wave_height': weather_row[3]
                 }
 
-            conn.close()
+            cursor.close()
 
             # データが1つでもあれば公開済みとみなす
             is_published = bool(exhibition_times or start_timings or tilt_angles)

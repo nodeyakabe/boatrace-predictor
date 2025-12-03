@@ -9,6 +9,7 @@ from typing import Dict, List, Tuple, Optional
 from datetime import datetime, timedelta
 import sqlite3
 from src.analysis.smoothing import LaplaceSmoothing
+from src.utils.db_connection_pool import get_connection
 
 
 class StatisticsCalculator:
@@ -19,8 +20,8 @@ class StatisticsCalculator:
         self.smoother = LaplaceSmoothing()
 
     def _connect(self):
-        """データベース接続"""
-        return sqlite3.connect(self.db_path)
+        """データベース接続（接続プールから取得）"""
+        return get_connection(self.db_path)
 
     def _fetch_all(self, query, params=None):
         """クエリ実行（複数行取得）"""
@@ -29,7 +30,7 @@ class StatisticsCalculator:
         cursor = conn.cursor()
         cursor.execute(query, params or [])
         results = cursor.fetchall()
-        conn.close()
+        cursor.close()
         return results
 
     def _fetch_one(self, query, params=None):
@@ -39,7 +40,7 @@ class StatisticsCalculator:
         cursor = conn.cursor()
         cursor.execute(query, params or [])
         result = cursor.fetchone()
-        conn.close()
+        cursor.close()
         return result
 
     # ========================================

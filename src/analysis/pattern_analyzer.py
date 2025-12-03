@@ -8,6 +8,7 @@ import sqlite3
 from typing import Dict, List, Tuple
 from datetime import datetime, timedelta
 import statistics
+from src.utils.db_connection_pool import get_connection
 
 
 class PatternAnalyzer:
@@ -17,8 +18,8 @@ class PatternAnalyzer:
         self.db_path = db_path
 
     def _connect(self):
-        """データベース接続"""
-        return sqlite3.connect(self.db_path)
+        """データベース接続（接続プールから取得）"""
+        return get_connection(self.db_path)
 
     def _fetch_all(self, query, params=None):
         """クエリ実行（複数行取得）"""
@@ -27,7 +28,7 @@ class PatternAnalyzer:
         cursor = conn.cursor()
         cursor.execute(query, params or [])
         results = cursor.fetchall()
-        conn.close()
+        cursor.close()
         return results
 
     def _fetch_one(self, query, params=None):
@@ -37,7 +38,7 @@ class PatternAnalyzer:
         cursor = conn.cursor()
         cursor.execute(query, params or [])
         result = cursor.fetchone()
-        conn.close()
+        cursor.close()
         return result
 
     # ========================================

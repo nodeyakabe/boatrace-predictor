@@ -9,6 +9,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List, Tuple
 from pathlib import Path
+from src.utils.db_connection_pool import get_connection
 
 
 class TideAdjuster:
@@ -135,7 +136,7 @@ class TideAdjuster:
         if not station:
             return None
 
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
@@ -174,7 +175,7 @@ class TideAdjuster:
             }
 
         finally:
-            conn.close()
+            cursor.close()
 
     def _determine_tide_phase(
         self,
@@ -424,7 +425,7 @@ class TideAdjuster:
         if not station:
             return None
 
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cursor = conn.cursor()
 
         try:
@@ -454,7 +455,7 @@ class TideAdjuster:
             return None
 
         finally:
-            conn.close()
+            cursor.close()
 
 
 # テスト用

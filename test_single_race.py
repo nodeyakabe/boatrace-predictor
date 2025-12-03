@@ -1,85 +1,63 @@
 """
-単一レースのデータ取得テスト
+1レースのみのテスト（問題調査用）
 """
+import sqlite3
+import time
+from src.analysis.race_predictor import RacePredictor
 
-from src.scraper.race_scraper_v2 import RaceScraperV2
-from src.scraper.result_scraper import ResultScraper
-from src.scraper.beforeinfo_scraper import BeforeInfoScraper
+print("=" * 80)
+print("1レーステスト（問題調査）")
+print("=" * 80)
 
-def test_single_race():
-    """2022-01-15のレースをテスト"""
+# 最新1レース取得
+conn = sqlite3.connect('data/boatrace.db')
+cursor = conn.cursor()
+cursor.execute("""
+    SELECT DISTINCT r.id, r.race_date, r.venue_code, r.race_number
+    FROM races r
+    JOIN race_details rd ON r.id = rd.race_id
+    JOIN results res ON r.id = res.race_id
+    WHERE rd.exhibition_course IS NOT NULL
+    AND res.rank IS NOT NULL
+    AND res.is_invalid = 0
+    ORDER BY r.race_date DESC, r.id DESC
+    LIMIT 1
+""")
+race = cursor.fetchone()
+conn.close()
 
-    venue_code = "01"  # 桐生
-    date_str = "20220115"
-    race_number = 1
+if not race:
+    print("テスト対象レースが見つかりません")
+    exit(1)
 
-    print("=" * 80)
-    print(f"テスト対象: 会場={venue_code}, 日付={date_str}, レース={race_number}")
-    print("=" * 80)
+race_id, race_date, venue, race_no = race
+print(f"テスト対象: {race_date} {venue} {race_no}R (ID: {race_id})")
+print()
 
-    # 出走表の取得
-    print("\n1. 出走表を取得中...")
-    try:
-        race_scraper = RaceScraperV2()
-        race_data = race_scraper.fetch_race_data(venue_code, date_str, race_number)
+# 予測実行
+print("予測開始...")
+start_time = time.time()
 
-        if race_data and 'entries' in race_data and len(race_data['entries']) > 0:
-            print(f"  ✓ 出走表取得成功: {len(race_data['entries'])}艇")
-            print(f"    レース名: {race_data.get('race_name', 'N/A')}")
-        else:
-            print(f"  × 出走表取得失敗: データが空")
-            return
-    except Exception as e:
-        print(f"  × 出走表取得エラー: {e}")
-        return
+try:
+    predictor = RacePredictor(db_path='data/boatrace.db')
+    print("Predictor初期化完了")
+    
+    predictions = predictor.predict_race(race_id)
+    
+    elapsed = time.time() - start_time
+    
+    print(f"予測完了: {elapsed:.2f}秒")
+    print(f"予測結果数: {len(predictions)}")
+    
+    if predictions:
+        print("\n【予測結果】")
+        for i, pred in enumerate(predictions[:3], 1):
+            print(f"{i}位: {pred['pit_number']}号 {pred['racer_name']} (スコア: {pred['total_score']:.1f})")
+    
+except Exception as e:
+    elapsed = time.time() - start_time
+    print(f"エラー発生 ({elapsed:.2f}秒経過): {e}")
+    import traceback
+    traceback.print_exc()
 
-    # 結果の取得
-    print("\n2. レース結果を取得中...")
-    try:
-        result_scraper = ResultScraper()
-        complete_result = result_scraper.fetch_result(venue_code, date_str, race_number)
-
-        if complete_result and 'results' in complete_result:
-            print(f"  ✓ 結果取得成功: {len(complete_result['results'])}件")
-            # 1着の情報を表示
-            if len(complete_result['results']) > 0:
-                first = complete_result['results'][0]
-                print(f"    1着: 艇番={first.get('pit_number', 'N/A')}, タイム={first.get('race_time', 'N/A')}")
-        else:
-            print(f"  × 結果取得失敗: データが空")
-            return
-    except Exception as e:
-        print(f"  × 結果取得エラー: {e}")
-        return
-
-    # 直前情報の取得
-    print("\n3. 直前情報を取得中...")
-    try:
-        beforeinfo_scraper = BeforeInfoScraper()
-        beforeinfo = beforeinfo_scraper.scrape(venue_code, date_str, race_number)
-
-        if beforeinfo and len(beforeinfo) > 0:
-            print(f"  ✓ 直前情報取得成功: {len(beforeinfo)}件")
-            # 1号艇の展示タイムを表示
-            if len(beforeinfo) > 0:
-                first_boat = beforeinfo[0]
-                print(f"    1号艇: 展示タイム={first_boat.get('exhibition_time', 'N/A')}, 進入={first_boat.get('actual_course', 'N/A')}")
-        else:
-            print(f"  × 直前情報取得失敗: データが空")
-    except Exception as e:
-        print(f"  × 直前情報取得エラー: {e}")
-
-    print("\n" + "=" * 80)
-    print("結論:")
-    print("=" * 80)
-    print("✓ 出走表と結果は取得可能")
-    if beforeinfo and len(beforeinfo) > 0:
-        print("✓ 直前情報も取得可能")
-        print("\n→ 2022年のデータは取得可能なはずです。")
-        print("→ スクリプトのロジックに問題がある可能性があります。")
-    else:
-        print("× 直前情報は取得不可")
-        print("\n→ 2022年は出走表と結果のみ取得可能です。")
-
-if __name__ == "__main__":
-    test_single_race()
+print("=" * 80)

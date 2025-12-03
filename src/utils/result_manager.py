@@ -5,6 +5,7 @@
 import sqlite3
 from typing import Dict, List, Tuple
 from datetime import datetime
+from src.utils.db_connection_pool import get_connection
 
 
 class ResultManager:
@@ -14,8 +15,8 @@ class ResultManager:
         self.db_path = db_path
 
     def _connect(self):
-        """データベース接続"""
-        return sqlite3.connect(self.db_path)
+        """データベース接続（接続プールから取得）"""
+        return get_connection(self.db_path)
 
     def add_manual_result(self, race_id: int, pit_number: int, rank: int) -> bool:
         """
@@ -56,7 +57,7 @@ class ResultManager:
                 """, (race_id, pit_number, rank))
 
             conn.commit()
-            conn.close()
+            cursor.close()
             return True
 
         except Exception as e:
@@ -85,7 +86,7 @@ class ResultManager:
 
             conn.commit()
             affected = cursor.rowcount
-            conn.close()
+            cursor.close()
 
             return affected > 0
 
@@ -116,7 +117,7 @@ class ResultManager:
 
             conn.commit()
             affected = cursor.rowcount
-            conn.close()
+            cursor.close()
 
             return affected > 0
 
@@ -152,7 +153,7 @@ class ResultManager:
 
         cursor.execute(query, (race_id,))
         rows = cursor.fetchall()
-        conn.close()
+        cursor.close()
 
         return [
             {
@@ -247,7 +248,7 @@ class ResultManager:
 
         cursor.execute(query, (start_date, end_date))
         rows = cursor.fetchall()
-        conn.close()
+        cursor.close()
 
         count = 0
 

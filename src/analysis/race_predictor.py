@@ -25,6 +25,7 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from src.utils.scoring_config import ScoringConfig
+from src.utils.db_connection_pool import get_connection
 from src.prediction.rule_based_engine import RuleBasedEngine
 from config.feature_flags import is_feature_enabled
 # 階層的確率モデル（条件付き確率）
@@ -46,7 +47,7 @@ class RacePredictor:
     """レース予想クラス"""
 
     def __init__(self, db_path="data/boatrace.db", custom_weights: Dict[str, float] = None,
-                 mode: Optional[str] = None, use_cache: bool = False):
+                 mode: Optional[str] = None, use_cache: bool = True):
         """
         レース予想クラスの初期化
 
@@ -421,7 +422,7 @@ class RacePredictor:
             predict_race() と同じ形式の予測結果
         """
         import sqlite3
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cursor = conn.cursor()
 
         # race_id を取得
@@ -432,7 +433,7 @@ class RacePredictor:
         """, (race_date, venue_code, race_number))
 
         row = cursor.fetchone()
-        conn.close()
+        cursor.close()
 
         if not row:
             return []
@@ -453,7 +454,7 @@ class RacePredictor:
             適用される法則のリスト
         """
         import sqlite3
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cursor = conn.cursor()
 
         cursor.execute("""
@@ -463,7 +464,7 @@ class RacePredictor:
         """, (race_date, venue_code, race_number))
 
         row = cursor.fetchone()
-        conn.close()
+        cursor.close()
 
         if not row:
             return []
@@ -495,7 +496,7 @@ class RacePredictor:
         """
         # レース情報取得
         import sqlite3
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
@@ -503,7 +504,7 @@ class RacePredictor:
         race_info = cursor.fetchone()
 
         if not race_info:
-            conn.close()
+            cursor.close()
             return []
 
         venue_code = race_info['venue_code']
@@ -563,7 +564,7 @@ class RacePredictor:
                 wind_speed = weather_row['wind_speed']
                 wave_height = weather_row['wave_height']
 
-        conn.close()
+        cursor.close()
 
         # 選手・モーター分析
         racer_analyses = self.racer_analyzer.analyze_race_entries(race_id)
@@ -846,8 +847,8 @@ class RacePredictor:
         for rank, pred in enumerate(predictions, 1):
             pred['rank_prediction'] = rank
 
-        # 階層的確率モデルによる三連単予測を追加（モデルがある場合）
-        if self.hierarchical_predictor is not None:
+        # 階層的確率モデルによる三連単予測を追加（機能フラグとモデルがある場合のみ）
+        if is_feature_enabled('hierarchical_predictor') and self.hierarchical_predictor is not None:
             try:
                 hierarchical_result = self.hierarchical_predictor.predict_race(race_id)
                 if 'error' not in hierarchical_result:
@@ -914,7 +915,7 @@ class RacePredictor:
 
         # レース情報を取得
         import sqlite3
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cursor = conn.cursor()
         cursor.execute(
             "SELECT race_date FROM races WHERE id = ?",
@@ -939,7 +940,7 @@ class RacePredictor:
             WHERE race_id = ?
         """, (race_id,))
         course_data = {row[0]: row[1] for row in cursor.fetchall()}
-        conn.close()
+        cursor.close()
 
         # エントリー情報を構築
         entries = []
@@ -1005,7 +1006,7 @@ class RacePredictor:
             適用される法則のリスト
         """
         import sqlite3
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cursor = conn.cursor()
 
         # レース情報を取得
@@ -1015,7 +1016,7 @@ class RacePredictor:
         )
         race_row = cursor.fetchone()
         if not race_row:
-            conn.close()
+            cursor.close()
             return []
 
         venue_code, race_date = race_row
@@ -1042,7 +1043,7 @@ class RacePredictor:
             ORDER BY e.pit_number
         """, (race_id,))
         entries_data = cursor.fetchall()
-        conn.close()
+        cursor.close()
 
         # エントリー情報を構築
         entries = []
@@ -1563,7 +1564,7 @@ class RacePredictor:
         }
 
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = get_connection(self.db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
@@ -1607,7 +1608,7 @@ class RacePredictor:
                 if weather_row['wave_height']:
                     beforeinfo_data['weather']['wave_height'] = weather_row['wave_height']
 
-            conn.close()
+            cursor.close()
 
         except Exception as e:
             # エラーが発生しても空のデータで続行
@@ -1698,7 +1699,7 @@ class RacePredictor:
         try:
             # エントリー情報を取得
             import sqlite3
-            conn = sqlite3.connect(self.db_path)
+            conn = get_connection(self.db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
@@ -1710,7 +1711,7 @@ class RacePredictor:
             """, (race_id,))
 
             entries = [dict(row) for row in cursor.fetchall()]
-            conn.close()
+            cursor.close()
 
             if len(entries) < 6:
                 return predictions

@@ -6,6 +6,7 @@
 import sqlite3
 from typing import Dict, List
 from datetime import datetime
+from src.utils.db_connection_pool import get_connection
 
 
 class DataValidator:
@@ -15,8 +16,8 @@ class DataValidator:
         self.db_path = db_path
 
     def _connect(self):
-        """データベース接続"""
-        conn = sqlite3.connect(self.db_path)
+        """データベース接続（接続プールから取得）"""
+        conn = get_connection(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -49,7 +50,7 @@ class DataValidator:
         """)
 
         rows = cursor.fetchall()
-        conn.close()
+        cursor.close()
 
         total_records = len(rows)
         invalid_st = []
@@ -105,7 +106,7 @@ class DataValidator:
         """)
 
         rows = cursor.fetchall()
-        conn.close()
+        cursor.close()
 
         total_records = len(rows)
         invalid_records = []
@@ -151,7 +152,7 @@ class DataValidator:
         """)
 
         rows = cursor.fetchall()
-        conn.close()
+        cursor.close()
 
         total_records = len(rows)
         invalid_records = []
@@ -200,7 +201,7 @@ class DataValidator:
         """)
 
         rows = cursor.fetchall()
-        conn.close()
+        cursor.close()
 
         total_records = len(rows)
         invalid_records = []
@@ -261,7 +262,7 @@ class DataValidator:
         """)
 
         rows = cursor.fetchall()
-        conn.close()
+        cursor.close()
 
         total_races = len(rows)
         incomplete_races = []

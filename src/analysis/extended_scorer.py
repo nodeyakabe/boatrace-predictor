@@ -20,6 +20,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 sys.path.insert(0, PROJECT_ROOT)
 
 from config.settings import DATABASE_PATH, EXTENDED_SCORE_WEIGHTS
+from src.utils.db_connection_pool import get_connection
 
 
 class ExtendedScorer:
@@ -229,7 +230,7 @@ class ExtendedScorer:
         Returns:
             {'score': float, 'races': int, 'avg_rank': float, 'trend': str}
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cursor = conn.cursor()
 
         try:
@@ -307,7 +308,7 @@ class ExtendedScorer:
             }
 
         finally:
-            conn.close()
+            cursor.close()
 
     def calculate_previous_race_level(
         self,
@@ -328,7 +329,7 @@ class ExtendedScorer:
         Returns:
             {'score': float, 'prev_grade': str, 'prev_result': int, 'description': str}
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cursor = conn.cursor()
 
         try:
@@ -392,7 +393,7 @@ class ExtendedScorer:
             }
 
         finally:
-            conn.close()
+            cursor.close()
 
     def predict_course_entry(
         self,
@@ -413,7 +414,7 @@ class ExtendedScorer:
         Returns:
             {'predicted_course': int, 'confidence': float, 'probabilities': dict}
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cursor = conn.cursor()
 
         try:
@@ -433,7 +434,7 @@ class ExtendedScorer:
             }
 
         finally:
-            conn.close()
+            cursor.close()
 
     def analyze_racer_matchup(
         self,
@@ -516,7 +517,7 @@ class ExtendedScorer:
                 'description': str
             }
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cursor = conn.cursor()
 
         try:
@@ -632,7 +633,7 @@ class ExtendedScorer:
             }
 
         finally:
-            conn.close()
+            cursor.close()
 
     def calculate_exhibition_time_score(
         self,
@@ -654,7 +655,7 @@ class ExtendedScorer:
         Returns:
             {'score': float, 'exhibition_time': float, 'rank': int, 'description': str}
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cursor = conn.cursor()
 
         try:
@@ -721,7 +722,7 @@ class ExtendedScorer:
             }
 
         finally:
-            conn.close()
+            cursor.close()
 
     def calculate_tilt_angle_score(
         self,
@@ -747,7 +748,7 @@ class ExtendedScorer:
         Returns:
             {'score': float, 'tilt_angle': float, 'setting_type': str, 'description': str}
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cursor = conn.cursor()
 
         try:
@@ -817,7 +818,7 @@ class ExtendedScorer:
             }
 
         finally:
-            conn.close()
+            cursor.close()
 
     def calculate_recent_form_score(
         self,
@@ -840,7 +841,7 @@ class ExtendedScorer:
             {'score': float, 'recent_win_rate': float, 'recent_avg_rank': float,
              'trend': str, 'description': str}
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cursor = conn.cursor()
 
         try:
@@ -921,7 +922,7 @@ class ExtendedScorer:
             }
 
         finally:
-            conn.close()
+            cursor.close()
 
     def calculate_venue_affinity_score(
         self,
@@ -946,7 +947,7 @@ class ExtendedScorer:
             {'score': float, 'venue_win_rate': float, 'venue_races': int,
              'is_local': bool, 'description': str}
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cursor = conn.cursor()
 
         try:
@@ -1014,7 +1015,7 @@ class ExtendedScorer:
             }
 
         finally:
-            conn.close()
+            cursor.close()
 
     def calculate_place_rate_score(
         self,
@@ -1037,7 +1038,7 @@ class ExtendedScorer:
             {'score': float, 'second_rate': float, 'third_rate': float,
              'rentai_rate': float, 'description': str}
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cursor = conn.cursor()
 
         try:
@@ -1113,7 +1114,7 @@ class ExtendedScorer:
             }
 
         finally:
-            conn.close()
+            cursor.close()
 
     def analyze_motor_characteristics(
         self,
@@ -1134,7 +1135,7 @@ class ExtendedScorer:
         Returns:
             {'score': float, 'characteristics': dict, 'description': str}
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cursor = conn.cursor()
 
         try:
@@ -1187,7 +1188,7 @@ class ExtendedScorer:
             }
 
         finally:
-            conn.close()
+            cursor.close()
 
     def get_comprehensive_score(
         self,

@@ -7,6 +7,7 @@ import sqlite3
 from typing import Dict, Optional
 from datetime import datetime, timedelta
 from config.settings import DATABASE_PATH
+from src.utils.db_connection_pool import get_connection
 
 
 class CourseChangeAnalyzer:
@@ -18,7 +19,8 @@ class CourseChangeAnalyzer:
         self.db_path = db_path
 
     def _connect(self):
-        return sqlite3.connect(self.db_path)
+        """データベース接続（接続プールから取得）"""
+        return get_connection(self.db_path)
 
     def calculate_racer_course_change_tendency(
         self,
@@ -61,7 +63,7 @@ class CourseChangeAnalyzer:
         """, (racer_number, start_date))
 
         course_data = cursor.fetchall()
-        conn.close()
+        cursor.close()
 
         if len(course_data) == 0:
             return {
@@ -136,7 +138,7 @@ class CourseChangeAnalyzer:
         """, (race_id,))
 
         entries = cursor.fetchall()
-        conn.close()
+        cursor.close()
 
         predictions = {}
 

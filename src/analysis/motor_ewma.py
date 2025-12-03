@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 from config.settings import DATABASE_PATH
+from src.utils.db_connection_pool import get_connection
 
 
 class MotorEWMA:
@@ -30,7 +31,8 @@ class MotorEWMA:
         self.alpha = config['motor_ewma']['alpha']  # デフォルト 0.3
 
     def _connect(self):
-        return sqlite3.connect(self.db_path)
+        """データベース接続（接続プールから取得）"""
+        return get_connection(self.db_path)
 
     def calculate_motor_ewma(
         self,
@@ -81,7 +83,7 @@ class MotorEWMA:
         """, (venue_code, motor_number, max_races))
 
         results = cursor.fetchall()
-        conn.close()
+        cursor.close()
 
         if len(results) == 0:
             return {

@@ -10,6 +10,7 @@ import sqlite3
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 from collections import defaultdict
+from src.utils.db_connection_pool import get_connection
 
 
 class BatchDataLoader:
@@ -28,8 +29,8 @@ class BatchDataLoader:
         self._cache_loaded = False
 
     def _connect(self):
-        """データベース接続"""
-        conn = sqlite3.connect(self.db_path)
+        """データベース接続（接続プールから取得）"""
+        conn = get_connection(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -111,7 +112,7 @@ class BatchDataLoader:
         race_ids = list(races.keys())
         if not race_ids:
             self._cache['entries'] = {}
-            conn.close()
+            cursor.close()
             return
 
         placeholders = ','.join('?' * len(race_ids))
@@ -146,7 +147,7 @@ class BatchDataLoader:
             })
 
         self._cache['entries'] = entries
-        conn.close()
+        cursor.close()
 
     def _load_racer_stats_batch(self, target_date: str) -> None:
         """
@@ -172,7 +173,7 @@ class BatchDataLoader:
         racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
 
         if not racer_numbers:
-            conn.close()
+            cursor.close()
             return
 
         # 180日前の日付
@@ -295,7 +296,7 @@ class BatchDataLoader:
         self._cache['racer_course'] = dict(racer_course)
         self._cache['racer_venue'] = dict(racer_venue)
 
-        conn.close()
+        cursor.close()
 
     def _load_motor_stats_batch(self, target_date: str) -> None:
         """
@@ -316,7 +317,7 @@ class BatchDataLoader:
         motors = [(row['venue_code'], row['motor_number']) for row in cursor.fetchall()]
 
         if not motors:
-            conn.close()
+            cursor.close()
             return
 
         # 90日前の日付
@@ -366,7 +367,7 @@ class BatchDataLoader:
                 }
 
         self._cache['motor_stats'] = motor_stats
-        conn.close()
+        cursor.close()
 
     def _load_racer_st_stats_batch(self, target_date: str) -> None:
         """
@@ -392,7 +393,7 @@ class BatchDataLoader:
         racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
 
         if not racer_numbers:
-            conn.close()
+            cursor.close()
             return
 
         # 180日前の日付
@@ -441,7 +442,7 @@ class BatchDataLoader:
                 }
 
         self._cache['racer_st_stats'] = racer_st_stats
-        conn.close()
+        cursor.close()
 
     def _load_racer_recent_form_batch(self, target_date: str, recent_races: int = 10) -> None:
         """
@@ -467,7 +468,7 @@ class BatchDataLoader:
         racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
 
         if not racer_numbers:
-            conn.close()
+            cursor.close()
             return
 
         placeholders = ','.join('?' * len(racer_numbers))
@@ -543,7 +544,7 @@ class BatchDataLoader:
                 }
 
         self._cache['racer_recent_form'] = racer_form_stats
-        conn.close()
+        cursor.close()
 
     def _load_boat_stats_batch(self, target_date: str) -> None:
         """
@@ -571,7 +572,7 @@ class BatchDataLoader:
         boats = [(row['venue_code'], row['boat_number']) for row in cursor.fetchall()]
 
         if not boats:
-            conn.close()
+            cursor.close()
             return
 
         # 90日前の日付
@@ -631,7 +632,7 @@ class BatchDataLoader:
                     }
 
         self._cache['boat_stats'] = boat_stats
-        conn.close()
+        cursor.close()
 
     def _load_motor_recent_form_batch(self, target_date: str, recent_races: int = 10) -> None:
         """
@@ -657,7 +658,7 @@ class BatchDataLoader:
         motors = [(row['venue_code'], row['motor_number']) for row in cursor.fetchall()]
 
         if not motors:
-            conn.close()
+            cursor.close()
             return
 
         motor_recent_form = {}
@@ -725,7 +726,7 @@ class BatchDataLoader:
                     }
 
         self._cache['motor_recent_form'] = motor_recent_form
-        conn.close()
+        cursor.close()
 
     def _load_kimarite_stats_batch(self, target_date: str) -> None:
         """
@@ -823,7 +824,7 @@ class BatchDataLoader:
 
             self._cache['venue_kimarite'] = dict(venue_kimarite)
 
-        conn.close()
+        cursor.close()
 
     def _load_grade_stats_batch(self, target_date: str) -> None:
         """
@@ -845,7 +846,7 @@ class BatchDataLoader:
         racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
 
         if not racer_numbers:
-            conn.close()
+            cursor.close()
             return
 
         placeholders = ','.join('?' * len(racer_numbers))
@@ -886,7 +887,7 @@ class BatchDataLoader:
             }
 
         self._cache['grade_stats'] = dict(grade_stats)
-        conn.close()
+        cursor.close()
 
     # ========================================
     # キャッシュ取得メソッド
@@ -969,7 +970,7 @@ class BatchDataLoader:
             }
 
         self._cache['race_details'] = dict(race_details)
-        conn.close()
+        cursor.close()
 
     def _load_racer_features_batch(self, target_date: str) -> None:
         """
@@ -991,7 +992,7 @@ class BatchDataLoader:
         racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
 
         if not racer_numbers:
-            conn.close()
+            cursor.close()
             return
 
         placeholders = ','.join('?' * len(racer_numbers))
@@ -1037,7 +1038,7 @@ class BatchDataLoader:
             }
 
         self._cache['racer_features'] = racer_features
-        conn.close()
+        cursor.close()
 
     def _load_racer_venue_features_batch(self, target_date: str) -> None:
         """
@@ -1059,7 +1060,7 @@ class BatchDataLoader:
         racer_venue_pairs = [(row['racer_number'], row['venue_code']) for row in cursor.fetchall()]
 
         if not racer_venue_pairs:
-            conn.close()
+            cursor.close()
             return
 
         racer_venue_features = defaultdict(dict)
@@ -1088,7 +1089,7 @@ class BatchDataLoader:
                 }
 
         self._cache['racer_venue_features'] = dict(racer_venue_features)
-        conn.close()
+        cursor.close()
 
     def _load_course_entry_tendency_batch(self, target_date: str) -> None:
         """
@@ -1110,7 +1111,7 @@ class BatchDataLoader:
         racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
 
         if not racer_numbers:
-            conn.close()
+            cursor.close()
             return
 
         placeholders = ','.join('?' * len(racer_numbers))
@@ -1140,7 +1141,7 @@ class BatchDataLoader:
             course_entry_tendency[racer_num][pit][course] = cnt
 
         self._cache['course_entry_tendency'] = dict(course_entry_tendency)
-        conn.close()
+        cursor.close()
 
     def _load_session_performance_batch(self, target_date: str) -> None:
         """
@@ -1162,7 +1163,7 @@ class BatchDataLoader:
         racer_venue_pairs = [(row['racer_number'], row['venue_code']) for row in cursor.fetchall()]
 
         if not racer_venue_pairs:
-            conn.close()
+            cursor.close()
             return
 
         session_performance = defaultdict(dict)
@@ -1193,7 +1194,7 @@ class BatchDataLoader:
                 ]
 
         self._cache['session_performance'] = dict(session_performance)
-        conn.close()
+        cursor.close()
 
     def _load_previous_race_batch(self, target_date: str) -> None:
         """
@@ -1215,7 +1216,7 @@ class BatchDataLoader:
         racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
 
         if not racer_numbers:
-            conn.close()
+            cursor.close()
             return
 
         # 一括で全選手の前走を取得（サブクエリで最新を特定）
@@ -1250,7 +1251,7 @@ class BatchDataLoader:
                 }
 
         self._cache['previous_race'] = previous_race
-        conn.close()
+        cursor.close()
 
     # 新しいゲッターメソッド
 

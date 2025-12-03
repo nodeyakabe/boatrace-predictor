@@ -8,6 +8,7 @@
 from typing import Dict, List, Optional
 import sqlite3
 from datetime import datetime, timedelta
+from src.utils.db_connection_pool import get_connection
 
 
 def laplace_smoothing(wins: int, trials: int, alpha: float = 2.0, k: int = 6) -> float:
@@ -43,8 +44,8 @@ class RacerAnalyzer:
         self._use_cache = batch_loader is not None
 
     def _connect(self):
-        """データベース接続"""
-        return sqlite3.connect(self.db_path)
+        """データベース接続（接続プールから取得）"""
+        return get_connection(self.db_path)
 
     def _fetch_all(self, query, params=None):
         """クエリ実行（複数行）"""
@@ -53,7 +54,7 @@ class RacerAnalyzer:
         cursor = conn.cursor()
         cursor.execute(query, params or [])
         results = cursor.fetchall()
-        conn.close()
+        cursor.close()  # カーソルのみ閉じる（接続は再利用）
         return results
 
     def _fetch_one(self, query, params=None):
@@ -63,7 +64,7 @@ class RacerAnalyzer:
         cursor = conn.cursor()
         cursor.execute(query, params or [])
         result = cursor.fetchone()
-        conn.close()
+        cursor.close()  # カーソルのみ閉じる（接続は再利用）
         return result
 
     # ========================================

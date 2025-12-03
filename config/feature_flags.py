@@ -7,26 +7,26 @@
 
 # 機能フラグ設定
 FEATURE_FLAGS = {
-    # Phase 1: 高優先度改善（全て実装完了・有効化）
-    'dynamic_integration': True,      # 動的合成比（DynamicIntegrator）
-    'entry_prediction_model': True,   # 進入予測モデル（EntryPredictionModel）
-    'confidence_refinement': True,    # 信頼度細分化
-    'st_course_interaction': True,    # ST×course交互作用（新規追加）
+    # Phase 1: 実装完了・動作確認済み
+    'dynamic_integration': True,      # 動的合成比
+    'entry_prediction_model': True,   # 進入予測モデル
+    'confidence_refinement': False,   # 信頼度細分化（未実装）
+    'st_course_interaction': False,   # ST×course交互作用（未実装）
 
-    # Phase 2: 中優先度改善（実装完了・有効化）
-    'lightgbm_ranking': True,         # LightGBMランキングモデル（ConditionalRankModel）
-    'kelly_betting': True,            # Kelly基準投資戦略（KellyBettingStrategy）
-    'optuna_optimization': True,      # Optunaパラメータ最適化
-    'interaction_features': True,     # 交互作用特徴量（InteractionFeatureGenerator）
+    # Phase 2: 未実装または動作未確認
+    'lightgbm_ranking': False,        # LightGBMランキングモデル（未実装）
+    'kelly_betting': False,           # Kelly基準投資戦略（未実装）
+    'optuna_optimization': False,     # Optunaパラメータ最適化（予測時不要）
+    'interaction_features': False,    # 交互作用特徴量（未実装）
     'auto_buff_learning': False,      # 複合バフ自動学習（未実装）
     'probability_calibration': False, # キャリブレーション（未実装）
 
-    # Phase 3: 長期改善（実装完了・有効化）
-    'venue_specific_models': True,    # 会場別専用モデル（VenueSpecificFeatureGenerator）
-    'hierarchical_predictor': True,   # 階層的条件確率モデル（HierarchicalPredictor）
-    'shap_explainability': True,      # SHAP説明可能性（SHAPExplainer）
-    'bayesian_hierarchical': False,   # ベイズ階層モデル（将来実装）
-    'reinforcement_learning': False,  # 強化学習最適化（将来実装）
+    # Phase 3: 未実装または動作未確認
+    'venue_specific_models': False,   # 会場別専用モデル（未実装）
+    'hierarchical_predictor': False,  # 階層的条件確率モデル（未実装）
+    'shap_explainability': False,     # SHAP説明可能性（予測時不要）
+    'bayesian_hierarchical': False,   # ベイズ階層モデル（未実装）
+    'reinforcement_learning': False,  # 強化学習最適化（未実装）
 
     # デバッグ・テスト用
     'verbose_logging': False,         # 詳細ログ出力

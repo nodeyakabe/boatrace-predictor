@@ -6,6 +6,7 @@
 import sqlite3
 from typing import Dict, Optional
 from datetime import datetime, timedelta
+from src.utils.db_connection_pool import get_connection
 
 
 class KimariteScorer:
@@ -27,8 +28,8 @@ class KimariteScorer:
         self._use_cache = batch_loader is not None
 
     def _connect(self):
-        """データベース接続"""
-        conn = sqlite3.connect(self.db_path)
+        """データベース接続（接続プールから取得）"""
+        conn = get_connection(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -125,7 +126,7 @@ class KimariteScorer:
             cursor.execute(query_venue, (venue_code, course, start_date.isoformat(), end_date.isoformat()))
             venue_kimarite = cursor.fetchall()
 
-            conn.close()
+            cursor.close()  # カーソルのみ閉じる（接続は再利用）
 
         # データがない場合は中間スコアを返す
         if not racer_kimarite or not venue_kimarite:

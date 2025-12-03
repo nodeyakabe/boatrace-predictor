@@ -6,6 +6,7 @@
 import sqlite3
 from typing import Dict, Optional
 from datetime import datetime, timedelta
+from src.utils.db_connection_pool import get_connection
 
 
 def laplace_smoothing(wins: int, trials: int, alpha: float = 1.5, k: int = 6) -> float:
@@ -43,8 +44,8 @@ class GradeScorer:
         self._use_cache = batch_loader is not None
 
     def _connect(self):
-        """データベース接続"""
-        conn = sqlite3.connect(self.db_path)
+        """データベース接続（接続プールから取得）"""
+        conn = get_connection(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -120,7 +121,7 @@ class GradeScorer:
             cursor.execute(query, (racer_number, race_grade, start_date.isoformat(), end_date.isoformat()))
             row = cursor.fetchone()
 
-            conn.close()
+            cursor.close()
 
             total_races = row['total_races'] if row else 0
             win_rate = (row['wins'] / total_races * 100) if row and total_races > 0 else 0.0
