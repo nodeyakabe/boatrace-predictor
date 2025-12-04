@@ -33,14 +33,14 @@ class DynamicIntegrator:
     """動的スコア統合クラス"""
 
     # デフォルト重み
-    DEFAULT_PRE_WEIGHT = 0.6
-    DEFAULT_BEFORE_WEIGHT = 0.4
+    DEFAULT_PRE_WEIGHT = 0.5
+    DEFAULT_BEFORE_WEIGHT = 0.5
 
     # 条件別重み設定
     CONDITION_WEIGHTS = {
-        IntegrationCondition.NORMAL: (0.6, 0.4),
+        IntegrationCondition.NORMAL: (0.5, 0.5),  # 変更: 0.6→0.5 (BEFORE_SCOREを実質的に活用)
         IntegrationCondition.BEFOREINFO_CRITICAL: (0.4, 0.6),
-        IntegrationCondition.PREINFO_RELIABLE: (0.75, 0.25),
+        IntegrationCondition.PREINFO_RELIABLE: (0.5, 0.5),  # 変更: 0.6→0.5 (均等配分でBEFORE_SCOREを活用)
         IntegrationCondition.UNCERTAIN: (0.5, 0.5),
     }
 
@@ -123,12 +123,12 @@ class DynamicIntegrator:
         # 重みを取得
         pre_w, before_w = self.CONDITION_WEIGHTS[condition]
 
-        # データ充実度で微調整
-        if before_completeness < 0.8:
-            # 直前情報が不完全な場合、その分事前重みを上げる
-            adjustment = (1.0 - before_completeness) * 0.2
-            pre_w = min(0.85, pre_w + adjustment)
-            before_w = max(0.15, before_w - adjustment)
+        # データ充実度で微調整 - 無効化（BEFORE_SCOREを最大限活用するため）
+        # if before_completeness < 0.5:
+        #     # 直前情報が極端に不完全な場合のみ、その分事前重みを上げる
+        #     adjustment = (1.0 - before_completeness) * 0.15
+        #     pre_w = min(0.75, pre_w + adjustment)
+        #     before_w = max(0.25, before_w - adjustment)
 
         # 正規化
         total = pre_w + before_w

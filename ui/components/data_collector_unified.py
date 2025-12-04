@@ -1,10 +1,11 @@
 """
-データ収集UI（統合版）
+データ収集UI（統合・簡素化版）
 
 データ取得作業を一元管理:
-- クイック収集（今日/明日/今週）
-- 不足データ検出・取得（期間指定対応）
-- オリジナル展示収集
+- 新規データ収集: 指定期間の全データを収集
+- データ補完: 既存データの不足分を自動検出して補完
+- 不足データ検出: 詳細な不足データ分析と取得
+- オリジナル展示収集: 直線タイム等の限定データ
 
 バックグラウンドジョブ対応版
 """
@@ -35,28 +36,16 @@ JOB_DATA_COLLECTION = 'data_collection'
 
 
 def render_data_collector():
-    """データ収集UIのメインレンダリング"""
+    """データ収集UIのメインレンダリング（統合版）"""
     st.header("📥 データ収集")
 
     # 実行中ジョブの状況表示
     _render_job_status_bar()
 
-    st.markdown("データ取得作業を一元管理します。タブで作業を選択してください。")
+    st.markdown("データ取得作業を一元管理します。")
 
-    tab1, tab2, tab3 = st.tabs([
-        "🚀 クイック収集",
-        "🔍 不足データ検出",
-        "🎯 オリジナル展示"
-    ])
-
-    with tab1:
-        _render_quick_collection()
-
-    with tab2:
-        _render_missing_data_detector()
-
-    with tab3:
-        _render_original_tenji()
+    # 全機能を1ページに統合
+    _render_unified_collection()
 
 
 def _render_job_status_bar():
@@ -118,15 +107,41 @@ def _render_job_status_bar():
                 pass
 
 
-def _render_quick_collection():
-    """クイック収集タブ（2段階収集アプローチ）"""
-    st.subheader("🚀 クイック収集")
+def _render_unified_collection():
+    """統合データ収集UI（全機能を1ページに）"""
 
-    st.info("💡 **今日のデータ**は「ワークフロー自動化」タブの「今日の予想を準備」ボタンで一括取得できます")
+    # 収集状況サマリー
+    _render_collection_summary()
+
+    st.markdown("---")
+
+    # データカバレッジ可視化
+    _render_data_coverage()
+
+    st.markdown("---")
+
+    # ========== セクション1: 新規データ収集 ==========
+    _render_new_data_collection()
+
+    st.markdown("---")
+
+    # ========== セクション2: データ補完（不足データ検出付き） ==========
+    _render_data_complement()
+
+    st.markdown("---")
+
+    # ========== セクション3: オリジナル展示収集 ==========
+    _render_original_tenji_inline()
+
+
+def _render_new_data_collection():
+    """新規データ収集セクション"""
+    st.subheader("📥 新規データ収集")
+    st.caption("指定期間の全データ（基本情報・結果・払戻金・決まり手・レース詳細・直前情報等）を収集します。")
 
     # 実行中ジョブの状態確認
-    if is_job_running(JOB_DATA_COLLECTION):
-        progress = get_job_progress(JOB_DATA_COLLECTION)
+    if is_job_running(JOB_MISSING_DATA):
+        progress = get_job_progress(JOB_MISSING_DATA)
         st.warning("🔄 データ収集がバックグラウンドで実行中です")
 
         if progress:
@@ -142,63 +157,82 @@ def _render_quick_collection():
 
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("🔄 状況を更新", key="refresh_quick_collection"):
+                if st.button("🔄 状況を更新", key="refresh_new_collection"):
                     st.rerun()
             with col2:
-                if st.button("⏹️ キャンセル", key="cancel_quick_collection"):
-                    cancel_job(JOB_DATA_COLLECTION)
+                if st.button("⏹️ キャンセル", key="cancel_new_collection"):
+                    cancel_job(JOB_MISSING_DATA)
                     st.rerun()
-
-        st.markdown("---")
-        _render_collection_summary()
         return
-
-    st.markdown("---")
-
-    # ========== 第1段階: 基本データ収集 ==========
-    st.markdown("### 📋 基本データ収集（速い）")
-    st.caption("レース基本情報のみ収集。既存データはスキップして高速処理。")
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        if st.button("📅 今日", key="basic_today", use_container_width=True):
-            _start_basic_data_collection('today')
+        if st.button("📅 今日", key="new_today", use_container_width=True):
+            _start_complete_data_collection('today')
 
     with col2:
-        if st.button("📅 今週", key="basic_week", use_container_width=True, type="primary"):
-            _start_basic_data_collection('week')
+        if st.button("📅 今週", key="new_week", use_container_width=True, type="primary"):
+            _start_complete_data_collection('week')
 
     with col3:
-        if st.button("📅 期間指定...", key="basic_period", use_container_width=True):
-            st.session_state['show_basic_period_selector'] = True
+        if st.button("📅 期間指定...", key="new_period", use_container_width=True):
+            st.session_state['show_new_period_selector'] = True
 
-    # 基本データ期間指定モーダル
-    if st.session_state.get('show_basic_period_selector'):
-        with st.expander("📅 基本データ収集 - 期間指定", expanded=True):
+    # 新規データ期間指定モーダル
+    if st.session_state.get('show_new_period_selector'):
+        with st.expander("📅 新規データ収集 - 期間指定", expanded=True):
             col1, col2 = st.columns(2)
             with col1:
-                start_date = st.date_input("開始日", key="basic_start_date")
+                start_date = st.date_input("開始日", key="new_start_date")
             with col2:
-                end_date = st.date_input("終了日", key="basic_end_date")
+                end_date = st.date_input("終了日", key="new_end_date")
 
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("✅ 実行", key="basic_period_exec"):
-                    _start_basic_data_collection('period', start_date, end_date)
-                    st.session_state['show_basic_period_selector'] = False
+                if st.button("✅ 実行", key="new_period_exec"):
+                    _start_complete_data_collection('period', start_date, end_date)
+                    st.session_state['show_new_period_selector'] = False
                     st.rerun()
             with col2:
-                if st.button("❌ キャンセル", key="basic_period_cancel"):
-                    st.session_state['show_basic_period_selector'] = False
+                if st.button("❌ キャンセル", key="new_period_cancel"):
+                    st.session_state['show_new_period_selector'] = False
                     st.rerun()
 
-    st.markdown("---")
 
-    # ========== 第2段階: 補完データ収集 ==========
-    st.markdown("### 🔧 補完データ収集（詳細）")
-    st.caption("結果・払戻金・決まり手など、欠損している詳細データを補完。")
+def _render_data_complement():
+    """データ補完セクション（不足データ検出機能統合）"""
+    st.subheader("🔧 データ補完")
+    st.caption("既存データから不足している項目を自動検出して補完します。")
 
+    # 実行中ジョブの状態確認
+    if is_job_running(JOB_MISSING_DATA):
+        progress = get_job_progress(JOB_MISSING_DATA)
+        st.warning("🔄 データ補完がバックグラウンドで実行中です")
+
+        if progress:
+            pct = progress.get('progress', 0)
+            message = progress.get('message', '処理中...')
+            step = progress.get('step', '')
+
+            if step:
+                st.text(f"{step}: {message}")
+            else:
+                st.text(message)
+            st.progress(pct / 100)
+
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🔄 状況を更新", key="refresh_complement"):
+                    st.rerun()
+            with col2:
+                if st.button("⏹️ キャンセル", key="cancel_complement"):
+                    cancel_job(JOB_MISSING_DATA)
+                    st.rerun()
+        return
+
+    # クイック補完ボタン
+    st.markdown("**クイック補完:**")
     col1, col2, col3 = st.columns(3)
 
     with col1:
@@ -206,36 +240,155 @@ def _render_quick_collection():
             _start_complement_data_collection('today')
 
     with col2:
-        if st.button("🔧 今週", key="complement_week", use_container_width=True, type="secondary"):
+        if st.button("🔧 今週", key="complement_week", use_container_width=True):
             _start_complement_data_collection('week')
 
     with col3:
-        if st.button("🔧 期間指定...", key="complement_period", use_container_width=True):
-            st.session_state['show_complement_period_selector'] = True
+        if st.button("🔧 期間指定...", key="complement_period_btn", use_container_width=True):
+            st.session_state['show_complement_period'] = True
 
-    # 補完データ期間指定モーダル
-    if st.session_state.get('show_complement_period_selector'):
-        with st.expander("🔧 補完データ収集 - 期間指定", expanded=True):
+    # 期間指定モーダル
+    if st.session_state.get('show_complement_period'):
+        with st.expander("🔧 期間指定補完", expanded=True):
             col1, col2 = st.columns(2)
             with col1:
-                start_date = st.date_input("開始日", key="complement_start_date")
+                start_date = st.date_input("開始日", key="comp_start")
             with col2:
-                end_date = st.date_input("終了日", key="complement_end_date")
+                end_date = st.date_input("終了日", key="comp_end")
 
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("✅ 実行", key="complement_period_exec"):
+                if st.button("✅ 実行", key="comp_exec"):
                     _start_complement_data_collection('period', start_date, end_date)
-                    st.session_state['show_complement_period_selector'] = False
+                    st.session_state['show_complement_period'] = False
                     st.rerun()
             with col2:
-                if st.button("❌ キャンセル", key="complement_period_cancel"):
-                    st.session_state['show_complement_period_selector'] = False
+                if st.button("❌ キャンセル", key="comp_cancel"):
+                    st.session_state['show_complement_period'] = False
                     st.rerun()
 
-    # 収集状況サマリー
     st.markdown("---")
-    _render_collection_summary()
+
+    # 詳細検出セクション
+    st.markdown("**詳細な不足データ検出:**")
+    st.caption("⚠️ 未来の日付は除外されます（開催予定のレースは結果がまだありません）")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        default_start = datetime.now().date() - timedelta(days=60)
+        detect_start = st.date_input("検出開始日", value=default_start, key="detect_start")
+    with col2:
+        # 検出終了日は昨日まで（今日以降は開催前の可能性があるため）
+        default_end = datetime.now().date() - timedelta(days=1)
+        detect_end = st.date_input("検出終了日", value=default_end, key="detect_end")
+
+    # カテゴリ選択
+    try:
+        checker = DataCoverageChecker(DATABASE_PATH)
+        report = checker.get_coverage_report()
+        all_categories = list(report["categories"].keys())
+    except Exception:
+        all_categories = ["レース基本情報", "選手データ", "モーター・ボート", "天候・気象", "水面・潮汐", "レース展開", "オッズ・人気", "結果データ", "直前情報", "払戻データ"]
+
+    check_types = st.multiselect(
+        "検出対象カテゴリ",
+        all_categories,
+        default=all_categories,
+        key="detect_categories"
+    )
+
+    if st.button("🔍 不足データを検出", type="primary", key="detect_btn"):
+        with st.spinner("不足データを検出中..."):
+            missing_dates = _detect_missing_data(detect_start, detect_end, check_types)
+            st.session_state['missing_dates'] = missing_dates
+            st.session_state['missing_check_types'] = check_types
+
+    # 検出結果の表示
+    if 'missing_dates' in st.session_state and st.session_state['missing_dates']:
+        missing_dates = st.session_state['missing_dates']
+        st.warning(f"⚠️ {len(missing_dates)}件の不足データが見つかりました")
+
+        with st.expander("不足データ詳細", expanded=True):
+            import pandas as pd
+            df = pd.DataFrame(missing_dates)
+            st.dataframe(df, use_container_width=True, hide_index=True)
+
+        if st.button("📥 検出された不足データを取得", type="primary", use_container_width=True, key="fetch_detected"):
+            _start_missing_data_job(missing_dates, st.session_state.get('missing_check_types', []))
+
+    elif 'missing_dates' in st.session_state:
+        st.success("✅ 不足データはありません！")
+
+
+def _render_original_tenji_inline():
+    """オリジナル展示収集セクション（インライン版）"""
+    st.subheader("🎯 オリジナル展示収集")
+    st.caption("直線タイム・1周タイム・回り足タイム等の限定データを収集します。")
+
+    if is_job_running(JOB_TENJI):
+        progress = get_job_progress(JOB_TENJI)
+        st.warning("🔄 オリジナル展示収集がバックグラウンドで実行中です")
+
+        if progress:
+            st.progress(progress.get('progress', 0) / 100)
+            st.text(progress.get('message', '処理中...'))
+
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🔄 状況を更新", key="refresh_tenji_inline"):
+                    st.rerun()
+            with col2:
+                if st.button("⏹️ キャンセル", key="cancel_tenji_inline"):
+                    cancel_job(JOB_TENJI)
+                    st.rerun()
+        return
+
+    st.warning("⚠️ オリジナル展示データは限られた期間のみ公開されます。過去データは取得できません。")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📅 今日", key="tenji_today_inline", type="primary", use_container_width=True):
+            _start_tenji_job(0)
+    with col2:
+        if st.button("📅 昨日", key="tenji_yesterday_inline", use_container_width=True):
+            _start_tenji_job(-1)
+
+    # 収集状況（過去7日間）
+    with st.expander("📊 収集状況（過去7日間）", expanded=False):
+        conn = sqlite3.connect(DATABASE_PATH)
+        cursor = conn.cursor()
+
+        today = datetime.now().date()
+        tenji_status = []
+
+        for i in range(7):
+            target_date = today - timedelta(days=i)
+            date_str = target_date.strftime('%Y-%m-%d')
+
+            count = 0
+            try:
+                cursor.execute("""
+                    SELECT COUNT(*) FROM race_details rd
+                    JOIN races ra ON rd.race_id = ra.id
+                    WHERE ra.race_date = ? AND rd.chikusen_time IS NOT NULL
+                """, (date_str,))
+                count = cursor.fetchone()[0]
+            except Exception:
+                pass
+
+            status = "🟢 収集済" if count > 0 else "🔴 未収集"
+            tenji_status.append({
+                '日付': date_str,
+                '曜日': ['月', '火', '水', '木', '金', '土', '日'][target_date.weekday()],
+                '件数': count,
+                'ステータス': status
+            })
+
+        conn.close()
+
+        import pandas as pd
+        df = pd.DataFrame(tenji_status)
+        st.dataframe(df, use_container_width=True, hide_index=True)
 
 
 def _render_collection_summary():
@@ -271,60 +424,36 @@ def _render_collection_summary():
     conn.close()
 
 
-def _start_basic_data_collection(collection_type: str, start_date=None, end_date=None):
+def _start_complete_data_collection(collection_type: str, start_date=None, end_date=None):
     """
-    基本データ収集をバックグラウンドで開始
+    新規データ収集（全データ種）をバックグラウンドで開始
+
+    指定期間の全データを収集します:
+    - レース基本情報
+    - 結果データ
+    - 払戻金
+    - 決まり手
+    - レース詳細（ST time、actual_course等）
+    - 直前情報（展示タイム、チルト角等）
 
     Args:
         collection_type: 'today', 'week', 'period'
         start_date: 期間指定の開始日
         end_date: 期間指定の終了日
     """
-    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'background_data_collection.py')
-
-    args = ['--type', collection_type]
-
-    if collection_type == 'period' and start_date and end_date:
-        args.extend(['--start-date', str(start_date), '--end-date', str(end_date)])
-
-    result = start_job(
-        JOB_DATA_COLLECTION,
-        script_path,
-        args=args
-    )
-
-    if result['success']:
-        st.success(f"✅ {result['message']}")
-        st.info("📋 基本データ収集を開始しました。タブを移動しても処理は継続します。")
-        time.sleep(1)
-        st.rerun()
-    else:
-        st.error(f"❌ {result['message']}")
-
-
-def _start_complement_data_collection(collection_type: str, start_date=None, end_date=None):
-    """
-    補完データ収集をバックグラウンドで開始
-
-    Args:
-        collection_type: 'today', 'week', 'period'
-        start_date: 期間指定の開始日
-        end_date: 期間指定の終了日
-    """
-    from datetime import timedelta
-
-    # 日付範囲を計算
+    # 日付範囲を計算（未来のレースを除外するため昨日まで）
     if collection_type == 'today':
-        today = datetime.now().date()
-        start_date = today
-        end_date = today
+        yesterday = datetime.now().date() - timedelta(days=1)
+        start_date = yesterday
+        end_date = yesterday
     elif collection_type == 'week':
-        today = datetime.now().date()
-        start_date = today - timedelta(days=7)
-        end_date = today
+        yesterday = datetime.now().date() - timedelta(days=1)
+        start_date = yesterday - timedelta(days=6)  # 昨日から遡って7日間
+        end_date = yesterday
     # period の場合は引数の start_date, end_date をそのまま使用
 
-    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'worker_missing_data_fetch.py')
+    # bulk_missing_data_fetch.pyを使用（期間指定が正しく機能する）
+    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'bulk_missing_data_fetch.py')
 
     args = [
         '--start-date', str(start_date),
@@ -339,123 +468,63 @@ def _start_complement_data_collection(collection_type: str, start_date=None, end
 
     if result['success']:
         st.success(f"✅ {result['message']}")
-        st.info("🔧 補完データ収集を開始しました。タブを移動しても処理は継続します。")
+        st.info("📥 新規データ収集を開始しました（全データ種を収集）。タブを移動しても処理は継続します。")
         time.sleep(1)
         st.rerun()
     else:
         st.error(f"❌ {result['message']}")
 
 
-def _render_missing_data_detector():
-    """不足データ検出・取得タブ"""
-    st.subheader("🔍 不足データの検出と取得")
+def _start_complement_data_collection(collection_type: str, start_date=None, end_date=None):
+    """
+    データ補完をバックグラウンドで開始
 
-    # ジョブ実行中チェック
-    if is_job_running(JOB_MISSING_DATA):
-        progress = get_job_progress(JOB_MISSING_DATA)
-        st.warning("🔄 不足データ取得がバックグラウンドで実行中です")
+    指定期間で不足しているデータのみを補完します:
+    - 決まり手（欠損レース）
+    - 払戻金（欠損レース）
+    - レース詳細（ST time、actual_course等の欠損）
+    - 直前情報（未収集レース）
 
-        if progress:
-            st.progress(progress.get('progress', 0) / 100)
+    内部的には新規データ収集と同じワークフローを使用しますが、
+    既にデータが存在するレースはスキップされます。
 
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.text(progress.get('message', '処理中...'))
-            with col2:
-                phase = progress.get('phase', 0)
-                total_steps = progress.get('total_steps', 2)
-                st.caption(f"フェーズ {phase}/{total_steps}")
+    Args:
+        collection_type: 'today', 'week', 'period'
+        start_date: 期間指定の開始日
+        end_date: 期間指定の終了日
+    """
+    # 日付範囲を計算（未来のレースを除外するため昨日まで）
+    if collection_type == 'today':
+        yesterday = datetime.now().date() - timedelta(days=1)
+        start_date = yesterday
+        end_date = yesterday
+    elif collection_type == 'week':
+        yesterday = datetime.now().date() - timedelta(days=1)
+        start_date = yesterday - timedelta(days=6)  # 昨日から遡って7日間
+        end_date = yesterday
+    # period の場合は引数の start_date, end_date をそのまま使用
 
-            # 詳細情報の表示
-            with st.expander("📊 詳細情報", expanded=False):
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("処理済み", progress.get('processed', 0))
-                with col2:
-                    st.metric("総数", progress.get('total', 0))
-                with col3:
-                    st.metric("エラー", progress.get('errors', 0))
+    # 新規データ収集と同じスクリプトを使用（自動的に不足データのみ取得）
+    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'bulk_missing_data_fetch.py')
 
-                started_at = progress.get('started_at', '')
-                if started_at:
-                    try:
-                        start_time = datetime.fromisoformat(started_at)
-                        elapsed = datetime.now() - start_time
-                        st.caption(f"経過時間: {int(elapsed.total_seconds()//60)}分{int(elapsed.total_seconds()%60)}秒")
-                    except:
-                        pass
+    args = [
+        '--start-date', str(start_date),
+        '--end-date', str(end_date)
+    ]
 
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🔄 状況を更新", key="refresh_missing"):
-                    st.rerun()
-            with col2:
-                if st.button("⏹️ キャンセル", key="cancel_missing"):
-                    cancel_job(JOB_MISSING_DATA)
-                    st.rerun()
-        return
-
-    st.markdown("**期間指定で不足データを検出・取得**")
-
-    # 期間選択
-    col1, col2 = st.columns(2)
-
-    with col1:
-        default_start = datetime.now().date() - timedelta(days=30)
-        start_date = st.date_input(
-            "開始日",
-            value=default_start,
-            key="missing_start_date"
-        )
-
-    with col2:
-        end_date = st.date_input(
-            "終了日",
-            value=datetime.now().date(),
-            key="missing_end_date"
-        )
-
-    # DataCoverageCheckerを使用して全カテゴリを取得
-    try:
-        checker = DataCoverageChecker(DATABASE_PATH)
-        report = checker.get_coverage_report()
-        all_categories = list(report["categories"].keys())
-    except Exception:
-        all_categories = ["レース基本情報", "選手データ", "モーター・ボート", "天候・気象", "水面・潮汐", "レース展開", "オッズ・人気", "結果データ", "直前情報", "払戻データ"]
-
-    # 検出タイプ（デフォルトで全カテゴリを選択）
-    check_types = st.multiselect(
-        "検出対象（カテゴリ）",
-        all_categories,
-        default=all_categories  # 全カテゴリをデフォルト選択
+    result = start_job(
+        JOB_MISSING_DATA,
+        script_path,
+        args=args
     )
 
-    if st.button("🔍 不足データを検出", type="primary"):
-        with st.spinner("不足データを検出中..."):
-            missing_dates = _detect_missing_data(start_date, end_date, check_types)
-            st.session_state['missing_dates'] = missing_dates
-            st.session_state['missing_check_types'] = check_types
-
-    # 検出結果の表示
-    if 'missing_dates' in st.session_state and st.session_state['missing_dates']:
-        missing_dates = st.session_state['missing_dates']
-
-        st.markdown("---")
-        st.warning(f"⚠️ {len(missing_dates)}件の不足データが見つかりました")
-
-        with st.expander("不足データ詳細", expanded=True):
-            import pandas as pd
-            df = pd.DataFrame(missing_dates)
-            st.dataframe(df, use_container_width=True, hide_index=True)
-
-        if st.button("📥 不足データを取得", type="primary", use_container_width=True):
-            _start_missing_data_job(
-                missing_dates,
-                st.session_state.get('missing_check_types', [])
-            )
-
-    elif 'missing_dates' in st.session_state:
-        st.success("✅ 不足データはありません！")
+    if result['success']:
+        st.success(f"✅ {result['message']}")
+        st.info("🔧 データ補完を開始しました（不足データのみ収集）。タブを移動しても処理は継続します。")
+        time.sleep(1)
+        st.rerun()
+    else:
+        st.error(f"❌ {result['message']}")
 
 
 def _detect_missing_data(start_date, end_date, check_types: List[str]) -> List[Dict]:
@@ -552,43 +621,28 @@ def _detect_missing_data(start_date, end_date, check_types: List[str]) -> List[D
 
 
 def _start_missing_data_job(missing_dates: List[Dict], check_types: List[str]):
-    """不足データ取得をバックグラウンドで開始"""
-    jobs_dir = os.path.join(PROJECT_ROOT, 'temp', 'jobs')
-    os.makedirs(jobs_dir, exist_ok=True)
+    """不足データ取得をバックグラウンドで開始（最適化版スクリプトを使用）"""
+    if not missing_dates:
+        st.warning("取得対象のデータがありません")
+        return
 
-    # UIカテゴリをワークフロー用のcheck_typesに変換
-    # ワークフローは "直前情報取得" と "当日確定情報" の2種類のみ認識
-    workflow_check_types = []
+    # 日付範囲を取得
+    dates = [d['日付'] for d in missing_dates]
+    start_date = min(dates)
+    end_date = max(dates)
 
-    # 直前情報取得が必要なカテゴリ
-    beforeinfo_categories = {"直前情報", "レース展開", "オッズ・人気", "天候・気象", "水面・潮汐"}
-    # 当日確定情報が必要なカテゴリ（レース詳細を追加）
-    confirmed_categories = {"レース基本情報", "選手データ", "モーター・ボート", "結果データ", "払戻データ", "レース詳細"}
+    # 最適化されたスクリプトを使用
+    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'bulk_missing_data_fetch.py')
 
-    if any(cat in check_types for cat in beforeinfo_categories):
-        workflow_check_types.append("直前情報取得")
-    if any(cat in check_types for cat in confirmed_categories):
-        workflow_check_types.append("当日確定情報")
-
-    # デフォルトで両方を含める（全データ取得のため）
-    if not workflow_check_types:
-        workflow_check_types = ["直前情報取得", "当日確定情報"]
-
-    config_path = os.path.join(jobs_dir, f'{JOB_MISSING_DATA}_config.json')
-    config = {
-        'missing_dates': missing_dates,
-        'check_types': workflow_check_types
-    }
-
-    with open(config_path, 'w', encoding='utf-8') as f:
-        json.dump(config, f, ensure_ascii=False, indent=2)
-
-    worker_path = os.path.join(PROJECT_ROOT, 'scripts', 'worker_missing_data.py')
+    args = [
+        '--start-date', start_date,
+        '--end-date', end_date
+    ]
 
     result = start_job(
         JOB_MISSING_DATA,
-        worker_path,
-        args=['--config', config_path]
+        script_path,
+        args=args
     )
 
     if result['success']:
@@ -602,90 +656,6 @@ def _start_missing_data_job(missing_dates: List[Dict], check_types: List[str]):
         st.rerun()
     else:
         st.error(f"❌ {result['message']}")
-
-
-def _render_original_tenji():
-    """オリジナル展示データ収集タブ"""
-    st.subheader("🎯 オリジナル展示データ収集")
-
-    if is_job_running(JOB_TENJI):
-        progress = get_job_progress(JOB_TENJI)
-        st.warning("🔄 オリジナル展示収集がバックグラウンドで実行中です")
-
-        if progress:
-            st.progress(progress.get('progress', 0) / 100)
-            st.text(progress.get('message', '処理中...'))
-
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🔄 状況を更新", key="refresh_tenji"):
-                    st.rerun()
-            with col2:
-                if st.button("⏹️ キャンセル", key="cancel_tenji"):
-                    cancel_job(JOB_TENJI)
-                    st.rerun()
-        return
-
-    st.markdown("""
-    **毎日実行が必要なデータ:**
-    - 直線タイム（chikusen_time）
-    - 1周タイム（isshu_time）
-    - 回り足タイム（mawariashi_time）
-
-    ⚠️ **注意**: オリジナル展示データは限られた期間のみ公開されます。過去データは取得できません。
-    """)
-
-    st.markdown("---")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("📅 今日", key="tenji_today", type="primary", use_container_width=True):
-            _start_tenji_job(0)
-
-    with col2:
-        if st.button("📅 昨日", key="tenji_yesterday", use_container_width=True):
-            _start_tenji_job(-1)
-
-    st.caption("※ オリジナル展示データは今日と昨日のみ取得可能です")
-
-    st.markdown("---")
-    st.subheader("収集状況")
-
-    conn = sqlite3.connect(DATABASE_PATH)
-    cursor = conn.cursor()
-
-    today = datetime.now().date()
-    tenji_status = []
-
-    for i in range(7):
-        target_date = today - timedelta(days=i)
-        date_str = target_date.strftime('%Y-%m-%d')
-
-        count = 0
-        try:
-            # オリジナル展示データはrace_detailsテーブルのchikusen_time等に保存される
-            cursor.execute("""
-                SELECT COUNT(*) FROM race_details rd
-                JOIN races ra ON rd.race_id = ra.id
-                WHERE ra.race_date = ? AND rd.chikusen_time IS NOT NULL
-            """, (date_str,))
-            count = cursor.fetchone()[0]
-        except Exception:
-            pass
-
-        status = "🟢 収集済" if count > 0 else "🔴 未収集"
-        tenji_status.append({
-            '日付': date_str,
-            '曜日': ['月', '火', '水', '木', '金', '土', '日'][target_date.weekday()],
-            '件数': count,
-            'ステータス': status
-        })
-
-    conn.close()
-
-    import pandas as pd
-    df = pd.DataFrame(tenji_status)
-    st.dataframe(df, use_container_width=True, hide_index=True)
 
 
 def _start_tenji_job(days_offset: int):
@@ -705,5 +675,82 @@ def _start_tenji_job(days_offset: int):
         st.rerun()
     else:
         st.error(f"❌ {result['message']}")
+
+
+def _render_data_coverage():
+    """データカバレッジの可視化"""
+    with st.expander("📊 データ充足率の詳細を表示", expanded=False):
+        st.markdown("### データカバレッジ分析")
+        st.caption("各カテゴリのデータ取得状況を確認できます")
+
+        try:
+            checker = DataCoverageChecker(DATABASE_PATH)
+            report = checker.get_coverage_report()
+
+            # 全体スコア
+            overall = report.get('overall_score', 0)
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                st.metric("全体充足率", f"{overall:.1f}%")
+            with col2:
+                st.progress(overall / 100)
+
+            st.markdown("---")
+
+            # カテゴリ別表示
+            categories = report.get('categories', {})
+
+            for category_name, category_data in categories.items():
+                with st.container():
+                    st.markdown(f"#### {category_name}")
+
+                    items = category_data.get('items', [])
+                    if not items:
+                        st.info("データ項目なし")
+                        continue
+
+                    # カテゴリの平均充足率
+                    avg_coverage = sum(item.get('coverage', 0) for item in items) / len(items) if items else 0
+                    st.progress(avg_coverage, text=f"平均充足率: {avg_coverage*100:.1f}%")
+
+                    # 項目ごとの詳細
+                    for item in items:
+                        name = item.get('name', '不明')
+                        coverage = item.get('coverage', 0)
+                        count = item.get('count', 0)
+                        total = item.get('total', 0)
+                        status = item.get('status', '不明')
+                        importance = item.get('importance', 1)
+
+                        # 重要度に応じて色分け
+                        if importance == 3:
+                            importance_badge = "🔴 必須"
+                        elif importance == 2:
+                            importance_badge = "🟡 推奨"
+                        else:
+                            importance_badge = "🟢 任意"
+
+                        # ステータスに応じた表示
+                        if coverage >= 0.95:
+                            status_emoji = "✅"
+                        elif coverage >= 0.5:
+                            status_emoji = "⚠️"
+                        else:
+                            status_emoji = "❌"
+
+                        col1, col2, col3, col4 = st.columns([3, 1, 1, 2])
+                        with col1:
+                            st.text(f"{status_emoji} {name}")
+                        with col2:
+                            st.text(importance_badge)
+                        with col3:
+                            st.text(f"{coverage*100:.1f}%")
+                        with col4:
+                            st.text(f"{count:,} / {total:,}")
+
+                    st.markdown("")
+
+        except Exception as e:
+            st.error(f"データカバレッジの取得に失敗しました: {str(e)}")
 
 

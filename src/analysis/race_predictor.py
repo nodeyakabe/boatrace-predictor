@@ -19,6 +19,8 @@ from .extended_scorer import ExtendedScorer
 from .compound_buff_system import CompoundBuffSystem
 from .beforeinfo_scorer import BeforeInfoScorer
 from .dynamic_integration import DynamicIntegrator
+from .before_safe_scorer import BeforeSafeScorer
+from .safe_integrator import SafeIntegrator
 from .entry_prediction_model import EntryPredictionModel
 from .probability_calibrator import ProbabilityCalibrator
 import sys
@@ -82,6 +84,11 @@ class RacePredictor:
         self.compound_buff_system = CompoundBuffSystem(db_path)
         self.beforeinfo_scorer = BeforeInfoScorer(db_path)
         self.dynamic_integrator = DynamicIntegrator(db_path)
+
+        # Phase 4: ST/展示タイム統合フラグを使用
+        use_st_exhibition = is_feature_enabled('before_safe_st_exhibition')
+        self.before_safe_scorer = BeforeSafeScorer(db_path, use_st_exhibition=use_st_exhibition)
+        self.safe_integrator = SafeIntegrator(before_safe_weight=0.15)  # Phase 5: 15%に引き上げ
         self.entry_prediction_model = EntryPredictionModel(db_path)
         self.probability_calibrator = ProbabilityCalibrator(db_path)
 
@@ -1507,20 +1514,43 @@ class RacePredictor:
                 pred['pre_weight'] = round(integration_weights.pre_weight, 3)
                 pred['before_weight'] = round(integration_weights.before_weight, 3)
             else:
-                # レガシーモード（固定重み）
-                final_score = pre_score * 0.6 + before_score * 0.4
+                # レガシーモード
+                # BEFORE_SAFE統合が有効かチェック
+                use_before_safe = is_feature_enabled('before_safe_integration')
 
-                # 直前情報データが不足している場合（data_completeness < 0.5）は、PRE_SCOREの比重を上げる
-                if data_completeness < 0.5:
-                    # データ不足時は PRE_SCORE * 0.8 + BEFORE_SCORE * 0.2 に調整
-                    final_score = pre_score * 0.8 + before_score * 0.2
-                    pred['integration_mode'] = 'legacy_adjusted'
-                    pred['pre_weight'] = 0.8
-                    pred['before_weight'] = 0.2
+                if use_before_safe:
+                    # BEFORE_SAFE統合モード（安全版直前情報統合）
+                    # BEFORE_SAFEスコアを計算（進入コース + 部品交換のみ）
+                    before_safe_result = self.before_safe_scorer.calculate_before_safe_score(
+                        race_id=race_id,
+                        pit_number=pit_number
+                    )
+                    before_safe_score = before_safe_result['total_score']
+
+                    # 一時的にスコアリストを作成して統合
+                    # （全艇のスコアが揃った後に一括統合する方が正確だが、簡易実装）
+                    # ここでは単一艇として扱い、PRE/BEFORE_SAFEを正規化せずに統合
+                    weights = self.safe_integrator.get_weights()
+                    final_score = pre_score * weights['pre_weight'] + before_safe_score * weights['before_safe_weight']
+
+                    pred['integration_mode'] = 'before_safe'
+                    pred['pre_weight'] = round(weights['pre_weight'], 3)
+                    pred['before_weight'] = round(weights['before_safe_weight'], 3)
+                    pred['before_safe_score'] = round(before_safe_score, 1)
+                    pred['before_safe_detail'] = {
+                        'entry': round(before_safe_result['entry_score'], 1),
+                        'parts': round(before_safe_result['parts_score'], 1),
+                        'weight': round(before_safe_result['weight_score'], 1),
+                        'confidence': round(before_safe_result['confidence'], 3)
+                    }
                 else:
-                    pred['integration_mode'] = 'legacy'
-                    pred['pre_weight'] = 0.6
-                    pred['before_weight'] = 0.4
+                    # BEFORE完全停止モード
+                    # BEFORE_SCOREは逆相関（的中率4.1%）のため完全停止
+                    # PRE_SCORE単体で運用（43.3%的中率）
+                    final_score = pre_score * 1.0 + before_score * 0.0
+                    pred['integration_mode'] = 'before_disabled'
+                    pred['pre_weight'] = 1.0
+                    pred['before_weight'] = 0.0
 
             # スコアを更新
             pred['pre_score'] = round(pre_score, 1)  # 統合前のスコアを保存

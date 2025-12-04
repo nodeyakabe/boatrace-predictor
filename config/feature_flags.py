@@ -8,22 +8,24 @@
 # 機能フラグ設定
 FEATURE_FLAGS = {
     # Phase 1: 実装完了・動作確認済み
-    'dynamic_integration': True,      # 動的合成比
+    'dynamic_integration': False,     # 動的合成比（BEFORE_SCORE停止中 - 逆相関のため）
+    'before_safe_integration': True,  # BEFORE_SAFE統合（安全版直前情報統合、テスト中）
+    'before_safe_st_exhibition': False,  # BEFORE_SAFEにST/展示タイム統合（Phase 5テスト結果: 悪化、無効化）
     'entry_prediction_model': True,   # 進入予測モデル
     'confidence_refinement': False,   # 信頼度細分化（未実装）
-    'st_course_interaction': False,   # ST×course交互作用（未実装）
+    'st_course_interaction': True,    # ST×course交互作用（実装完了・再訓練済み）
 
-    # Phase 2: 未実装または動作未確認
-    'lightgbm_ranking': False,        # LightGBMランキングモデル（未実装）
+    # Phase 2: 再訓練完了・有効化
+    'lightgbm_ranking': True,         # LightGBMランキングモデル（再訓練完了）
     'kelly_betting': False,           # Kelly基準投資戦略（未実装）
     'optuna_optimization': False,     # Optunaパラメータ最適化（予測時不要）
-    'interaction_features': False,    # 交互作用特徴量（未実装）
+    'interaction_features': True,     # 交互作用特徴量（再訓練完了）
     'auto_buff_learning': False,      # 複合バフ自動学習（未実装）
     'probability_calibration': False, # キャリブレーション（未実装）
 
-    # Phase 3: 未実装または動作未確認
+    # Phase 3: 再訓練完了・有効化
     'venue_specific_models': False,   # 会場別専用モデル（未実装）
-    'hierarchical_predictor': False,  # 階層的条件確率モデル（未実装）
+    'hierarchical_predictor': True,   # 階層的条件確率モデル（再訓練完了）
     'shap_explainability': False,     # SHAP説明可能性（予測時不要）
     'bayesian_hierarchical': False,   # ベイズ階層モデル（未実装）
     'reinforcement_learning': False,  # 強化学習最適化（未実装）

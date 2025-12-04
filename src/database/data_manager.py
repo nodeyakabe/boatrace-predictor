@@ -105,10 +105,10 @@ class DataManager:
             errors.append("resultsフィールドがありません")
             return False, errors
 
-        # 結果数の検証
+        # 結果数の検証（欠場・失格等で6艇未満もあり得る）
         results = result_data['results']
-        if len(results) != 6:
-            errors.append(f"結果数が不正: {len(results)}艇（6艇であるべき）")
+        if not (1 <= len(results) <= 6):
+            errors.append(f"結果数が不正: {len(results)}艇（1-6艇であるべき）")
 
         # 各結果の検証
         seen_pits = set()
@@ -131,9 +131,10 @@ class DataManager:
             else:
                 seen_pits.add(pit_number)
 
-            # rankの検証（1-6）
-            if not isinstance(rank, int) or not 1 <= rank <= 6:
-                errors.append(f"results[{idx}]: 無効なrank: {rank}")
+            # rankの検証（実際の艇数に応じて）
+            max_rank = len(results)
+            if not isinstance(rank, int) or not 1 <= rank <= max_rank:
+                errors.append(f"results[{idx}]: 無効なrank: {rank} (最大: {max_rank})")
             elif rank in seen_ranks:
                 errors.append(f"results[{idx}]: 重複したrank: {rank}")
             else:

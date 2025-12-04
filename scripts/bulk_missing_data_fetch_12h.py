@@ -20,6 +20,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, PROJECT_ROOT)
 
 from src.workflow.missing_data_fetch import MissingDataFetchWorkflow
+from src.utils.job_manager import update_job_progress, complete_job
 
 # 進捗保存ファイル
 PROGRESS_FILE = os.path.join(PROJECT_ROOT, 'temp/batch_progress_12h.json')
@@ -53,9 +54,20 @@ def load_progress():
 
 
 def progress_callback(step: str, message: str, progress: int):
-    """進捗を表示"""
+    """進捗を表示してジョブマネージャーに通知"""
     timestamp = datetime.now().strftime('%H:%M:%S')
     print(f"[{timestamp}] [{progress}%] {step}: {message}")
+
+    # ジョブマネージャーに進捗を通知
+    try:
+        update_job_progress('missing_data_fetch', {
+            'status': 'running',
+            'progress': progress,
+            'message': message,
+            'step': step
+        })
+    except Exception:
+        pass  # エラーは無視（ジョブマネージャー経由でない実行もある）
 
 
 def main():
@@ -266,6 +278,17 @@ def main():
     print(f"合計処理数: {total_processed}件")
     print(f"合計エラー: {total_errors}件")
     print("=" * 80)
+
+    # ジョブマネージャーに完了を通知
+    try:
+        success = total_errors == 0
+        complete_job(
+            'missing_data_fetch',
+            success=success,
+            message=f"完了: 処理数 {total_processed}件, エラー {total_errors}件"
+        )
+    except Exception:
+        pass
 
     # 進捗ファイルを削除（完了したため）
     if os.path.exists(PROGRESS_FILE):

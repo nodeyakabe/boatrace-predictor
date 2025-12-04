@@ -1,15 +1,2128 @@
 {
-  "steps": [],
+  "steps": [
+    {
+      "train_period": [
+        "2025-10-21",
+        "2025-11-04"
+      ],
+      "test_period": [
+        "2025-11-04",
+        "2025-11-07"
+      ],
+      "races": [
+        {
+          "race_id": 132766,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132768,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 132769,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132770,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132771,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132772,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 132773,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132775,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132778,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 132779,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 132780,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132781,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 132782,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 132783,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132784,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 132786,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 132787,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 132788,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 132789,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132790,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 132791,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 132792,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132793,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.9333333333333333
+        },
+        {
+          "race_id": 132794,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132795,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132796,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132797,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 132798,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 132799,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 132801,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132802,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.9333333333333333
+        },
+        {
+          "race_id": 132803,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 132804,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132805,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 132806,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 132807,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132808,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132809,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 132810,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132811,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 132812,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.4
+        },
+        {
+          "race_id": 132813,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132814,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132815,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132816,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132817,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132818,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.9333333333333333
+        },
+        {
+          "race_id": 132819,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132820,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132821,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132822,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132823,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132824,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132825,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132826,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132827,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 132828,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132830,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 132831,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132832,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 132833,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132834,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.4666666666666667
+        },
+        {
+          "race_id": 132835,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 132836,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132837,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132838,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132839,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132840,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132841,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 132842,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 132843,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132844,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 132845,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 132846,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132847,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 132848,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132849,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 132850,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132851,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132852,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132853,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.9333333333333333
+        },
+        {
+          "race_id": 132854,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.9333333333333333
+        },
+        {
+          "race_id": 132855,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 132856,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 132857,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132858,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 132859,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 1.0
+        },
+        {
+          "race_id": 132861,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132862,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132863,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132864,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132865,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132866,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132867,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 132868,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 132869,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 132870,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 132871,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132872,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 132873,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 132874,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 132875,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 132876,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 132877,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 132878,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 132879,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132880,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 132881,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.9333333333333333
+        },
+        {
+          "race_id": 132882,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 132883,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        }
+      ],
+      "hit_rate_1st": 0.6,
+      "hit_rate_top3": 0.2545454545454545,
+      "avg_score_accuracy": 0.7521212121212115,
+      "evaluated_races": 110
+    },
+    {
+      "train_period": [
+        "2025-10-30",
+        "2025-11-13"
+      ],
+      "test_period": [
+        "2025-11-13",
+        "2025-11-16"
+      ],
+      "races": [
+        {
+          "race_id": 131750,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131751,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.9333333333333333
+        },
+        {
+          "race_id": 131753,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131754,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131755,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131756,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131757,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131758,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131759,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131760,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131761,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131762,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131763,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131764,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131765,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131766,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131767,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131769,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131770,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131771,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131772,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131773,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131774,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131775,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131776,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131777,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131778,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 131779,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131780,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131781,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131782,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131783,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131784,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 131785,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131786,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131787,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131788,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131789,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131790,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131791,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131792,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131793,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131794,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131795,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.4666666666666667
+        },
+        {
+          "race_id": 131796,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131797,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131798,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131799,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131800,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131801,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.9333333333333333
+        },
+        {
+          "race_id": 131802,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131803,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131804,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131805,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131806,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131807,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131808,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131809,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.4666666666666667
+        },
+        {
+          "race_id": 131810,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131833,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131811,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.9333333333333333
+        },
+        {
+          "race_id": 131812,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.9333333333333333
+        },
+        {
+          "race_id": 131813,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131814,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131815,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 131816,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131817,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131818,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131819,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131820,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 1.0
+        },
+        {
+          "race_id": 131821,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131822,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 1.0
+        },
+        {
+          "race_id": 131823,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131824,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131825,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.4666666666666667
+        },
+        {
+          "race_id": 131826,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131827,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.4666666666666667
+        },
+        {
+          "race_id": 131828,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131829,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131830,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131831,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 131832,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        }
+      ],
+      "hit_rate_1st": 0.4878048780487805,
+      "hit_rate_top3": 0.2804878048780488,
+      "avg_score_accuracy": 0.7390243902439023,
+      "evaluated_races": 82
+    },
+    {
+      "train_period": [
+        "2025-11-02",
+        "2025-11-16"
+      ],
+      "test_period": [
+        "2025-11-16",
+        "2025-11-19"
+      ],
+      "races": [
+        {
+          "race_id": 131834,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.4666666666666667
+        },
+        {
+          "race_id": 131835,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131836,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131837,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131838,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131839,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131840,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131841,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131842,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131843,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131844,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131845,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131846,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131847,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131848,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131849,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.9333333333333333
+        },
+        {
+          "race_id": 131850,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131851,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 131852,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131853,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131854,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131855,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131856,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131857,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131858,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131859,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131860,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 131861,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131862,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131863,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131864,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131865,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131866,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131867,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131868,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131869,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131870,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131871,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 131872,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 131873,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131874,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131875,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131876,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131877,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131878,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131879,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131880,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131881,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131882,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131883,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131884,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131885,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131886,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131887,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 131888,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131889,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131890,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131891,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131892,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131893,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131894,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131895,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131896,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.9333333333333333
+        },
+        {
+          "race_id": 131897,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131898,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131899,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131900,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131901,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.9333333333333333
+        },
+        {
+          "race_id": 131902,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131903,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131904,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131905,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131906,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131907,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131908,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131909,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131910,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131911,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131912,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.9333333333333333
+        },
+        {
+          "race_id": 131913,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131914,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131915,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131916,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131917,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131918,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131919,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131920,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131921,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131922,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131923,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131924,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.9333333333333333
+        },
+        {
+          "race_id": 131925,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131926,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131927,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131928,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 131929,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 131930,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131931,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131932,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131933,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131934,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131935,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 1.0
+        },
+        {
+          "race_id": 131936,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131937,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 131938,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131939,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131940,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131941,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 131942,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 131943,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131944,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131945,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131946,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.9333333333333333
+        },
+        {
+          "race_id": 131947,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131948,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.5333333333333333
+        },
+        {
+          "race_id": 131949,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131950,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131951,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131952,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131953,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131954,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131955,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131956,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.9333333333333333
+        },
+        {
+          "race_id": 131957,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131958,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.9333333333333333
+        },
+        {
+          "race_id": 131959,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131960,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131961,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131962,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131963,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131964,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131965,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131966,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131967,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131968,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131969,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.4
+        },
+        {
+          "race_id": 131970,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131971,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131972,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131973,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131974,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131975,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131976,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        },
+        {
+          "race_id": 131977,
+          "hit_1st": false,
+          "hit_top3": true,
+          "score_accuracy": 0.8
+        },
+        {
+          "race_id": 131978,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131979,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131980,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131981,
+          "hit_1st": true,
+          "hit_top3": true,
+          "score_accuracy": 0.9333333333333333
+        },
+        {
+          "race_id": 131982,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6
+        },
+        {
+          "race_id": 131983,
+          "hit_1st": false,
+          "hit_top3": false,
+          "score_accuracy": 0.6666666666666667
+        },
+        {
+          "race_id": 131984,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.7333333333333334
+        },
+        {
+          "race_id": 131985,
+          "hit_1st": true,
+          "hit_top3": false,
+          "score_accuracy": 0.8666666666666667
+        }
+      ],
+      "hit_rate_1st": 0.48026315789473684,
+      "hit_rate_top3": 0.17105263157894737,
+      "avg_score_accuracy": 0.7245614035087714,
+      "evaluated_races": 152
+    }
+  ],
   "summary": {
-    "total_steps": 0,
-    "total_races": 0,
-    "overall_hit_rate_1st": 0.0,
-    "overall_hit_rate_top3": 0.0,
-    "overall_score_accuracy": 0.0,
+    "total_steps": 3,
+    "total_races": 344,
+    "overall_hit_rate_1st": 0.5203488372093024,
+    "overall_hit_rate_top3": 0.2238372093023256,
+    "overall_score_accuracy": 0.7368217054263566,
     "step_stats": {
-      "avg_hit_rate_1st": 0.0,
-      "avg_hit_rate_top3": 0.0,
-      "avg_score_accuracy": 0.0
+      "avg_hit_rate_1st": 0.5226893453145057,
+      "avg_hit_rate_top3": 0.23536196366748355,
+      "avg_score_accuracy": 0.7385690019579618
     }
   }
 }

@@ -1,0 +1,24 @@
+{
+  "test_date": "2025-12-04 15:40:48",
+  "test_period": [
+    "2025-10-18",
+    "2025-11-17"
+  ],
+  "total_races": 1321,
+  "dynamic_mode": {
+    "hit_rate_1st": 0.486,
+    "hit_rate_top3": 0.1991,
+    "avg_score_accuracy": 0.455
+  },
+  "legacy_mode": {
+    "hit_rate_1st": 0.5693,
+    "hit_rate_top3": 0.2324,
+    "avg_score_accuracy": 0.5272
+  },
+  "improvement": {
+    "hit_rate_1st": -14.63,
+    "hit_rate_top3": -14.33,
+    "score_accuracy": -13.7
+  },
+  "conclusion": "要改善 - 動的統合の調整が必要"
+}

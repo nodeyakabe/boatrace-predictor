@@ -235,11 +235,25 @@ class MissingDataFetchWorkflow:
         return result
 
     def _get_races_without_results(self) -> List:
-        """結果データがないレースを取得（過去日のみ）"""
+        """結果データがないレースを取得（過去日のみ、期間フィルタ適用）"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        query = """
+        # 期間フィルタを構築
+        date_filter = "AND r.race_date < date('now')"
+        params = []
+
+        if self.start_date and self.end_date:
+            date_filter += " AND r.race_date BETWEEN ? AND ?"
+            params.extend([self.start_date, self.end_date])
+        elif self.start_date:
+            date_filter += " AND r.race_date >= ?"
+            params.append(self.start_date)
+        elif self.end_date:
+            date_filter += " AND r.race_date <= ?"
+            params.append(self.end_date)
+
+        query = f"""
             SELECT
                 r.id,
                 r.venue_code,
@@ -247,22 +261,36 @@ class MissingDataFetchWorkflow:
                 r.race_number
             FROM races r
             WHERE r.id NOT IN (SELECT DISTINCT race_id FROM results)
-              AND r.race_date < date('now')
+              {date_filter}
             ORDER BY r.race_date DESC, r.venue_code, r.race_number
         """
 
-        cursor.execute(query)
+        cursor.execute(query, params)
         rows = cursor.fetchall()
         conn.close()
 
         return rows
 
     def _get_races_without_beforeinfo(self) -> List:
-        """直前情報（展示タイム）がないレースを取得"""
+        """直前情報（展示タイム）がないレースを取得（期間フィルタ適用）"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        query = """
+        # 期間フィルタを構築
+        date_filter = ""
+        params = []
+
+        if self.start_date and self.end_date:
+            date_filter = " AND r.race_date BETWEEN ? AND ?"
+            params.extend([self.start_date, self.end_date])
+        elif self.start_date:
+            date_filter = " AND r.race_date >= ?"
+            params.append(self.start_date)
+        elif self.end_date:
+            date_filter = " AND r.race_date <= ?"
+            params.append(self.end_date)
+
+        query = f"""
             SELECT DISTINCT
                 r.id,
                 r.venue_code,
@@ -272,10 +300,11 @@ class MissingDataFetchWorkflow:
             LEFT JOIN race_details rd ON r.id = rd.race_id
             WHERE (rd.race_id IS NULL OR rd.exhibition_time IS NULL)
               AND r.race_status = 'completed'
+              {date_filter}
             ORDER BY r.race_date DESC, r.venue_code, r.race_number
         """
 
-        cursor.execute(query)
+        cursor.execute(query, params)
         rows = cursor.fetchall()
         conn.close()
 
