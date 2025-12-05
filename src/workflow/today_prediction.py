@@ -8,6 +8,7 @@ import sys
 import sqlite3
 import subprocess
 import concurrent.futures
+import threading
 from datetime import datetime
 from typing import Dict, Optional, Callable
 import logging
@@ -45,9 +46,32 @@ class TodayPredictionWorkflow:
         self.db_path = db_path or os.path.join(self.project_root, 'data/boatrace.db')
         self.progress_callback = progress_callback or self._default_progress
 
+        # 並列処理用の共有カウンター
+        self._parallel_lock = threading.Lock()
+        self._beforeinfo_count = 0
+        self._beforeinfo_total = 0
+        self._odds_count = 0
+        self._odds_total = 0
+
     def _default_progress(self, step: str, message: str, progress: int):
         """デフォルトの進捗表示"""
         print(f"[{progress}%] {step}: {message}")
+
+    def _update_parallel_progress(self):
+        """並列処理の統合進捗を更新（スレッドセーフ）"""
+        with self._parallel_lock:
+            total_count = self._beforeinfo_count + self._odds_count
+            total_total = self._beforeinfo_total + self._odds_total
+
+            if total_total == 0:
+                return
+
+            pct = 26 + int((total_count / total_total) * 13)  # 26-39%
+            self._update_progress(
+                "Step 2-3/6",
+                f"直前情報・オッズ取得中... ({total_count}/{total_total})",
+                pct
+            )
 
     def _update_progress(self, step: str, message: str, progress: int):
         """進捗を更新"""
@@ -105,6 +129,13 @@ class TodayPredictionWorkflow:
                 except Exception as e:
                     logger.warning(f"オッズ取得エラー: {e}")
                     result['odds_fetched'] = 0
+
+            # 並列処理完了後の最終メッセージ
+            self._update_progress(
+                "Step 2-3/6",
+                f"直前情報・オッズ取得完了 (直前:{result.get('beforeinfo_fetched', 0)}, オッズ:{result.get('odds_fetched', 0)})",
+                39
+            )
 
             # Step 4: 法則再解析
             self.reanalyze_rules()
@@ -238,12 +269,11 @@ class TodayPredictionWorkflow:
 
     def fetch_beforeinfo(self, today_schedule: Dict[str, str]) -> int:
         """
-        Step 2.5: 直前情報を取得
+        Step 2.5: 直前情報を取得（並列実行対応）
 
         Returns:
             取得成功したレース数
         """
-        self._update_progress("Step 2.5/6", "直前情報を取得中...", 26)
 
         from src.scraper.beforeinfo_scraper import BeforeInfoScraper
 
@@ -269,8 +299,11 @@ class TodayPredictionWorkflow:
         conn.close()
 
         if not all_races:
-            self._update_progress("Step 2.5/6", "直前情報取得対象なし", 29)
             return 0
+
+        # 合計数を設定
+        with self._parallel_lock:
+            self._beforeinfo_total = len(all_races)
 
         def fetch_single_beforeinfo(race_info):
             try:
@@ -289,11 +322,22 @@ class TodayPredictionWorkflow:
                         self.db_path
                     )
                     scraper.close()
+
+                    # 成功したら統合進捗を更新
+                    with self._parallel_lock:
+                        self._beforeinfo_count += 1
+                    self._update_parallel_progress()
                     return success
                 else:
                     scraper.close()
+                    with self._parallel_lock:
+                        self._beforeinfo_count += 1
+                    self._update_parallel_progress()
                     return False
             except Exception:
+                with self._parallel_lock:
+                    self._beforeinfo_count += 1
+                self._update_parallel_progress()
                 return False
 
         success_count = 0
@@ -302,34 +346,19 @@ class TodayPredictionWorkflow:
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
             futures = {executor.submit(fetch_single_beforeinfo, race): race for race in all_races}
 
-            for i, future in enumerate(concurrent.futures.as_completed(futures, timeout=300), 1):
+            for future in concurrent.futures.as_completed(futures, timeout=300):
                 if future.result():
                     success_count += 1
 
-                if i % 10 == 0:
-                    pct = 26 + int((i / total) * 3)
-                    self._update_progress(
-                        "Step 2.5/6",
-                        f"直前情報取得中... ({i}/{total})",
-                        pct
-                    )
-
-        self._update_progress(
-            "Step 2.5/6",
-            f"直前情報取得完了 ({success_count}/{total}レース)",
-            29
-        )
         return success_count
 
     def fetch_odds(self, today_schedule: Dict[str, str]) -> int:
         """
-        Step 3: オッズを取得（並列処理）
+        Step 3: オッズを取得（並列実行対応）
 
         Returns:
             取得成功したレース数
         """
-        self._update_progress("Step 3/6", "オッズを取得中...", 30)
-
         from src.scraper.odds_scraper import OddsScraper
 
         conn = sqlite3.connect(self.db_path)
@@ -354,8 +383,11 @@ class TodayPredictionWorkflow:
         conn.close()
 
         if not all_races:
-            self._update_progress("Step 3/6", "オッズ取得対象なし", 45)
             return 0
+
+        # 合計数を設定
+        with self._parallel_lock:
+            self._odds_total = len(all_races)
 
         def fetch_single_odds(race_info):
             try:
@@ -381,9 +413,21 @@ class TodayPredictionWorkflow:
                         )
                     conn.commit()
                     conn.close()
+
+                    # 成功したら統合進捗を更新
+                    with self._parallel_lock:
+                        self._odds_count += 1
+                    self._update_parallel_progress()
                     return True
-                return False
+                else:
+                    with self._parallel_lock:
+                        self._odds_count += 1
+                    self._update_parallel_progress()
+                    return False
             except Exception:
+                with self._parallel_lock:
+                    self._odds_count += 1
+                self._update_parallel_progress()
                 return False
 
         success_count = 0
@@ -392,23 +436,10 @@ class TodayPredictionWorkflow:
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
             futures = {executor.submit(fetch_single_odds, race): race for race in all_races}
 
-            for i, future in enumerate(concurrent.futures.as_completed(futures, timeout=300), 1):
+            for future in concurrent.futures.as_completed(futures, timeout=300):
                 if future.result():
                     success_count += 1
 
-                if i % 10 == 0:
-                    pct = 30 + int((i / total) * 15)
-                    self._update_progress(
-                        "Step 3/6",
-                        f"オッズ取得中... ({i}/{total})",
-                        pct
-                    )
-
-        self._update_progress(
-            "Step 3/6",
-            f"オッズ取得完了 ({success_count}/{total}レース)",
-            45
-        )
         return success_count
 
     def reanalyze_rules(self):

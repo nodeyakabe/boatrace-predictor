@@ -699,11 +699,12 @@ def _render_beforeinfo_dialog():
             horizontal=True
         )
 
-    # オプション
+    # 自動スキップロジック（固定）の説明
     with col2:
-        skip_fetched = st.checkbox("取得済みをスキップ", value=True, key="skip_fetched_beforeinfo")
-        skip_not_started = st.checkbox("未公開をスキップ", value=True, key="skip_not_started_beforeinfo",
-                                        help="まだ展示が始まっていないレースをスキップ")
+        st.caption("⚙️ 自動スキップ:")
+        st.caption("• 確定済み＆取得済み → スキップ")
+        st.caption("• 次のレース → 常に取得")
+        st.caption("• 未取得 → 取得")
 
     target_races = []
 
@@ -771,7 +772,7 @@ def _render_beforeinfo_dialog():
     col_exec, col_close = st.columns(2)
     with col_exec:
         if st.button("🔄 取得開始", type="primary", use_container_width=True):
-            _fetch_and_update_beforeinfo(target_races, skip_fetched, skip_not_started)
+            _fetch_and_update_beforeinfo(target_races)
 
     with col_close:
         if st.button("❌ 閉じる", use_container_width=True):
@@ -781,9 +782,9 @@ def _render_beforeinfo_dialog():
     st.markdown("---")
 
 
-def _fetch_and_update_beforeinfo(target_races: List[Dict], skip_fetched: bool = True, skip_not_started: bool = True):
-    """直前情報を取得して予想を更新"""
-    from datetime import datetime
+def _fetch_and_update_beforeinfo(target_races: List[Dict]):
+    """直前情報を取得して予想を更新（賢いスキップロジック）"""
+    from datetime import datetime, timedelta
     from config.settings import VENUES
 
     try:
@@ -795,47 +796,100 @@ def _fetch_and_update_beforeinfo(target_races: List[Dict], skip_fetched: bool = 
         for venue_id, venue_info in VENUES.items():
             venue_name_map[venue_info['code']] = venue_info['name']
 
-        # フィルタリング
+        # 次のレース番号を会場ごとに特定
+        def get_next_race_numbers(races):
+            """会場ごとの次のレース番号を取得"""
+            next_race_by_venue = {}
+            races_by_venue = {}
+
+            # 会場ごとにレースをグループ化
+            for race in races:
+                venue_code = race['venue_code']
+                if venue_code not in races_by_venue:
+                    races_by_venue[venue_code] = []
+                races_by_venue[venue_code].append(race)
+
+            # 会場ごとに次のレースを特定
+            for venue_code, venue_races in races_by_venue.items():
+                next_race_num = None
+                for race in sorted(venue_races, key=lambda r: r['race_number']):
+                    if race.get('race_time'):
+                        try:
+                            race_time = datetime.strptime(f"{now.strftime('%Y-%m-%d')} {race['race_time']}", "%Y-%m-%d %H:%M:%S")
+                            # レース時刻+10分経過で確定とみなす
+                            if now < race_time + timedelta(minutes=10):
+                                next_race_num = race['race_number']
+                                break
+                        except:
+                            pass
+                next_race_by_venue[venue_code] = next_race_num
+
+            return next_race_by_venue
+
+        next_race_by_venue = get_next_race_numbers(target_races)
+
+        # フィルタリング（賢いスキップロジック）
         races_to_fetch = []
-        skipped_fetched = 0
-        skipped_not_started = 0
+        skipped_finished_fetched = 0
+        skipped_future_fetched = 0
 
         for race in target_races:
-            # 取得済みスキップ
-            if skip_fetched and race.get('has_beforeinfo'):
-                skipped_fetched += 1
+            venue_code = race['venue_code']
+            race_number = race['race_number']
+            has_beforeinfo = race.get('has_beforeinfo', False)
+            race_time = race.get('race_time')
+
+            # レース時刻がない場合は取得
+            if not race_time:
+                races_to_fetch.append(race)
                 continue
 
-            # 未公開スキップ（レース時刻の30分前までは展示情報がない可能性）
-            if skip_not_started and race.get('race_time'):
-                try:
-                    race_time = datetime.strptime(f"{now.strftime('%Y-%m-%d')} {race['race_time']}", "%Y-%m-%d %H:%M:%S")
-                    # レース時刻の40分前より未来のレースはスキップ
-                    if now < race_time.replace(hour=race_time.hour, minute=race_time.minute - 40 if race_time.minute >= 40 else race_time.minute + 20):
-                        if race_time.minute < 40:
-                            race_time = race_time.replace(hour=race_time.hour - 1)
-                        skipped_not_started += 1
-                        continue
-                except:
-                    pass
+            try:
+                race_time_dt = datetime.strptime(f"{now.strftime('%Y-%m-%d')} {race_time}", "%Y-%m-%d %H:%M:%S")
+                is_finished = now > (race_time_dt + timedelta(minutes=10))
+            except:
+                is_finished = False
 
-            races_to_fetch.append(race)
+            # 次のレース判定（次と次の次まで）
+            next_race_num = next_race_by_venue.get(venue_code)
+            is_upcoming = (next_race_num is not None and
+                          race_number >= next_race_num and
+                          race_number <= next_race_num + 1)
+
+            # スキップ判定
+            if is_finished and has_beforeinfo:
+                # 確定済み & 取得済み → スキップ
+                skipped_finished_fetched += 1
+                continue
+
+            if is_upcoming:
+                # 次のレース → 常に取得
+                races_to_fetch.append(race)
+                continue
+
+            if not has_beforeinfo:
+                # 未取得 → 取得
+                races_to_fetch.append(race)
+                continue
+
+            # それ以外（未確定 & 取得済み & 次のレースではない）→ スキップ
+            skipped_future_fetched += 1
 
         if not races_to_fetch:
             st.warning("取得対象のレースがありません")
-            if skipped_fetched > 0:
-                st.info(f"取得済みスキップ: {skipped_fetched}件")
-            if skipped_not_started > 0:
-                st.info(f"未公開スキップ: {skipped_not_started}件")
+            if skipped_finished_fetched > 0:
+                st.info(f"✅ 確定済み＆取得済みスキップ: {skipped_finished_fetched}件")
+            if skipped_future_fetched > 0:
+                st.info(f"⏭️ 未確定＆取得済みスキップ: {skipped_future_fetched}件")
             return
 
         # スキップ情報表示
-        if skipped_fetched > 0 or skipped_not_started > 0:
+        if skipped_finished_fetched > 0 or skipped_future_fetched > 0:
             skip_msg = []
-            if skipped_fetched > 0:
-                skip_msg.append(f"取得済み: {skipped_fetched}件")
-            if skipped_not_started > 0:
-                skip_msg.append(f"未公開: {skipped_not_started}件")
+            if skipped_finished_fetched > 0:
+                skip_msg.append(f"確定済み＆取得済み: {skipped_finished_fetched}件")
+            if skipped_future_fetched > 0:
+                skip_msg.append(f"未確定＆取得済み: {skipped_future_fetched}件")
             st.info(f"スキップ: {', '.join(skip_msg)}")
 
         # 進捗表示
@@ -945,10 +999,10 @@ def _fetch_and_update_beforeinfo(target_races: List[Dict], skip_fetched: bool = 
                 if len(fetched_data) > 10:
                     st.info(f"他 {len(fetched_data) - 10} レースのデータも取得済み")
 
-            # 自動で予想更新を実行
+            # 自動で予想更新を実行（賢いフィルタリング）
             st.markdown("---")
             st.info("🔄 直前予想を更新中...")
-            _update_predictions_with_beforeinfo(fetched_data)
+            _update_predictions_with_beforeinfo(fetched_data, all_races=target_races)
 
         else:
             st.warning(f"直前情報を取得できませんでした ({', '.join(result_parts)})")
@@ -959,20 +1013,52 @@ def _fetch_and_update_beforeinfo(target_races: List[Dict], skip_fetched: bool = 
         st.code(traceback.format_exc())
 
 
-def _update_predictions_with_beforeinfo(fetched_data: List[Dict]):
-    """取得した直前情報で予想を更新（バッチ処理で高速化）"""
+def _update_predictions_with_beforeinfo(fetched_data: List[Dict], all_races: List[Dict] = None):
+    """取得した直前情報で予想を更新（賢いフィルタリング + バッチ処理）"""
     import time
 
     try:
         from src.analysis.prediction_updater import PredictionUpdater
-        from datetime import datetime
+        from datetime import datetime, timedelta
+
+        # 賢いフィルタリング: 予想更新が必要なレースのみ
+        now = datetime.now()
+        races_to_update = []
+        skipped_finished = 0
+
+        # all_racesが提供されている場合は、確定済みレースをスキップ
+        if all_races:
+            for data in fetched_data:
+                race_id = data['race_id']
+                # all_racesから対応するレース情報を取得
+                race_info = next((r for r in all_races if r['race_id'] == race_id), None)
+
+                if race_info and race_info.get('race_time'):
+                    try:
+                        race_time = datetime.strptime(f"{now.strftime('%Y-%m-%d')} {race_info['race_time']}", "%Y-%m-%d %H:%M:%S")
+                        is_finished = now > (race_time + timedelta(minutes=10))
+
+                        if is_finished:
+                            # 確定済みレース → 予想更新スキップ
+                            skipped_finished += 1
+                            continue
+                    except:
+                        pass
+
+                races_to_update.append(data)
+        else:
+            # all_racesが提供されていない場合は全て更新
+            races_to_update = fetched_data
+
+        if skipped_finished > 0:
+            st.info(f"⏭️ 確定済みレースの予想更新をスキップ: {skipped_finished}件")
 
         # レースIDリストを作成
-        race_ids = [data['race_id'] for data in fetched_data]
+        race_ids = [data['race_id'] for data in races_to_update]
         total = len(race_ids)
 
         if total == 0:
-            st.warning("更新対象のレースがありません")
+            st.warning("予想更新対象のレースがありません（全て確定済み）")
             return
 
         start_time = time.time()
@@ -996,8 +1082,8 @@ def _update_predictions_with_beforeinfo(fetched_data: List[Dict]):
             per_race = elapsed / current if current > 0 else 0
             eta = per_race * (total_count - current)
 
-            if current <= len(fetched_data):
-                data = fetched_data[current - 1]
+            if current <= len(races_to_update):
+                data = races_to_update[current - 1]
                 status_text.text(f"更新中: {data['venue_name']} {data['race_number']}R ({current}/{total_count})")
                 time_text.text(f"経過: {elapsed:.0f}秒 | 1レース: {per_race:.2f}秒 | 残り: {eta:.0f}秒")
 

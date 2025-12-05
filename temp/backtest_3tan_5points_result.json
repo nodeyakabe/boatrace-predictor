@@ -1,133 +1,157 @@
 {
-  "test_date": "2025-12-04 16:48:44",
-  "total_races": 300,
-  "hit_rate": 26.333333333333332,
-  "recovery_rate": 0.0,
-  "total_bet": 150000,
-  "total_return": 0,
-  "profit": -150000,
+  "test_date": "2025-12-05 12:26:16",
+  "total_races": 997,
+  "hit_rate": 23.37011033099298,
+  "recovery_rate": 127.32998996990972,
+  "total_bet": 498500,
+  "total_return": 634740,
+  "profit": 136240,
   "venue_stats": {
     "21": {
-      "races": 11,
-      "hits": 5,
-      "bet": 5500,
-      "return": 0
+      "races": 59,
+      "hits": 14,
+      "bet": 29500,
+      "return": 34880
     },
     "17": {
-      "races": 24,
-      "hits": 6,
-      "bet": 12000,
-      "return": 0
+      "races": 66,
+      "hits": 19,
+      "bet": 33000,
+      "return": 56830
     },
     "14": {
-      "races": 24,
-      "hits": 5,
-      "bet": 12000,
-      "return": 0
+      "races": 64,
+      "hits": 15,
+      "bet": 32000,
+      "return": 93960
     },
     "13": {
-      "races": 12,
+      "races": 11,
       "hits": 4,
-      "bet": 6000,
-      "return": 0
+      "bet": 5500,
+      "return": 21610
     },
     "12": {
-      "races": 12,
-      "hits": 2,
-      "bet": 6000,
-      "return": 0
+      "races": 68,
+      "hits": 12,
+      "bet": 34000,
+      "return": 44400
     },
     "07": {
-      "races": 24,
-      "hits": 7,
-      "bet": 12000,
-      "return": 0
+      "races": 64,
+      "hits": 14,
+      "bet": 32000,
+      "return": 24030
     },
     "05": {
-      "races": 12,
-      "hits": 1,
-      "bet": 6000,
-      "return": 0
+      "races": 36,
+      "hits": 8,
+      "bet": 18000,
+      "return": 18760
     },
     "02": {
-      "races": 12,
-      "hits": 2,
-      "bet": 6000,
-      "return": 0
+      "races": 40,
+      "hits": 3,
+      "bet": 20000,
+      "return": 23640
     },
     "01": {
-      "races": 12,
-      "hits": 4,
-      "bet": 6000,
-      "return": 0
+      "races": 46,
+      "hits": 9,
+      "bet": 23000,
+      "return": 17320
     },
     "03": {
-      "races": 5,
-      "hits": 1,
-      "bet": 2500,
-      "return": 0
+      "races": 40,
+      "hits": 7,
+      "bet": 20000,
+      "return": 19080
     },
     "24": {
-      "races": 23,
-      "hits": 5,
-      "bet": 11500,
-      "return": 0
+      "races": 93,
+      "hits": 24,
+      "bet": 46500,
+      "return": 51830
     },
     "22": {
-      "races": 24,
-      "hits": 2,
-      "bet": 12000,
-      "return": 0
+      "races": 58,
+      "hits": 9,
+      "bet": 29000,
+      "return": 13850
     },
     "20": {
-      "races": 24,
-      "hits": 9,
-      "bet": 12000,
-      "return": 0
+      "races": 35,
+      "hits": 11,
+      "bet": 17500,
+      "return": 9880
     },
     "15": {
-      "races": 21,
-      "hits": 9,
-      "bet": 10500,
-      "return": 0
+      "races": 57,
+      "hits": 24,
+      "bet": 28500,
+      "return": 47930
     },
     "18": {
-      "races": 24,
-      "hits": 7,
-      "bet": 12000,
-      "return": 0
+      "races": 35,
+      "hits": 8,
+      "bet": 17500,
+      "return": 31180
     },
     "09": {
-      "races": 12,
-      "hits": 2,
-      "bet": 6000,
-      "return": 0
+      "races": 35,
+      "hits": 5,
+      "bet": 17500,
+      "return": 14300
     },
     "08": {
-      "races": 12,
-      "hits": 5,
-      "bet": 6000,
-      "return": 0
+      "races": 45,
+      "hits": 12,
+      "bet": 22500,
+      "return": 31600
     },
     "06": {
-      "races": 12,
-      "hits": 3,
-      "bet": 6000,
-      "return": 0
+      "races": 33,
+      "hits": 10,
+      "bet": 16500,
+      "return": 30770
+    },
+    "10": {
+      "races": 56,
+      "hits": 9,
+      "bet": 28000,
+      "return": 17280
+    },
+    "19": {
+      "races": 32,
+      "hits": 7,
+      "bet": 16000,
+      "return": 21600
+    },
+    "11": {
+      "races": 24,
+      "hits": 9,
+      "bet": 12000,
+      "return": 10010
     }
   },
   "monthly_stats": {
     "2025-12": {
-      "races": 107,
-      "hits": 25,
-      "bet": 53500,
-      "return": 0
+      "races": 94,
+      "hits": 23,
+      "bet": 47000,
+      "return": 87390
     },
     "2025-11": {
-      "races": 193,
-      "hits": 54,
-      "bet": 96500,
-      "return": 0
+      "races": 370,
+      "hits": 95,
+      "bet": 185000,
+      "return": 225280
+    },
+    "2025-10": {
+      "races": 533,
+      "hits": 115,
+      "bet": 266500,
+      "return": 322070
     }
   }
 }

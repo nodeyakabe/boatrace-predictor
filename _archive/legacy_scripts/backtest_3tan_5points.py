@@ -20,17 +20,18 @@ from collections import defaultdict
 import json
 
 
-def get_trifecta_odds(cursor, race_id, combination):
-    """3連単オッズを取得"""
+def get_trifecta_payout(cursor, race_id, combination):
+    """3連単払戻金を取得（100円あたり）"""
     try:
         cursor.execute("""
-            SELECT odds
-            FROM trifecta_odds
+            SELECT amount
+            FROM payouts
             WHERE race_id = ?
+            AND bet_type = 'trifecta'
             AND combination = ?
         """, (race_id, combination))
         result = cursor.fetchone()
-        return float(result[0]) if result else None
+        return int(result[0]) if result else None
     except:
         return None
 
@@ -65,7 +66,7 @@ def main():
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # テスト期間を設定（最新300レース）
+    # テスト期間を設定（過去6ヶ月分から1000レースサンプリング）
     cursor.execute("""
         SELECT r.id, r.race_date, r.venue_code, r.race_number
         FROM races r
@@ -77,8 +78,13 @@ def main():
             SELECT 1 FROM race_details rd
             WHERE rd.race_id = r.id
         )
+        AND EXISTS (
+            SELECT 1 FROM payouts p
+            WHERE p.race_id = r.id AND p.bet_type = 'trifecta'
+        )
+        AND r.race_date >= date('now', '-6 months')
         ORDER BY r.race_date DESC, r.id DESC
-        LIMIT 300
+        LIMIT 1000
     """)
     all_races = cursor.fetchall()
 
@@ -110,9 +116,9 @@ def main():
     for idx, (race_id, race_date, venue_code, race_number) in enumerate(all_races, 1):
         stats['total_races'] += 1
 
-        # 進捗表示（20レースごと）
-        if idx % 20 == 0:
-            print(f"  進捗: {idx}/{len(all_races)} レース ({idx/len(all_races)*100:.1f}%)")
+        # 進捗表示（100レースごと）
+        if idx % 100 == 0:
+            print(f"  進捗: {idx}/{len(all_races)} レース ({idx/len(all_races)*100:.1f}%) - 的中{stats['hits']}件 的中率{stats['hits']/stats['valid_predictions']*100 if stats['valid_predictions'] > 0 else 0:.1f}%")
 
         try:
             # 予測実行（各艇のスコアと順位予測を取得）
@@ -165,12 +171,12 @@ def main():
 
             # 的中した場合の払戻
             return_amount = 0
-            odds_value = None
+            payout_value = None
             if is_hit:
                 stats['hits'] += 1
-                odds_value = get_trifecta_odds(cursor, race_id, actual_result)
-                if odds_value:
-                    return_amount = int(100 * odds_value)  # 100円あたりのオッズ
+                payout_value = get_trifecta_payout(cursor, race_id, actual_result)
+                if payout_value:
+                    return_amount = payout_value  # 100円購入での払戻金額
                     stats['total_return'] += return_amount
                     stats['odds_available'] += 1
 
@@ -199,7 +205,7 @@ def main():
                     'predicted': top_5_combinations,
                     'actual': actual_result,
                     'hit': is_hit,
-                    'odds': odds_value,
+                    'payout': payout_value,
                     'return': return_amount
                 })
 
@@ -249,9 +255,9 @@ def main():
         print()
 
         if stats['odds_available'] > 0:
-            avg_odds = stats['total_return'] / stats['hits'] / 100 if stats['hits'] > 0 else 0
-            print(f"  平均配当: {avg_odds:.1f}倍")
-            breakeven_rate = (100 / avg_odds) if avg_odds > 0 else 0
+            avg_payout = stats['total_return'] / stats['hits'] if stats['hits'] > 0 else 0
+            print(f"  平均配当: {avg_payout:.0f}円（100円購入時）")
+            breakeven_rate = (500 / avg_payout * 100) if avg_payout > 0 else 0  # 5点買い=500円
             print(f"  損益分岐点的中率: {breakeven_rate:.2f}%")
             print()
 
@@ -302,8 +308,8 @@ def main():
             print(f"\n  レース: {detail['date']} {venue_str}場 {detail['race_no']}R")
             print(f"  予測5点: {', '.join(detail['predicted'])}")
             print(f"  実際結果: {detail['actual']} {'✓的中' if detail['hit'] else '✗'}")
-            if detail['hit'] and detail['odds']:
-                print(f"  配当: {detail['odds']:.1f}倍 (払戻: {format_currency(detail['return'])})")
+            if detail['hit'] and detail['payout']:
+                print(f"  配当: {detail['payout']}円 (払戻: {format_currency(detail['return'])})")
         print()
 
         # 結果をJSONで保存

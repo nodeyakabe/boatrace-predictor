@@ -452,8 +452,8 @@ def _start_complete_data_collection(collection_type: str, start_date=None, end_d
         end_date = yesterday
     # period の場合は引数の start_date, end_date をそのまま使用
 
-    # bulk_missing_data_fetch.pyを使用（期間指定が正しく機能する）
-    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'bulk_missing_data_fetch.py')
+    # bulk_missing_data_fetch_parallel.pyを使用（並列化版で高速）
+    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'bulk_missing_data_fetch_parallel.py')
 
     args = [
         '--start-date', str(start_date),
@@ -468,7 +468,7 @@ def _start_complete_data_collection(collection_type: str, start_date=None, end_d
 
     if result['success']:
         st.success(f"✅ {result['message']}")
-        st.info("📥 新規データ収集を開始しました（全データ種を収集）。タブを移動しても処理は継続します。")
+        st.info("📥 新規データ収集を開始しました（並列化版で高速処理）。タブを移動しても処理は継続します。")
         time.sleep(1)
         st.rerun()
     else:
@@ -504,8 +504,8 @@ def _start_complement_data_collection(collection_type: str, start_date=None, end
         end_date = yesterday
     # period の場合は引数の start_date, end_date をそのまま使用
 
-    # 新規データ収集と同じスクリプトを使用（自動的に不足データのみ取得）
-    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'bulk_missing_data_fetch.py')
+    # 並列化版スクリプトを使用（自動的に不足データのみ取得）
+    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'bulk_missing_data_fetch_parallel.py')
 
     args = [
         '--start-date', str(start_date),
@@ -520,7 +520,7 @@ def _start_complement_data_collection(collection_type: str, start_date=None, end
 
     if result['success']:
         st.success(f"✅ {result['message']}")
-        st.info("🔧 データ補完を開始しました（不足データのみ収集）。タブを移動しても処理は継続します。")
+        st.info("🔧 データ補完を開始しました（並列化版で高速処理）。タブを移動しても処理は継続します。")
         time.sleep(1)
         st.rerun()
     else:
@@ -631,8 +631,8 @@ def _start_missing_data_job(missing_dates: List[Dict], check_types: List[str]):
     start_date = min(dates)
     end_date = max(dates)
 
-    # 最適化されたスクリプトを使用
-    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'bulk_missing_data_fetch.py')
+    # 並列化版スクリプトを使用
+    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'bulk_missing_data_fetch_parallel.py')
 
     args = [
         '--start-date', start_date,

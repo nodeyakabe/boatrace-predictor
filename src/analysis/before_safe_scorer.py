@@ -40,13 +40,17 @@ class BeforeSafeScorer:
             self.st_scorer = None
             self.exhibition_scorer = None
 
-        # スコア配分（Phase 5版 - 重み調整）
+        # スコア配分（Phase 0診断後の符号修正版）
         if use_st_exhibition:
-            # 4項目統合版（Phase 5で重み引き上げ）
-            self.ENTRY_WEIGHT = 0.20      # 進入コース（37.8%的中）
-            self.PARTS_WEIGHT = 0.20      # 部品交換・体重（39.2%的中）
-            self.ST_WEIGHT = 0.30         # ST（Phase 4で再設計、Phase 5で重み増）
-            self.EXHIBITION_WEIGHT = 0.30 # 展示タイム（Phase 4で再設計、Phase 5で重み増）
+            # Phase 0診断結果 + 符号修正:
+            # - 進入スコアの符号を修正（枠なり=プラス、進入変更=マイナス）
+            # - ST相関: -0.0476（弱い）
+            # - 展示相関: -0.0840（中程度、STの1.8倍強い）
+            # - 相関比率: ST 36% vs 展示 64%
+            self.ENTRY_WEIGHT = 0.20      # 進入コース（符号修正版、20%で再有効化）
+            self.PARTS_WEIGHT = 0.30      # 部品交換・体重（30%）
+            self.ST_WEIGHT = 0.20         # ST（20%、相関の36%に対応）
+            self.EXHIBITION_WEIGHT = 0.30 # 展示タイム（30%、相関の64%に対応）
         else:
             # 2項目のみ版（Phase 3互換）
             self.ENTRY_WEIGHT = 0.6   # 進入コース（37.8%的中）
@@ -179,14 +183,20 @@ class BeforeSafeScorer:
         exhibition_courses: Dict[int, int]
     ) -> float:
         """
-        進入コーススコア計算
+        進入コーススコア計算（Phase 0診断結果に基づく符号修正版）
+
+        Phase 0分析結果:
+        - 進入変更あり勝率: 9.13%
+        - 進入変更なし勝率: 17.75%
+        - 差分: -8.63ポイント
+        → 進入変更はマイナス評価、枠なりはプラス評価に修正
 
         Args:
             pit_number: 艇番
             exhibition_courses: 進入コース情報 {pit_number: course}
 
         Returns:
-            スコア（-10〜+12点）
+            スコア（-12〜+10点）
         """
         if not exhibition_courses or pit_number not in exhibition_courses:
             return 0.0
@@ -194,29 +204,31 @@ class BeforeSafeScorer:
         course = exhibition_courses[pit_number]
         expected_course = pit_number  # 枠なりの場合
 
-        # 進入変更の評価
-        if course == 1 and pit_number != 1:
-            # 1コース奪取（イン逃げ狙い）
-            return 12.0
+        # Phase 0診断結果に基づく修正版
+        if course == expected_course:
+            # 枠なり（進入変更なし）→ プラス評価
+            # 枠なりの勝率17.75%は平均より高い
+            return 10.0
+        elif course == 1 and pit_number != 1:
+            # 1コース奪取（進入変更）→ マイナス評価
+            # Phase 0: 進入変更で勝率が-8.63ポイント低下
+            return -12.0
         elif course == 2 and pit_number >= 3:
-            # 2コース奪取（前づけ成功）
-            return 8.0
+            # 2コース奪取（進入変更）→ マイナス評価
+            return -8.0
         elif course == 3 and pit_number >= 4:
-            # 3コース奪取
-            return 5.0
-        elif course == expected_course:
-            # 枠なり
-            return 0.0
+            # 3コース奪取（進入変更）→ マイナス評価
+            return -5.0
         elif course > expected_course:
-            # 外に追いやられる（不利）
+            # 外に追いやられる（進入変更）→ マイナス評価
             if course - expected_course >= 3:
                 # 深く追いやられる
                 return -10.0
             else:
                 return -5.0
         else:
-            # 内に入る（有利）
-            return 3.0
+            # 内に入る（進入変更）→ 小さなマイナス評価
+            return -3.0
 
     def _calc_parts_weight_score(
         self,
@@ -316,7 +328,7 @@ class BeforeSafeScorer:
 
             query = """
                 SELECT racer_rank
-                FROM race_entries
+                FROM entries
                 WHERE race_id = ? AND pit_number = ?
             """
             cursor.execute(query, (race_id, pit_number))
