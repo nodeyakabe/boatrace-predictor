@@ -1,0 +1,68 @@
+{
+  "timestamp": "2025-12-06T17:18:14.171546",
+  "baseline": {
+    "auc": 0.8345468920530064,
+    "accuracy": 0.8309006763972944,
+    "precision": 1.0,
+    "recall": 0.0021008403361344537,
+    "log_loss": 0.3666330379967296
+  },
+  "with_venue_course_features": {
+    "auc": 0.8357454426262575,
+    "accuracy": 0.8586685653257387,
+    "precision": 0.6118980169971672,
+    "recall": 0.453781512605042,
+    "log_loss": 0.33810847330585203
+  },
+  "improvement": {
+    "auc_pct": 0.1436169237060687,
+    "accuracy_pct": 3.3419023136246784,
+    "recall_pct": 21500.0
+  },
+  "new_features_importance": [
+    {
+      "feature": "racer_venue_course_skill",
+      "importance": 0.161961168050766
+    },
+    {
+      "feature": "racer_venue_course_combined",
+      "importance": 0.1420784294605255
+    },
+    {
+      "feature": "racer_course_skill",
+      "importance": 0.07508092373609543
+    },
+    {
+      "feature": "venue_course_advantage",
+      "importance": 0.028857501223683357
+    },
+    {
+      "feature": "racer_venue_skill",
+      "importance": 0.023193318396806717
+    },
+    {
+      "feature": "recent_course_avg_rank",
+      "importance": 0.022853219881653786
+    },
+    {
+      "feature": "recent_course_2ren_rate",
+      "importance": 0.02282845601439476
+    },
+    {
+      "feature": "recent_course_win_rate",
+      "importance": 0.019459659233689308
+    },
+    {
+      "feature": "condition_course_factor",
+      "importance": 0.0
+    },
+    {
+      "feature": "wind_course_factor",
+      "importance": 0.0
+    },
+    {
+      "feature": "wave_course_factor",
+      "importance": 0.0
+    }
+  ]
+}

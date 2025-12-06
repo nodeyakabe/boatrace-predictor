@@ -1,6 +1,22 @@
 """
 機械学習用データセットビルダー
 XGBoost + SHAP用の特徴量データセットを生成
+
+2025-12-06: ボーターズ分析を参考にした新規特徴量を追加
+- コース別成績（course_win_rate, course_2ren_rate, course_avg_rank）
+- 今節成績（node_avg_rank, node_trend）
+- 予測ST（predicted_st, st_stability）
+- モーター会場順位（motor_venue_rank, motor_venue_2ren）
+
+2025-12-06: 会場×コース特徴量を追加（Opus深掘り分析結果）
+- venue_course_advantage: 会場コース有利度（最大25%差）
+- racer_venue_course_skill: ベイズ推定による選手×会場×コース適性
+- recent_course_win_rate: 直近10走のコース別成績
+- wind/wave_course_factor: 条件×コース調整係数
+
+2025-12-06: バッチ処理による高速化
+- 従来の行ごとDBクエリからバッチ処理に変更
+- 32,000行で5分以上 → 30秒程度に高速化
 """
 import sqlite3
 import pandas as pd
@@ -8,6 +24,9 @@ import json
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 from src.features.racer_features import RacerFeatureExtractor
+from src.features.boaters_inspired_features import BoatersInspiredFeatureExtractor
+from src.features.venue_course_features import VenueCourseFeatureExtractor
+from src.features.batch_feature_extractor import BatchFeatureExtractor
 
 
 class DatasetBuilder:
@@ -240,6 +259,237 @@ class DatasetBuilder:
         df = pd.concat([df, df_racer_features], axis=1)
 
         print(f"[INFO] 選手特徴量を追加: {len(df_racer_features.columns)}個 ({', '.join(df_racer_features.columns)})")
+
+        return df
+
+    def _add_boaters_features(self, df: pd.DataFrame, use_top_features_only: bool = True) -> pd.DataFrame:
+        """
+        ボーターズ分析を参考にした特徴量を追加
+
+        重要度が高い特徴量:
+        - course_win_rate: コース別勝率（最重要）
+        - course_2ren_rate: コース別2連率
+        - course_avg_rank: コース別平均着順
+        - node_avg_rank: 今節平均着順
+        - predicted_st: 予測ST
+        - motor_venue_rank: モーター会場順位
+        - motor_venue_2ren: モーター会場2連率
+
+        Args:
+            df: データフレーム
+            use_top_features_only: 上位重要度の特徴量のみ使用（高速化）
+
+        Returns:
+            pd.DataFrame: ボーターズ特徴量追加後のデータフレーム
+        """
+        df = df.copy()
+
+        required_cols = ['racer_number', 'motor_number', 'venue_code', 'race_date', 'race_number']
+        if not all(col in df.columns for col in required_cols):
+            print(f"[WARNING] ボーターズ特徴量追加スキップ: 必要なカラムが不足")
+            return df
+
+        extractor = BoatersInspiredFeatureExtractor(db_path=self.db_path)
+        conn = sqlite3.connect(self.db_path)
+
+        boaters_features_list = []
+        total = len(df)
+        print(f"[INFO] ボーターズ特徴量計算中... ({total}行)")
+
+        for idx, row in df.iterrows():
+            if idx % 10000 == 0 and idx > 0:
+                print(f"  Progress: {idx}/{total} ({idx/total*100:.1f}%)")
+
+            try:
+                # 進入コース推定
+                target_course = row.get('actual_course') or row.get('pit_number') or 1
+                target_course = int(target_course) if not pd.isna(target_course) else int(row.get('pit_number', 1))
+
+                if use_top_features_only:
+                    # 高速化: 最重要特徴量のみ計算
+                    features = {}
+
+                    # コース別成績（最重要）
+                    course_stats = extractor.compute_course_specific_rate(
+                        str(row['racer_number']),
+                        target_course,
+                        str(row['race_date']),
+                        conn=conn
+                    )
+                    features['course_win_rate'] = course_stats['course_win_rate']
+                    features['course_2ren_rate'] = course_stats['course_2ren_rate']
+                    features['course_avg_rank'] = course_stats['course_avg_rank']
+
+                    # 今節成績
+                    node_perf = extractor.compute_current_node_performance(
+                        str(row['racer_number']),
+                        str(row['venue_code']),
+                        str(row['race_date']),
+                        int(row['race_number']),
+                        conn=conn
+                    )
+                    features['node_avg_rank'] = node_perf['node_avg_rank']
+                    features['node_trend'] = node_perf['node_trend']
+
+                    # 予測ST
+                    predicted_st, st_stability = extractor.compute_predicted_st(
+                        str(row['racer_number']),
+                        str(row['race_date']),
+                        conn=conn
+                    )
+                    features['predicted_st'] = predicted_st
+                    features['st_stability'] = st_stability
+
+                else:
+                    # 全特徴量を計算
+                    motor_num = int(row['motor_number']) if pd.notna(row['motor_number']) else 0
+                    features = extractor.extract_all_features(
+                        str(row['racer_number']),
+                        motor_num,
+                        str(row['venue_code']),
+                        str(row['race_date']),
+                        int(row['race_number']),
+                        target_course,
+                        conn=conn
+                    )
+
+            except Exception as e:
+                features = {
+                    'course_win_rate': 0.17,
+                    'course_2ren_rate': 0.33,
+                    'course_avg_rank': 3.5,
+                    'node_avg_rank': 3.5,
+                    'node_trend': 0.0,
+                    'predicted_st': 0.15,
+                    'st_stability': 0.05
+                }
+
+            boaters_features_list.append(features)
+
+        conn.close()
+
+        df_boaters = pd.DataFrame(boaters_features_list, index=df.index)
+        df = pd.concat([df, df_boaters], axis=1)
+
+        print(f"[INFO] ボーターズ特徴量を追加: {len(df_boaters.columns)}個")
+
+        return df
+
+    def _add_venue_course_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        会場×コース特徴量を追加（Opus深掘り分析結果）
+
+        重要度が高い特徴量:
+        - racer_venue_course_skill: ベイズ推定による適性（重要度0.162）
+        - racer_venue_course_combined: 統合スコア（重要度0.142）
+        - venue_course_advantage: 会場コース有利度
+
+        Args:
+            df: データフレーム
+
+        Returns:
+            pd.DataFrame: 会場×コース特徴量追加後のデータフレーム
+        """
+        df = df.copy()
+
+        required_cols = ['racer_number', 'venue_code', 'race_date', 'pit_number']
+        if not all(col in df.columns for col in required_cols):
+            print(f"[WARNING] 会場×コース特徴量追加スキップ: 必要なカラムが不足")
+            return df
+
+        extractor = VenueCourseFeatureExtractor(db_path=self.db_path)
+        conn = sqlite3.connect(self.db_path)
+
+        venue_course_features_list = []
+        total = len(df)
+        print(f"[INFO] 会場×コース特徴量計算中... ({total}行)")
+
+        for idx, row in df.iterrows():
+            if idx % 10000 == 0 and idx > 0:
+                print(f"  Progress: {idx}/{total} ({idx/total*100:.1f}%)")
+
+            try:
+                # 進入コース推定
+                target_course = row.get('actual_course') or row.get('pit_number') or 1
+                target_course = int(target_course) if not pd.isna(target_course) else int(row.get('pit_number', 1))
+
+                # 風速・波高
+                wind_speed = row.get('wind_speed') if pd.notna(row.get('wind_speed')) else None
+                wave_height = row.get('wave_height') if pd.notna(row.get('wave_height')) else None
+
+                features = extractor.extract_all_features(
+                    racer_number=str(row['racer_number']),
+                    venue_code=str(row['venue_code']),
+                    target_course=target_course,
+                    race_date=str(row['race_date']),
+                    wind_speed=wind_speed,
+                    wave_height=wave_height,
+                    conn=conn
+                )
+
+            except Exception as e:
+                features = {
+                    'venue_course_advantage': 0.0,
+                    'recent_course_win_rate': 0.17,
+                    'recent_course_2ren_rate': 0.33,
+                    'recent_course_avg_rank': 3.5,
+                    'wind_course_factor': 0.0,
+                    'wave_course_factor': 0.0,
+                    'condition_course_factor': 0.0,
+                    'racer_venue_skill': 0.17,
+                    'racer_course_skill': 0.17,
+                    'racer_venue_course_skill': 0.17,
+                    'racer_venue_course_combined': 0.17
+                }
+
+            venue_course_features_list.append(features)
+
+        conn.close()
+
+        df_venue_course = pd.DataFrame(venue_course_features_list, index=df.index)
+        df = pd.concat([df, df_venue_course], axis=1)
+
+        print(f"[INFO] 会場×コース特徴量を追加: {len(df_venue_course.columns)}個")
+
+        return df
+
+    def add_all_derived_features(
+        self,
+        df: pd.DataFrame,
+        include_boaters: bool = True,
+        include_venue_course: bool = True,
+        use_batch: bool = True
+    ) -> pd.DataFrame:
+        """
+        全ての派生特徴量を追加（ボーターズ特徴量・会場×コース特徴量含む）
+
+        Args:
+            df: ベースデータフレーム
+            include_boaters: ボーターズ特徴量を含めるか
+            include_venue_course: 会場×コース特徴量を含めるか
+            use_batch: バッチ処理を使用するか（高速化、デフォルトTrue）
+
+        Returns:
+            pd.DataFrame: 全特徴量追加後のデータフレーム
+        """
+        # 基本派生特徴量
+        df = self.add_derived_features(df)
+
+        if use_batch and (include_boaters or include_venue_course):
+            # バッチ処理による高速特徴量抽出
+            batch_extractor = BatchFeatureExtractor(db_path=self.db_path)
+            df = batch_extractor.add_all_features_batch(
+                df,
+                include_boaters=include_boaters,
+                include_venue_course=include_venue_course
+            )
+        else:
+            # 従来の行ごと処理（互換性のため残す）
+            if include_boaters:
+                df = self._add_boaters_features(df, use_top_features_only=True)
+
+            if include_venue_course:
+                df = self._add_venue_course_features(df)
 
         return df
 

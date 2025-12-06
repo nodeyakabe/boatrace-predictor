@@ -1,0 +1,125 @@
+{
+  "timestamp": "2025-12-06T14:44:34.083626",
+  "data_period": {
+    "start": "2024-10-01",
+    "end": "2024-11-30"
+  },
+  "split_date": "2024-11-15",
+  "sample_size": 17730,
+  "baseline": {
+    "auc": 0.8373731189664964,
+    "accuracy": 0.8589108910891089,
+    "precision": 0.6293929712460063,
+    "recall": 0.41041666666666665,
+    "log_loss": 0.3371857893703328
+  },
+  "with_boaters_features": {
+    "auc": 0.8401298977853492,
+    "accuracy": 0.8585572842998586,
+    "precision": 0.6212121212121212,
+    "recall": 0.4270833333333333,
+    "log_loss": 0.33656639472107025
+  },
+  "improvement": {
+    "auc_pct": 0.32921749652715254,
+    "accuracy_pct": -0.041169205434333306
+  },
+  "new_features_importance": [
+    {
+      "feature": "course_win_rate",
+      "importance": 0.04566546529531479
+    },
+    {
+      "feature": "course_2ren_rate",
+      "importance": 0.014903157949447632
+    },
+    {
+      "feature": "course_avg_rank",
+      "importance": 0.009984448552131653
+    },
+    {
+      "feature": "node_avg_rank",
+      "importance": 0.007680629845708609
+    },
+    {
+      "feature": "course_3ren_rate",
+      "importance": 0.006846231408417225
+    },
+    {
+      "feature": "late_st_rate",
+      "importance": 0.006764353718608618
+    },
+    {
+      "feature": "motor_venue_2ren",
+      "importance": 0.006744177080690861
+    },
+    {
+      "feature": "predicted_st",
+      "importance": 0.006227313540875912
+    },
+    {
+      "feature": "motor_tenji_diff_from_venue",
+      "importance": 0.006143531762063503
+    },
+    {
+      "feature": "node_3ren_rate",
+      "importance": 0.006123021710664034
+    },
+    {
+      "feature": "st_variance",
+      "importance": 0.0060200197622179985
+    },
+    {
+      "feature": "motor_venue_rank",
+      "importance": 0.005864080972969532
+    },
+    {
+      "feature": "motor_tenji_avg",
+      "importance": 0.005757052917033434
+    },
+    {
+      "feature": "early_st_rate",
+      "importance": 0.005704429000616074
+    },
+    {
+      "feature": "st_stability",
+      "importance": 0.005646891426295042
+    },
+    {
+      "feature": "course_race_count",
+      "importance": 0.005359629634767771
+    },
+    {
+      "feature": "node_trend",
+      "importance": 0.005357089918106794
+    },
+    {
+      "feature": "motor_yushutsu_count",
+      "importance": 0.0053550503216683865
+    },
+    {
+      "feature": "aggressive_index",
+      "importance": 0.00529378792271018
+    },
+    {
+      "feature": "node_2ren_rate",
+      "importance": 0.005186074413359165
+    },
+    {
+      "feature": "node_win_rate",
+      "importance": 0.005118152126669884
+    },
+    {
+      "feature": "node_race_count",
+      "importance": 0.004800820257514715
+    },
+    {
+      "feature": "motor_yusho_count",
+      "importance": 0.004601848777383566
+    },
+    {
+      "feature": "motor_sg_g1_rate",
+      "importance": 0.0
+    }
+  ]
+}
