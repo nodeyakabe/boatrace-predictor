@@ -36,6 +36,7 @@ logs/
 
 # Models
 models/
+models_backup_*/
 *.pkl
 *.joblib
 *.h5
@@ -53,3 +54,10 @@ models/
 *.jpg
 *.jpeg
 nul
+
+# Temp analysis files
+temp/analysis/
+temp/check_*.py
+
+# Japanese named temp files (data completion scripts - run locally)
+補完_高度分析データ*.py
