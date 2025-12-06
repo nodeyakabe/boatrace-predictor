@@ -169,7 +169,7 @@ class TenjiCollectionWorkflow:
         return result
 
     def _get_scheduled_races(self, target_date) -> list:
-        """指定日の開催レースを取得"""
+        """指定日の開催レースを取得（DBになければスケジュールから取得）"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
@@ -185,7 +185,45 @@ class TenjiCollectionWorkflow:
         rows = cursor.fetchall()
         conn.close()
 
-        return rows
+        # DBにレースがある場合はそのまま返す
+        if rows:
+            return rows
+
+        # DBにレースがない場合、月間スケジュールから開催場を取得
+        logger.info(f"DB内に {date_str} のレースがありません。スケジュールから取得します。")
+
+        try:
+            from src.scraper.schedule_scraper import ScheduleScraper
+            scraper = ScheduleScraper()
+
+            # 対象月のスケジュールを取得
+            schedule = scraper.get_monthly_schedule(target_date.year, target_date.month)
+            scraper.close()
+
+            # 対象日に開催している会場を抽出
+            target_date_str = target_date.strftime('%Y%m%d')
+            venues_today = []
+            for venue_code, dates in schedule.items():
+                if target_date_str in dates:
+                    venues_today.append(venue_code)
+
+            if not venues_today:
+                logger.warning(f"{date_str} は開催日ではありません")
+                return []
+
+            # 各会場の全12レースを仮想的なレースリストとして返す
+            # (race_id=None, venue_code, race_date, race_number) の形式
+            virtual_races = []
+            for venue_code in sorted(venues_today):
+                for race_number in range(1, 13):
+                    virtual_races.append((None, venue_code, date_str, race_number))
+
+            logger.info(f"スケジュールから {len(venues_today)} 会場 × 12レース = {len(virtual_races)} レースを取得")
+            return virtual_races
+
+        except Exception as e:
+            logger.error(f"スケジュール取得エラー: {e}")
+            return []
 
     def _save_tenji_to_db(self, venue_code: str, date_str: str, race_number: int, tenji_data: dict) -> bool:
         """オリジナル展示データをデータベースに保存"""
@@ -200,11 +238,17 @@ class TenjiCollectionWorkflow:
             ''', (venue_code, date_str, race_number))
 
             race_result = cursor.fetchone()
-            if not race_result:
-                conn.close()
-                return False
 
-            race_id = race_result[0]
+            if not race_result:
+                # レースが存在しない場合は新規作成
+                cursor.execute('''
+                    INSERT INTO races (venue_code, race_date, race_number)
+                    VALUES (?, ?, ?)
+                ''', (venue_code, date_str, race_number))
+                race_id = cursor.lastrowid
+                logger.info(f"新規レース作成: {venue_code} {date_str} R{race_number} (id={race_id})")
+            else:
+                race_id = race_result[0]
             update_count = 0
 
             # 各艇のデータを保存

@@ -129,48 +129,11 @@ def main():
 
     # Tab 2: データ準備
     with tab2:
-        st.header("🔧 データ準備")
-
-        preparation_mode = st.selectbox(
-            "準備内容を選択",
-            ["ワークフロー自動化", "データ収集"]
-        )
-
-        if preparation_mode == "ワークフロー自動化":
-            from ui.components.workflow_manager import render_workflow_manager
-            render_workflow_manager()
-
-        elif preparation_mode == "データ収集":
-            from ui.components.data_collector_unified import render_data_collector
-            render_data_collector()
+        render_data_preparation_tab()
 
     # Tab 3: データ参照
     with tab3:
-        st.header("📊 データ参照")
-
-        data_view = st.selectbox(
-            "表示内容を選択",
-            ["レース結果", "会場分析", "選手分析", "パターン分析", "統計情報", "データ品質"]
-        )
-
-        if data_view == "レース結果":
-            render_race_results_view(target_date, selected_venues)
-
-        elif data_view == "会場分析":
-            render_venue_analysis_page()
-
-        elif data_view == "選手分析":
-            render_racer_analysis_page()
-
-        elif data_view == "パターン分析":
-            render_pattern_analysis_page()
-
-        elif data_view == "統計情報":
-            render_statistics_view()
-
-        elif data_view == "データ品質":
-            from ui.components.data_quality_monitor import render_data_quality_monitor
-            render_data_quality_monitor()
+        render_data_reference_tab(target_date, selected_venues)
 
     # Tab 4: 設定・管理
     with tab4:
@@ -212,6 +175,402 @@ def main():
 
         elif settings_mode == "システム監視":
             render_system_monitor()
+
+
+def render_data_preparation_tab():
+    """データ準備タブ - 改善されたレイアウト"""
+    from src.utils.job_manager import is_job_running, get_job_progress, cancel_job, start_job
+    import os
+
+    PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    JOB_TODAY_PREDICTION = 'today_prediction'
+    JOB_TENJI = 'tenji_collection'
+    JOB_MISSING_DATA = 'missing_data_fetch'
+
+    # ヘッダー
+    st.markdown("""
+    <div style="
+        background: linear-gradient(135deg, rgba(33, 150, 243, 0.1) 0%, rgba(255,255,255,0.95) 100%);
+        border-left: 4px solid #2196f3;
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 16px;
+    ">
+        <h2 style="margin: 0; color: #1565c0;">🔧 データ準備</h2>
+        <p style="margin: 8px 0 0 0; color: #666;">今日の予測生成やデータ収集をワンクリックで実行</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 実行中ジョブの状態表示
+    running_jobs = []
+    for job_name in [JOB_TODAY_PREDICTION, JOB_TENJI, JOB_MISSING_DATA]:
+        if is_job_running(job_name):
+            running_jobs.append((job_name, get_job_progress(job_name)))
+
+    if running_jobs:
+        st.markdown("### 🔄 実行中のジョブ")
+        for job_name, progress in running_jobs:
+            job_labels = {
+                JOB_TODAY_PREDICTION: '今日の予測生成',
+                JOB_TENJI: 'オリジナル展示収集',
+                JOB_MISSING_DATA: 'データ収集'
+            }
+            label = job_labels.get(job_name, job_name)
+
+            with st.container():
+                col1, col2 = st.columns([5, 1])
+                with col1:
+                    pct = progress.get('progress', 0) if progress else 0
+                    msg = progress.get('message', '処理中...') if progress else '処理中...'
+                    st.progress(pct / 100, text=f"**{label}**: {msg}")
+                with col2:
+                    if st.button("⏹️", key=f"stop_{job_name}", help="停止"):
+                        cancel_job(job_name)
+                        st.rerun()
+
+        import time
+        time.sleep(3)
+        st.rerun()
+
+    # メインアクション - カード形式
+    st.markdown("### 🚀 クイックアクション")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # 今日の予測を生成カード
+        st.markdown("""
+        <div style="
+            background: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, white 100%);
+            border: 1px solid #4caf50;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        ">
+            <div style="font-size: 2em; margin-bottom: 8px;">🎯</div>
+            <div style="font-size: 1.1em; font-weight: bold; color: #2e7d32;">今日の予測を生成</div>
+            <div style="font-size: 0.85em; color: #666; margin-top: 4px;">スケジュール取得 → 出走表 → 予測生成</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if not is_job_running(JOB_TODAY_PREDICTION):
+            if st.button("▶️ 実行", key="run_today_pred", type="primary", use_container_width=True):
+                script_path = os.path.join(PROJECT_ROOT, 'scripts', 'background_today_prediction.py')
+                result = start_job(JOB_TODAY_PREDICTION, script_path)
+                if result['success']:
+                    st.success("✅ 開始しました")
+                    st.rerun()
+                else:
+                    st.error(result['message'])
+
+    with col2:
+        # オリジナル展示収集カード
+        st.markdown("""
+        <div style="
+            background: linear-gradient(135deg, rgba(255, 152, 0, 0.15) 0%, white 100%);
+            border: 1px solid #ff9800;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        ">
+            <div style="font-size: 2em; margin-bottom: 8px;">📊</div>
+            <div style="font-size: 1.1em; font-weight: bold; color: #e65100;">オリジナル展示収集</div>
+            <div style="font-size: 0.85em; color: #666; margin-top: 4px;">直線・1周・回り足タイム等</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if not is_job_running(JOB_TENJI):
+            col_t1, col_t2 = st.columns(2)
+            with col_t1:
+                if st.button("📅 今日", key="tenji_today", use_container_width=True):
+                    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'worker_tenji_collection.py')
+                    result = start_job(JOB_TENJI, script_path, args=['0'])
+                    if result['success']:
+                        st.success("✅ 開始しました")
+                        st.rerun()
+            with col_t2:
+                if st.button("📅 昨日", key="tenji_yesterday", use_container_width=True):
+                    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'worker_tenji_collection.py')
+                    result = start_job(JOB_TENJI, script_path, args=['-1'])
+                    if result['success']:
+                        st.success("✅ 開始しました")
+                        st.rerun()
+
+    st.markdown("---")
+
+    # データ収集セクション
+    st.markdown("### 📥 データ収集")
+
+    # 収集状況サマリー
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        cursor.execute("SELECT MAX(race_date) FROM races")
+        latest = cursor.fetchone()[0]
+        st.metric("最新データ", latest if latest else "N/A")
+    with col2:
+        today = datetime.now().strftime("%Y-%m-%d")
+        cursor.execute("SELECT COUNT(*) FROM races WHERE race_date = ?", (today,))
+        st.metric("本日のレース", cursor.fetchone()[0])
+    with col3:
+        cursor.execute("SELECT COUNT(*) FROM races")
+        st.metric("総レース数", f"{cursor.fetchone()[0]:,}")
+    with col4:
+        cursor.execute("SELECT COUNT(*) FROM results")
+        st.metric("結果データ", f"{cursor.fetchone()[0]:,}")
+    conn.close()
+
+    # 収集オプション
+    with st.expander("📥 新規データ収集・補完", expanded=False):
+        st.caption("指定期間のデータを収集します。既存データがある場合は自動でスキップされます。")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("📅 今日", key="collect_today", use_container_width=True):
+                _start_data_collection('today')
+        with col2:
+            if st.button("📅 今週", key="collect_week", use_container_width=True, type="primary"):
+                _start_data_collection('week')
+        with col3:
+            if st.button("📅 期間指定...", key="collect_period", use_container_width=True):
+                st.session_state['show_collect_period'] = True
+
+        if st.session_state.get('show_collect_period'):
+            col1, col2 = st.columns(2)
+            with col1:
+                start_date = st.date_input("開始日", key="coll_start")
+            with col2:
+                end_date = st.date_input("終了日", key="coll_end")
+            if st.button("✅ 実行", key="coll_exec"):
+                _start_data_collection('period', start_date, end_date)
+                st.session_state['show_collect_period'] = False
+
+    # データ品質チェック
+    with st.expander("🔍 データ品質チェック", expanded=False):
+        if st.button("チェック実行", key="quality_check"):
+            try:
+                from src.analysis.data_coverage_checker import DataCoverageChecker
+                checker = DataCoverageChecker(DATABASE_PATH)
+                report = checker.get_coverage_report()
+                overall = report.get('overall_score', 0)
+
+                col1, col2 = st.columns([1, 3])
+                with col1:
+                    st.metric("充足率", f"{overall:.1f}%")
+                with col2:
+                    st.progress(overall / 100)
+
+                if overall >= 0.8:
+                    st.success("✅ データは充実しています")
+                elif overall >= 0.5:
+                    st.warning("⚠️ 一部データが不足しています")
+                else:
+                    st.error("❌ データが大幅に不足しています")
+            except Exception as e:
+                st.error(f"エラー: {e}")
+
+
+def _start_data_collection(collection_type: str, start_date=None, end_date=None):
+    """データ収集をバックグラウンドで開始"""
+    from src.utils.job_manager import start_job
+    import os
+
+    PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    JOB_MISSING_DATA = 'missing_data_fetch'
+
+    if collection_type == 'today':
+        yesterday = datetime.now().date() - timedelta(days=1)
+        start_date = yesterday
+        end_date = yesterday
+    elif collection_type == 'week':
+        yesterday = datetime.now().date() - timedelta(days=1)
+        start_date = yesterday - timedelta(days=6)
+        end_date = yesterday
+
+    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'bulk_missing_data_fetch_parallel.py')
+    args = ['--start-date', str(start_date), '--end-date', str(end_date)]
+
+    result = start_job(JOB_MISSING_DATA, script_path, args=args)
+    if result['success']:
+        st.success(f"✅ {result['message']}")
+        st.rerun()
+    else:
+        st.error(f"❌ {result['message']}")
+
+
+def render_data_reference_tab(target_date, selected_venues):
+    """データ参照タブ - 改善されたレイアウト"""
+
+    # ヘッダー
+    st.markdown("""
+    <div style="
+        background: linear-gradient(135deg, rgba(156, 39, 176, 0.1) 0%, rgba(255,255,255,0.95) 100%);
+        border-left: 4px solid #9c27b0;
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 16px;
+    ">
+        <h2 style="margin: 0; color: #7b1fa2;">📊 データ参照</h2>
+        <p style="margin: 8px 0 0 0; color: #666;">レース結果・会場分析・選手分析など各種データを閲覧</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # タブで分類
+    sub_tab1, sub_tab2, sub_tab3, sub_tab4 = st.tabs([
+        "🏁 レース結果",
+        "🏟️ 会場分析",
+        "👤 選手分析",
+        "📈 統計・品質"
+    ])
+
+    with sub_tab1:
+        _render_race_results_section(target_date, selected_venues)
+
+    with sub_tab2:
+        render_venue_analysis_page()
+
+    with sub_tab3:
+        render_racer_analysis_page()
+
+    with sub_tab4:
+        _render_statistics_section()
+
+
+def _render_race_results_section(target_date, selected_venues):
+    """レース結果セクション"""
+    st.subheader("🏁 レース結果検索")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        start_date = st.date_input("開始日", target_date - timedelta(days=7), key="res_start")
+    with col2:
+        end_date = st.date_input("終了日", target_date, key="res_end")
+
+    try:
+        query = """
+            SELECT
+                r.race_date as 日付,
+                r.venue_code as 会場,
+                r.race_number as R,
+                MAX(CASE WHEN res.rank = 1 THEN res.pit_number END) as '1着',
+                MAX(CASE WHEN res.rank = 2 THEN res.pit_number END) as '2着',
+                MAX(CASE WHEN res.rank = 3 THEN res.pit_number END) as '3着'
+            FROM races r
+            LEFT JOIN results res ON r.id = res.race_id
+            WHERE res.rank <= 3
+              AND r.race_date BETWEEN ? AND ?
+        """
+        params = [start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")]
+
+        if selected_venues:
+            placeholders = ','.join('?' * len(selected_venues))
+            query += f" AND r.venue_code IN ({placeholders})"
+            params.extend(selected_venues)
+
+        query += " GROUP BY r.id ORDER BY r.race_date DESC, r.race_number DESC LIMIT 100"
+
+        df = safe_query_to_df(query, params=params)
+
+        if not df.empty:
+            # 会場名に変換
+            venue_map = {v['code']: v['name'] for v in VENUES.values()}
+            df['会場'] = df['会場'].map(lambda x: venue_map.get(x, x))
+
+            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.caption(f"表示件数: {len(df)}件")
+        else:
+            st.info("該当するレース結果がありません")
+    except Exception as e:
+        st.error(f"エラー: {e}")
+
+
+def _render_statistics_section():
+    """統計・データ品質セクション"""
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("#### 📈 データ統計")
+
+        try:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+
+            # 統計カード
+            stats = []
+            cursor.execute("SELECT COUNT(*) FROM races")
+            stats.append(("総レース数", f"{cursor.fetchone()[0]:,}"))
+
+            cursor.execute("SELECT COUNT(*) FROM entries")
+            stats.append(("出走表", f"{cursor.fetchone()[0]:,}"))
+
+            cursor.execute("SELECT COUNT(*) FROM results")
+            stats.append(("結果", f"{cursor.fetchone()[0]:,}"))
+
+            cursor.execute("SELECT MIN(race_date), MAX(race_date) FROM races")
+            min_d, max_d = cursor.fetchone()
+            stats.append(("データ期間", f"{min_d} ～ {max_d}"))
+
+            conn.close()
+
+            for label, value in stats:
+                st.markdown(f"""
+                <div style="
+                    background: #f5f5f5;
+                    border-radius: 8px;
+                    padding: 12px;
+                    margin-bottom: 8px;
+                    display: flex;
+                    justify-content: space-between;
+                ">
+                    <span style="color: #666;">{label}</span>
+                    <span style="font-weight: bold;">{value}</span>
+                </div>
+                """, unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"統計取得エラー: {e}")
+
+    with col2:
+        st.markdown("#### 🔍 データ品質")
+
+        try:
+            from src.analysis.data_coverage_checker import DataCoverageChecker
+            checker = DataCoverageChecker(DATABASE_PATH)
+            report = checker.get_coverage_report()
+
+            overall = report.get('overall_score', 0)
+
+            # 全体スコア表示
+            color = "#4caf50" if overall >= 0.8 else "#ff9800" if overall >= 0.5 else "#f44336"
+            st.markdown(f"""
+            <div style="
+                background: linear-gradient(135deg, rgba(0,0,0,0.02) 0%, white 100%);
+                border: 2px solid {color};
+                border-radius: 12px;
+                padding: 20px;
+                text-align: center;
+            ">
+                <div style="font-size: 2.5em; font-weight: bold; color: {color};">{overall:.0f}%</div>
+                <div style="color: #666;">データ充足率</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # カテゴリ別
+            st.markdown("")
+            categories = report.get('categories', {})
+            for cat_name, cat_data in list(categories.items())[:5]:
+                items = cat_data.get('items', [])
+                avg = sum(i.get('coverage', 0) for i in items) / len(items) if items else 0
+                st.progress(avg, text=f"{cat_name}: {avg*100:.0f}%")
+
+        except Exception as e:
+            st.warning(f"品質チェック: {e}")
+
+        if st.button("詳細を見る", key="quality_detail"):
+            from ui.components.data_quality_monitor import render_data_quality_monitor
+            render_data_quality_monitor()
 
 
 def render_race_results_view(target_date, selected_venues):

@@ -14,6 +14,12 @@
 """
 import sys
 import os
+import io
+
+# Windows環境でのstdout/stderrエンコーディングをUTF-8に設定
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 import time
 import sqlite3
 from datetime import datetime

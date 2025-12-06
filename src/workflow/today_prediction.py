@@ -280,6 +280,17 @@ class TodayPredictionWorkflow:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
+        # 既に直前情報が取得済みのレースIDを取得
+        today = datetime.now().strftime('%Y-%m-%d')
+        cursor.execute("""
+            SELECT DISTINCT rd.race_id
+            FROM race_details rd
+            JOIN races r ON rd.race_id = r.id
+            WHERE r.race_date = ?
+              AND rd.adjusted_weight IS NOT NULL
+        """, (today,))
+        existing_race_ids = {row[0] for row in cursor.fetchall()}
+
         all_races = []
         for venue_code, race_date in today_schedule.items():
             race_date_iso = f"{race_date[:4]}-{race_date[4:6]}-{race_date[6:8]}"
@@ -290,6 +301,9 @@ class TodayPredictionWorkflow:
             """, (venue_code, race_date_iso))
 
             for row in cursor.fetchall():
+                # 既に直前情報がある場合はスキップ
+                if row[0] in existing_race_ids:
+                    continue
                 all_races.append({
                     'race_id': row[0],
                     'venue_code': venue_code,
@@ -297,6 +311,8 @@ class TodayPredictionWorkflow:
                     'race_number': row[1]
                 })
         conn.close()
+
+        logger.info(f"直前情報取得: 対象{len(all_races)}レース (既存スキップ: {len(existing_race_ids)}件)")
 
         if not all_races:
             return 0
@@ -364,6 +380,16 @@ class TodayPredictionWorkflow:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
+        # 既にオッズが取得済みのレースIDを取得
+        today = datetime.now().strftime('%Y-%m-%d')
+        cursor.execute("""
+            SELECT DISTINCT t.race_id
+            FROM trifecta_odds t
+            JOIN races r ON t.race_id = r.id
+            WHERE r.race_date = ?
+        """, (today,))
+        existing_race_ids = {row[0] for row in cursor.fetchall()}
+
         all_races = []
         for venue_code, race_date in today_schedule.items():
             race_date_iso = f"{race_date[:4]}-{race_date[4:6]}-{race_date[6:8]}"
@@ -374,6 +400,9 @@ class TodayPredictionWorkflow:
             """, (venue_code, race_date_iso))
 
             for row in cursor.fetchall():
+                # 既にオッズがある場合はスキップ
+                if row[0] in existing_race_ids:
+                    continue
                 all_races.append({
                     'race_id': row[0],
                     'venue_code': venue_code,
@@ -381,6 +410,8 @@ class TodayPredictionWorkflow:
                     'race_number': row[1]
                 })
         conn.close()
+
+        logger.info(f"オッズ取得: 対象{len(all_races)}レース (既存スキップ: {len(existing_race_ids)}件)")
 
         if not all_races:
             return 0

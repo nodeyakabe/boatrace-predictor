@@ -66,8 +66,7 @@ def _render_accuracy_focused():
         for venue_id, venue_info in VENUES.items():
             venue_name_map[venue_info['code']] = venue_info['name']
 
-        # レース情報と予想スコアを取得（信頼度順）
-        # 初期予想と直前予想を別々に取得
+        # レース情報と予想スコアを取得（初期・直前両方）
         cursor.execute("""
             SELECT
                 r.id as race_id,
@@ -90,7 +89,7 @@ def _render_accuracy_focused():
             JOIN race_predictions rp ON r.id = rp.race_id
             WHERE r.race_date = ?
             GROUP BY r.id, rp.prediction_type
-            ORDER BY best_confidence_rank ASC, max_score DESC
+            ORDER BY r.id, rp.prediction_type
         """, (target_date_str,))
 
         race_rows = cursor.fetchall()
@@ -101,13 +100,22 @@ def _render_accuracy_focused():
             conn.close()
             return
 
-        st.success(f"📊 本日の予想データ: {len(race_rows)}件 (上位20件をカード表示、全件をテーブル表示)")
-
-        # レースカードデータを作成
-        recommended_races = []
-
+        # race_idごとに初期・直前をグループ化
+        race_data_by_id = {}
         for row in race_rows:
             race_id, venue_code, race_number, race_time, race_date, avg_score, max_score, best_confidence_rank, predictions_data, prediction_type = row
+
+            if race_id not in race_data_by_id:
+                race_data_by_id[race_id] = {
+                    'race_id': race_id,
+                    'venue_code': venue_code,
+                    'race_number': race_number,
+                    'race_time': race_time,
+                    'race_date': race_date,
+                    'venue_name': venue_name_map.get(venue_code, f'会場{venue_code}'),
+                    'initial': None,
+                    'before': None
+                }
 
             # 予想データをパース
             predictions = []
@@ -121,88 +129,83 @@ def _render_accuracy_focused():
                         'score': float(score),
                         'confidence': confidence
                     })
-
-            # 予想を順位でソート
             predictions.sort(key=lambda x: x['rank'])
 
-            # 上位3艇を抽出
-            top3 = predictions[:3]
-
-            # 2段階戦略の買い目を生成
-            if len(top3) >= 3:
-                first = top3[0]['pit_number']
-                second = top3[1]['pit_number']
-                third = top3[2]['pit_number']
-
-                # 3連単（5点）: 1着固定、2-3着流し
-                trifecta_bets = [
-                    f"{first}-{second}-{third}",
-                    f"{first}-{third}-{second}",
-                    f"{second}-{first}-{third}",
-                    f"{second}-{third}-{first}",
-                    f"{third}-{first}-{second}",
-                ]
-
-                # 3連複（1点）: BOX
-                trio_bet = f"{first}={second}={third}"
-
-                # メイン買い目（本命）
-                main_bet = f"{first}-{second}-{third}"
-
-                # 表示用テキスト
-                bet_display = f"3連単{len(trifecta_bets)}点 + 3連複1点"
-            else:
-                trifecta_bets = []
-                trio_bet = ""
-                main_bet = '-'.join([str(p['pit_number']) for p in top3])
-                bet_display = main_bet
-
-            # 信頼度の計算: 上位3艇の信頼度レベルから算出
-            # A=100%, B=80%, C=60%, D=40%, E=20%
+            # 信頼度計算
             confidence_map = {'A': 100, 'B': 80, 'C': 60, 'D': 40, 'E': 20}
+            top3 = predictions[:3]
             top3_confidences = [confidence_map.get(p['confidence'], 50) for p in top3 if 'confidence' in p]
-
             if top3_confidences:
-                # 上位3艇の信頼度の加重平均（1着重視）
                 weights = [0.5, 0.3, 0.2]
                 confidence = sum(c * w for c, w in zip(top3_confidences, weights[:len(top3_confidences)]))
             else:
-                # フォールバック: スコアベース
                 confidence = min(100, max(20, avg_score * 8))
 
-            # 予想タイプのラベル
-            type_label = '直前' if prediction_type == 'before' else '初期'
+            # 買い目生成
+            if len(top3) >= 3:
+                first, second, third = top3[0]['pit_number'], top3[1]['pit_number'], top3[2]['pit_number']
+                trifecta_bets = [f"{first}-{second}-{third}", f"{first}-{third}-{second}",
+                                f"{second}-{first}-{third}", f"{second}-{third}-{first}", f"{third}-{first}-{second}"]
+                trio_bet = f"{first}={second}={third}"
+                main_bet = f"{first}-{second}-{third}"
+            else:
+                trifecta_bets, trio_bet = [], ""
+                main_bet = '-'.join([str(p['pit_number']) for p in top3])
 
-            recommended_races.append({
-                '会場': venue_name_map.get(venue_code, f'会場{venue_code}'),
-                'レース': f"{race_number}R",
-                '時刻': race_time or '未定',
-                '本命': f"{top3[0]['pit_number']}号艇" if top3 else '-',
-                '買い目': main_bet,
-                '買い目表示': bet_display,
-                '3連単': trifecta_bets,
-                '3連複': trio_bet,
-                '買い目詳細': [f"{p['pit_number']}号艇" for p in top3],
-                '信頼度': confidence,
-                '平均スコア': avg_score,
-                'badge': render_confidence_badge(confidence),
-                'race_id': race_id,
-                'race_date': race_date,
-                'venue_code': venue_code,
-                'race_number': race_number,
+            pred_data = {
                 'predictions': predictions,
-                'prediction_type': prediction_type,
-                'type_label': type_label
-            })
+                'top3': top3,
+                'confidence': confidence,
+                'avg_score': avg_score,
+                'main_bet': main_bet,
+                'trifecta_bets': trifecta_bets,
+                'trio_bet': trio_bet
+            }
+
+            if prediction_type == 'before':
+                race_data_by_id[race_id]['before'] = pred_data
+            else:
+                race_data_by_id[race_id]['initial'] = pred_data
 
         conn.close()
 
-        # 信頼度の降順でソート
-        recommended_races.sort(key=lambda x: x['信頼度'], reverse=True)
+        # 統合レースリストを作成（直前があれば直前の信頼度でソート）
+        recommended_races = []
+        for race_id, data in race_data_by_id.items():
+            # 直前予想があれば直前の信頼度を使用
+            if data['before']:
+                sort_confidence = data['before']['confidence']
+                primary_pred = data['before']
+            elif data['initial']:
+                sort_confidence = data['initial']['confidence']
+                primary_pred = data['initial']
+            else:
+                continue
+
+            recommended_races.append({
+                'race_id': race_id,
+                '会場': data['venue_name'],
+                'レース': f"{data['race_number']}R",
+                '時刻': data['race_time'] or '未定',
+                'race_date': data['race_date'],
+                'venue_code': data['venue_code'],
+                'race_number': data['race_number'],
+                'initial': data['initial'],
+                'before': data['before'],
+                'sort_confidence': sort_confidence,  # ソート用
+                'badge': render_confidence_badge(sort_confidence)
+            })
+
+        # 直前があれば直前、なければ初期の信頼度でソート
+        recommended_races.sort(key=lambda x: x['sort_confidence'], reverse=True)
+
+        # 実際のレース数をカウント
+        unique_races = len(recommended_races)
+        st.success(f"📊 本日の予想データ: {unique_races}レース (上位20件をカード表示、全件をテーブル表示)")
 
         # レースカード表示（上位20件のみ）
         st.subheader("🏆 おすすめレース TOP20")
-        _render_race_cards_v2(recommended_races[:20])
+        _render_race_cards_combined(recommended_races[:20])
 
         # 全レース一覧テーブル
         st.markdown("---")
@@ -210,17 +213,21 @@ def _render_accuracy_focused():
 
         df_data = []
         for i, r in enumerate(recommended_races, 1):
+            initial = r.get('initial')
+            before = r.get('before')
+
+            initial_bet = initial['main_bet'] if initial else '-'
+            before_bet = before['main_bet'] if before else '-'
+            confidence = before['confidence'] if before else (initial['confidence'] if initial else 0)
+
             df_data.append({
                 '順位': i,
-                '種別': r.get('type_label', '初期'),
                 '会場': r['会場'],
                 'レース': r['レース'],
                 '時刻': r['時刻'],
-                '買い目': r.get('買い目表示', r['買い目']),
-                '3連単': ', '.join(r.get('3連単', [])[:3]) if r.get('3連単') else '-',
-                '3連複': r.get('3連複', '-'),
-                '信頼度': f"{r['信頼度']:.1f}%",
-                'スコア': f"{r['平均スコア']:.2f}"
+                '初期予想': initial_bet,
+                '直前予想': before_bet if before else '-',
+                '信頼度': f"{confidence:.1f}%",
             })
 
         df = pd.DataFrame(df_data)
@@ -230,6 +237,116 @@ def _render_accuracy_focused():
         st.error(f"エラーが発生しました: {e}")
         import traceback
         st.code(traceback.format_exc())
+
+
+def _render_race_cards_combined(race_list: List[Dict], key_prefix: str = "comb"):
+    """初期と直前を1つにまとめたレースカードを表示
+
+    Args:
+        race_list: レースデータのリスト（initial/beforeを含む）
+        key_prefix: ボタンキーのプレフィックス
+    """
+
+    for idx, race in enumerate(race_list, 1):
+        initial = race.get('initial')
+        before = race.get('before')
+
+        # 信頼度（直前があれば直前を使用）
+        confidence = race.get('sort_confidence', 0)
+
+        # 信頼度に応じたスタイル
+        if confidence >= 80:
+            conf_color = "#e53935"  # 赤
+            conf_bg = "rgba(229, 57, 53, 0.1)"
+        elif confidence >= 70:
+            conf_color = "#fb8c00"  # オレンジ
+            conf_bg = "rgba(251, 140, 0, 0.1)"
+        elif confidence >= 60:
+            conf_color = "#43a047"  # 緑
+            conf_bg = "rgba(67, 160, 71, 0.1)"
+        else:
+            conf_color = "#757575"  # グレー
+            conf_bg = "rgba(117, 117, 117, 0.1)"
+
+        has_before = before is not None
+
+        # カード全体をコンテナで囲む
+        with st.container():
+            # カードスタイル（CSS）
+            st.markdown(f"""
+            <div style="
+                background: linear-gradient(135deg, {conf_bg} 0%, rgba(255,255,255,0.95) 100%);
+                border-left: 4px solid {conf_color};
+                border-radius: 8px;
+                padding: 12px 16px;
+                margin-bottom: 8px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            ">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span style="
+                            font-size: 1.5em;
+                            font-weight: bold;
+                            color: {conf_color};
+                            min-width: 32px;
+                        ">{idx}</span>
+                        <div>
+                            <span style="font-size: 1.1em; font-weight: bold;">{race['会場']} {race['レース']}</span>
+                            <span style="
+                                background: {'#e53935' if has_before else '#9e9e9e'};
+                                color: white;
+                                padding: 2px 8px;
+                                border-radius: 12px;
+                                font-size: 0.75em;
+                                margin-left: 8px;
+                            ">{'直前' if has_before else '初期'}</span>
+                            <div style="color: #666; font-size: 0.85em;">⏰ {race['時刻']}</div>
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 1.3em; font-weight: bold; color: {conf_color};">{confidence:.0f}%</div>
+                        <div style="font-size: 0.8em; color: #666;">信頼度</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # 買い目表示（初期と直前を横並び）
+            pred_col1, pred_col2, btn_col = st.columns([4, 4, 1.5])
+
+            with pred_col1:
+                if initial:
+                    bets = initial.get('trifecta_bets', [])
+                    st.markdown("**⚪ 初期予想** (3連単5点)")
+                    if bets:
+                        # 5点を見やすく表示
+                        bet_text = " / ".join(bets[:5])
+                        st.code(bet_text, language=None)
+                else:
+                    st.caption("初期予想なし")
+
+            with pred_col2:
+                if before:
+                    bets = before.get('trifecta_bets', [])
+                    st.markdown("**🔴 直前予想** (3連単5点)")
+                    if bets:
+                        bet_text = " / ".join(bets[:5])
+                        st.code(bet_text, language=None)
+                else:
+                    st.caption("直前予想なし")
+
+            with btn_col:
+                st.write("")  # スペーサー
+                if st.button("詳細→", key=f"detail_{key_prefix}_{idx}", use_container_width=True):
+                    st.session_state.selected_race = {
+                        'race_date': race['race_date'],
+                        'venue_code': race['venue_code'],
+                        'race_number': race['race_number'],
+                    }
+                    st.session_state.show_detail = True
+                    st.rerun()
+
+            st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
 
 
 def _render_value_focused():
@@ -703,8 +820,8 @@ def _render_beforeinfo_dialog():
     with col2:
         st.caption("⚙️ 自動スキップ:")
         st.caption("• 確定済み＆取得済み → スキップ")
-        st.caption("• 次のレース → 常に取得")
-        st.caption("• 未取得 → 取得")
+        st.caption("• 35分以上先 → スキップ（未公開）")
+        st.caption("• 次のレース/まもなく → 取得")
 
     target_races = []
 
@@ -856,6 +973,12 @@ def _fetch_and_update_beforeinfo(target_races: List[Dict]):
                           race_number >= next_race_num and
                           race_number <= next_race_num + 1)
 
+            # 直前情報公開判定（レース開始30分前から公開される）
+            try:
+                is_soon = now > (race_time_dt - timedelta(minutes=35))  # 35分前から対象
+            except:
+                is_soon = True  # 時刻不明なら取得対象
+
             # スキップ判定
             if is_finished and has_beforeinfo:
                 # 確定済み & 取得済み → スキップ
@@ -868,8 +991,12 @@ def _fetch_and_update_beforeinfo(target_races: List[Dict]):
                 continue
 
             if not has_beforeinfo:
-                # 未取得 → 取得
-                races_to_fetch.append(race)
+                if is_soon or is_finished:
+                    # 未取得 & (まもなく or 終了済み) → 取得
+                    races_to_fetch.append(race)
+                else:
+                    # 未取得 & まだ先 → スキップ（直前情報未公開）
+                    skipped_future_fetched += 1
                 continue
 
             # それ以外（未確定 & 取得済み & 次のレースではない）→ スキップ
@@ -880,17 +1007,17 @@ def _fetch_and_update_beforeinfo(target_races: List[Dict]):
             if skipped_finished_fetched > 0:
                 st.info(f"✅ 確定済み＆取得済みスキップ: {skipped_finished_fetched}件")
             if skipped_future_fetched > 0:
-                st.info(f"⏭️ 未確定＆取得済みスキップ: {skipped_future_fetched}件")
+                st.info(f"⏭️ 未公開/取得済みスキップ: {skipped_future_fetched}件")
             return
 
         # スキップ情報表示
         if skipped_finished_fetched > 0 or skipped_future_fetched > 0:
             skip_msg = []
             if skipped_finished_fetched > 0:
-                skip_msg.append(f"確定済み＆取得済み: {skipped_finished_fetched}件")
+                skip_msg.append(f"確定済み: {skipped_finished_fetched}件")
             if skipped_future_fetched > 0:
-                skip_msg.append(f"未確定＆取得済み: {skipped_future_fetched}件")
-            st.info(f"スキップ: {', '.join(skip_msg)}")
+                skip_msg.append(f"未公開/取得済み: {skipped_future_fetched}件")
+            st.info(f"⏭️ スキップ: {', '.join(skip_msg)}")
 
         # 進捗表示
         progress_bar = st.progress(0)
@@ -950,23 +1077,16 @@ def _fetch_and_update_beforeinfo(target_races: List[Dict]):
         progress_bar.empty()
         status_text.empty()
 
-        # 結果表示
-        result_parts = []
+        # 結果をまとめて表示（中間メッセージを消す）
         if success_count > 0:
-            result_parts.append(f"成功: {success_count}件")
-        if no_data_count > 0:
-            result_parts.append(f"データなし: {no_data_count}件")
-        if error_count > 0:
-            result_parts.append(f"エラー: {error_count}件")
-
-        if success_count > 0:
-            st.success(f"✅ 直前情報取得完了 ({', '.join(result_parts)})")
-
-            # DBに保存
-            st.info("💾 直前情報をDBに保存中...")
+            # DBに保存（メッセージなしで実行）
             saved_count = _save_beforeinfo_to_db(fetched_data)
-            if saved_count > 0:
-                st.success(f"💾 {saved_count}件のデータをDBに保存しました")
+
+            # 最終結果のみ表示
+            result_msg = f"✅ 直前情報取得完了: {success_count}件取得"
+            if no_data_count > 0:
+                result_msg += f" (未公開: {no_data_count}件)"
+            st.success(result_msg)
 
             # 取得データのサマリーを表示
             with st.expander("📋 取得データの詳細", expanded=False):
@@ -1001,11 +1121,12 @@ def _fetch_and_update_beforeinfo(target_races: List[Dict]):
 
             # 自動で予想更新を実行（賢いフィルタリング）
             st.markdown("---")
-            st.info("🔄 直前予想を更新中...")
             _update_predictions_with_beforeinfo(fetched_data, all_races=target_races)
 
+        elif no_data_count > 0 and success_count == 0:
+            st.info(f"⏳ 直前情報未公開: {no_data_count}件 (レース開始約30分前に公開されます)")
         else:
-            st.warning(f"直前情報を取得できませんでした ({', '.join(result_parts)})")
+            st.warning("直前情報を取得できませんでした")
 
     except Exception as e:
         st.error(f"エラーが発生しました: {e}")
@@ -1051,7 +1172,7 @@ def _update_predictions_with_beforeinfo(fetched_data: List[Dict], all_races: Lis
             races_to_update = fetched_data
 
         if skipped_finished > 0:
-            st.info(f"⏭️ 確定済みレースの予想更新をスキップ: {skipped_finished}件")
+            st.info(f"⏭️ 確定済みレースをスキップ: {skipped_finished}件")
 
         # レースIDリストを作成
         race_ids = [data['race_id'] for data in races_to_update]
@@ -1062,19 +1183,17 @@ def _update_predictions_with_beforeinfo(fetched_data: List[Dict], all_races: Lis
             return
 
         start_time = time.time()
-        st.info(f"📊 PredictionUpdater初期化中... (対象: {total}レース)")
+
+        # 進捗表示用プレースホルダー（処理完了後にクリア）
+        status_placeholder = st.empty()
+        progress_bar = st.progress(0)
+        detail_placeholder = st.empty()
+
+        status_placeholder.info(f"🔄 予想を更新中... (対象: {total}レース)")
 
         updater = PredictionUpdater()
 
-        init_time = time.time() - start_time
-        st.info(f"✅ 初期化完了 ({init_time:.1f}秒)")
-
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        time_text = st.empty()
-
         # 進捗コールバック
-        last_update_time = [time.time()]
         def update_progress(current, total_count):
             progress_bar.progress(current / total_count)
             now = time.time()
@@ -1084,15 +1203,12 @@ def _update_predictions_with_beforeinfo(fetched_data: List[Dict], all_races: Lis
 
             if current <= len(races_to_update):
                 data = races_to_update[current - 1]
-                status_text.text(f"更新中: {data['venue_name']} {data['race_number']}R ({current}/{total_count})")
-                time_text.text(f"経過: {elapsed:.0f}秒 | 1レース: {per_race:.2f}秒 | 残り: {eta:.0f}秒")
+                detail_placeholder.text(f"{data['venue_name']} {data['race_number']}R ({current}/{total_count}) - 残り約{eta:.0f}秒")
 
         # 今日の日付
         target_date = datetime.now().strftime('%Y-%m-%d')
 
-        # バッチ更新（日次データを一括ロードして高速化）
-        load_start = time.time()
-        st.info("📊 日次データを一括ロード中...")
+        # バッチ更新
         stats = updater.update_batch_before_predictions(
             race_ids=race_ids,
             target_date=target_date,
@@ -1100,18 +1216,19 @@ def _update_predictions_with_beforeinfo(fetched_data: List[Dict], all_races: Lis
         )
 
         total_time = time.time() - start_time
-        st.info(f"⏱️ 総処理時間: {total_time:.1f}秒 ({total_time/60:.1f}分)")
 
+        # 進捗表示をクリア
+        status_placeholder.empty()
         progress_bar.empty()
-        status_text.empty()
+        detail_placeholder.empty()
 
         updated_count = stats['updated']
         failed_count = stats['failed']
 
         if updated_count > 0:
-            st.success(f"✅ 予想更新完了: {updated_count}件成功, {failed_count}件失敗")
-            st.info("ページを更新すると最新の予想が表示されます")
-            st.button("🔄 ページを更新", on_click=st.rerun)
+            st.success(f"✅ 予想更新完了: {updated_count}件成功 ({total_time:.1f}秒)")
+            if failed_count > 0:
+                st.warning(f"⚠️ {failed_count}件失敗")
         else:
             st.warning("予想を更新できませんでした")
 
