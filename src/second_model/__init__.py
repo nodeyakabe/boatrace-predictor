@@ -1,8 +1,15 @@
+# -*- coding: utf-8 -*-
 """
-2着予測モデル（条件付き）
-Phase 2: 1着確定後の2着予測
+second_model - Second place prediction models
+
+Phase 2: Conditional second place prediction after first place is determined
 """
 from .second_predictor import SecondPlacePredictor
 from .second_features import SecondPlaceFeatureGenerator
+from .second_features_v2 import SecondFeaturesGenerator
 
-__all__ = ['SecondPlacePredictor', 'SecondPlaceFeatureGenerator']
+__all__ = [
+    'SecondPlacePredictor',
+    'SecondPlaceFeatureGenerator',
+    'SecondFeaturesGenerator',
+]
