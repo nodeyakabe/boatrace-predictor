@@ -7,6 +7,7 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
+import math
 from datetime import datetime, timedelta
 import sys
 import os
@@ -107,25 +108,8 @@ def main():
             else:
                 render_unified_race_list()
         else:
-            # 通常の予想モード選択
-            prediction_mode = st.selectbox(
-                "予想モードを選択",
-                ["レース一覧・推奨", "レース詳細分析", "購入履歴", "バックテスト"]
-            )
-
-            if prediction_mode == "レース一覧・推奨":
-                render_unified_race_list()
-
-            elif prediction_mode == "レース詳細分析":
-                render_unified_race_detail()
-
-            elif prediction_mode == "購入履歴":
-                from ui.components.bet_history import render_bet_history_page
-                render_bet_history_page()
-
-            elif prediction_mode == "バックテスト":
-                from ui.components.backtest import render_backtest_page
-                render_backtest_page()
+            # レース一覧を表示（総合タブが最初に表示される）
+            render_unified_race_list()
 
     # Tab 2: データ準備
     with tab2:
@@ -439,24 +423,28 @@ def render_data_reference_tab(target_date, selected_venues):
 
 
 def _render_race_results_section(target_date, selected_venues):
-    """レース結果セクション"""
-    st.subheader("🏁 レース結果検索")
+    """レース結果セクション - 予想との照合（信頼度・払戻金付き）"""
+    st.subheader("🏁 レース結果と予想の照合")
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         start_date = st.date_input("開始日", target_date - timedelta(days=7), key="res_start")
     with col2:
         end_date = st.date_input("終了日", target_date, key="res_end")
+    with col3:
+        prediction_type = st.selectbox("予想タイプ", ["advance", "before"], format_func=lambda x: "事前予想" if x == "advance" else "直前予想", key="pred_type")
 
     try:
+        # レース結果を取得
         query = """
             SELECT
-                r.race_date as 日付,
-                r.venue_code as 会場,
-                r.race_number as R,
-                MAX(CASE WHEN res.rank = 1 THEN res.pit_number END) as '1着',
-                MAX(CASE WHEN res.rank = 2 THEN res.pit_number END) as '2着',
-                MAX(CASE WHEN res.rank = 3 THEN res.pit_number END) as '3着'
+                r.id as race_id,
+                r.race_date,
+                r.venue_code,
+                r.race_number,
+                MAX(CASE WHEN res.rank = 1 THEN res.pit_number END) as result_1st,
+                MAX(CASE WHEN res.rank = 2 THEN res.pit_number END) as result_2nd,
+                MAX(CASE WHEN res.rank = 3 THEN res.pit_number END) as result_3rd
             FROM races r
             LEFT JOIN results res ON r.id = res.race_id
             WHERE res.rank <= 3
@@ -469,21 +457,187 @@ def _render_race_results_section(target_date, selected_venues):
             query += f" AND r.venue_code IN ({placeholders})"
             params.extend(selected_venues)
 
-        query += " GROUP BY r.id ORDER BY r.race_date DESC, r.race_number DESC LIMIT 100"
+        query += " GROUP BY r.id ORDER BY r.race_date DESC, r.venue_code, r.race_number"
 
-        df = safe_query_to_df(query, params=params)
+        df_results = safe_query_to_df(query, params=params)
 
-        if not df.empty:
-            # 会場名に変換
-            venue_map = {v['code']: v['name'] for v in VENUES.values()}
-            df['会場'] = df['会場'].map(lambda x: venue_map.get(x, x))
-
-            st.dataframe(df, use_container_width=True, hide_index=True)
-            st.caption(f"表示件数: {len(df)}件")
-        else:
+        if df_results.empty:
             st.info("該当するレース結果がありません")
+            return
+
+        # 予想データを取得（信頼度も含む）
+        race_ids = df_results['race_id'].tolist()
+        if not race_ids:
+            st.info("レースIDがありません")
+            return
+
+        placeholders = ','.join('?' * len(race_ids))
+        pred_query = f"""
+            SELECT race_id, pit_number, rank_prediction, confidence, total_score
+            FROM race_predictions
+            WHERE race_id IN ({placeholders})
+              AND prediction_type = ?
+        """
+        pred_params = race_ids + [prediction_type]
+        df_predictions = safe_query_to_df(pred_query, params=pred_params)
+
+        # 三連単払戻金を取得（payoutsテーブルから）
+        payout_query = f"""
+            SELECT race_id, combination, amount
+            FROM payouts
+            WHERE race_id IN ({placeholders})
+              AND bet_type = 'trifecta'
+        """
+        df_payouts = safe_query_to_df(payout_query, params=race_ids)
+
+        # 払戻金辞書を作成（race_id -> {combination: amount}）
+        payout_dict = {}
+        for _, row in df_payouts.iterrows():
+            race_id = row['race_id']
+            if race_id not in payout_dict:
+                payout_dict[race_id] = {}
+            payout_dict[race_id][row['combination']] = row['amount']
+
+        # 予想を整形（race_idごとに1位予想、2位予想、3位予想、信頼度を取得）
+        pred_dict = {}
+        for race_id in race_ids:
+            race_preds = df_predictions[df_predictions['race_id'] == race_id]
+            if not race_preds.empty:
+                sorted_preds = race_preds.sort_values('rank_prediction')
+                pred_1st = sorted_preds.iloc[0]['pit_number'] if len(sorted_preds) > 0 else None
+                pred_2nd = sorted_preds.iloc[1]['pit_number'] if len(sorted_preds) > 1 else None
+                pred_3rd = sorted_preds.iloc[2]['pit_number'] if len(sorted_preds) > 2 else None
+                # 1位予想の信頼度とスコアを取得
+                confidence = sorted_preds.iloc[0]['confidence'] if len(sorted_preds) > 0 else None
+                total_score = sorted_preds.iloc[0]['total_score'] if len(sorted_preds) > 0 else None
+                pred_dict[race_id] = (pred_1st, pred_2nd, pred_3rd, confidence, total_score)
+            else:
+                pred_dict[race_id] = (None, None, None, None, None)
+
+        # 的中判定
+        results_data = []
+        hit_1st = 0
+        hit_1st_2nd = 0
+        hit_trifecta = 0
+        total_with_pred = 0
+        total_payout = 0  # 的中時の払戻金合計
+
+        venue_map = {v['code']: v['name'] for v in VENUES.values()}
+
+        for _, row in df_results.iterrows():
+            race_id = row['race_id']
+            venue_name = venue_map.get(row['venue_code'], row['venue_code'])
+
+            result_1st = row['result_1st']
+            result_2nd = row['result_2nd']
+            result_3rd = row['result_3rd']
+
+            # 結果の組み合わせから払戻金を取得（payoutsテーブルから直接取得）
+            trifecta_payout = None
+            if result_1st and result_2nd and result_3rd:
+                combination = f"{int(result_1st)}-{int(result_2nd)}-{int(result_3rd)}"
+                race_payouts = payout_dict.get(race_id, {})
+                trifecta_payout = race_payouts.get(combination)
+
+            pred = pred_dict.get(race_id, (None, None, None, None, None))
+            pred_1st, pred_2nd, pred_3rd, confidence, total_score = pred
+
+            # 信頼度表示
+            if confidence:
+                conf_map = {'high': '高', 'medium': '中', 'low': '低'}
+                conf_display = conf_map.get(confidence, confidence)
+            else:
+                conf_display = '-'
+
+            # 払戻金表示（NaNチェック）
+            if trifecta_payout and not (isinstance(trifecta_payout, float) and math.isnan(trifecta_payout)):
+                payout_display = f"¥{int(trifecta_payout):,}"
+            else:
+                payout_display = '-'
+
+            # 的中判定
+            if pred_1st is not None:
+                total_with_pred += 1
+                hit_1 = "◎" if pred_1st == result_1st else "×"
+                hit_12 = "◎" if (pred_1st == result_1st and pred_2nd == result_2nd) else "×"
+                hit_123 = "◎" if (pred_1st == result_1st and pred_2nd == result_2nd and pred_3rd == result_3rd) else "×"
+
+                if hit_1 == "◎":
+                    hit_1st += 1
+                if hit_12 == "◎":
+                    hit_1st_2nd += 1
+                if hit_123 == "◎":
+                    hit_trifecta += 1
+                    if trifecta_payout and not (isinstance(trifecta_payout, float) and math.isnan(trifecta_payout)):
+                        total_payout += trifecta_payout
+            else:
+                hit_1 = "-"
+                hit_12 = "-"
+                hit_123 = "-"
+
+            results_data.append({
+                '日付': row['race_date'],
+                '会場': venue_name,
+                'R': row['race_number'],
+                '結果': f"{int(result_1st) if result_1st else '-'}-{int(result_2nd) if result_2nd else '-'}-{int(result_3rd) if result_3rd else '-'}",
+                '予想': f"{int(pred_1st) if pred_1st else '-'}-{int(pred_2nd) if pred_2nd else '-'}-{int(pred_3rd) if pred_3rd else '-'}",
+                '信頼度': conf_display,
+                '1着': hit_1,
+                '3連単': hit_123,
+                '払戻金': payout_display
+            })
+
+        # 的中率サマリー
+        if total_with_pred > 0:
+            st.markdown("### 📊 的中率サマリー")
+            col1, col2, col3, col4, col5 = st.columns(5)
+            with col1:
+                rate_1st = hit_1st / total_with_pred * 100
+                st.metric("1着的中", f"{hit_1st}/{total_with_pred}", f"{rate_1st:.1f}%")
+            with col2:
+                rate_12 = hit_1st_2nd / total_with_pred * 100
+                st.metric("1-2着的中", f"{hit_1st_2nd}/{total_with_pred}", f"{rate_12:.1f}%")
+            with col3:
+                rate_tri = hit_trifecta / total_with_pred * 100
+                st.metric("3連単的中", f"{hit_trifecta}/{total_with_pred}", f"{rate_tri:.1f}%")
+            with col4:
+                # 回収率（各レース100円賭けた場合）
+                if total_with_pred > 0:
+                    roi = (total_payout / (total_with_pred * 100)) * 100 if total_with_pred > 0 else 0
+                    st.metric("回収率", f"{roi:.1f}%", f"¥{int(total_payout):,}")
+            with col5:
+                st.metric("予想あり", f"{total_with_pred}件", f"全{len(df_results)}件中")
+
+            st.markdown("---")
+
+        # 結果テーブル表示
+        df_display = pd.DataFrame(results_data)
+
+        # 的中マークに色付け
+        def highlight_hit(val):
+            if val == "◎":
+                return 'background-color: #c8e6c9; color: #2e7d32; font-weight: bold;'
+            elif val == "×":
+                return 'background-color: #ffcdd2; color: #c62828;'
+            return ''
+
+        def highlight_confidence(val):
+            if val == "高":
+                return 'background-color: #e3f2fd; color: #1565c0; font-weight: bold;'
+            elif val == "中":
+                return 'background-color: #fff3e0; color: #e65100;'
+            elif val == "低":
+                return 'background-color: #fce4ec; color: #c2185b;'
+            return ''
+
+        styled_df = df_display.style.applymap(highlight_hit, subset=['1着', '3連単']).applymap(highlight_confidence, subset=['信頼度'])
+        st.dataframe(styled_df, use_container_width=True, hide_index=True, height=400)
+        st.caption(f"表示件数: {len(df_display)}件")
+
     except Exception as e:
         st.error(f"エラー: {e}")
+        import traceback
+        st.code(traceback.format_exc())
 
 
 def _render_statistics_section():
@@ -508,6 +662,12 @@ def _render_statistics_section():
 
             cursor.execute("SELECT COUNT(*) FROM results")
             stats.append(("結果", f"{cursor.fetchone()[0]:,}"))
+
+            cursor.execute("SELECT COUNT(*) FROM race_predictions")
+            stats.append(("予想データ", f"{cursor.fetchone()[0]:,}"))
+
+            cursor.execute("SELECT COUNT(*) FROM payouts")
+            stats.append(("払戻金データ", f"{cursor.fetchone()[0]:,}"))
 
             cursor.execute("SELECT MIN(race_date), MAX(race_date) FROM races")
             min_d, max_d = cursor.fetchone()
@@ -541,9 +701,10 @@ def _render_statistics_section():
             report = checker.get_coverage_report()
 
             overall = report.get('overall_score', 0)
+            overall_pct = overall * 100  # 0-1を0-100%に変換
 
             # 全体スコア表示
-            color = "#4caf50" if overall >= 0.8 else "#ff9800" if overall >= 0.5 else "#f44336"
+            color = "#4caf50" if overall_pct >= 80 else "#ff9800" if overall_pct >= 50 else "#f44336"
             st.markdown(f"""
             <div style="
                 background: linear-gradient(135deg, rgba(0,0,0,0.02) 0%, white 100%);
@@ -552,18 +713,20 @@ def _render_statistics_section():
                 padding: 20px;
                 text-align: center;
             ">
-                <div style="font-size: 2.5em; font-weight: bold; color: {color};">{overall:.0f}%</div>
+                <div style="font-size: 2.5em; font-weight: bold; color: {color};">{overall_pct:.1f}%</div>
                 <div style="color: #666;">データ充足率</div>
             </div>
             """, unsafe_allow_html=True)
 
-            # カテゴリ別
+            # カテゴリ別（上位5つ、プログレスバーは0-1の範囲でクリップ）
             st.markdown("")
             categories = report.get('categories', {})
             for cat_name, cat_data in list(categories.items())[:5]:
                 items = cat_data.get('items', [])
                 avg = sum(i.get('coverage', 0) for i in items) / len(items) if items else 0
-                st.progress(avg, text=f"{cat_name}: {avg*100:.0f}%")
+                # プログレスバーは0-1の範囲に制限
+                progress_val = min(1.0, max(0.0, avg))
+                st.progress(progress_val, text=f"{cat_name}: {avg*100:.0f}%")
 
         except Exception as e:
             st.warning(f"品質チェック: {e}")

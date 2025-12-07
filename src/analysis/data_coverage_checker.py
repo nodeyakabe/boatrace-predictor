@@ -23,8 +23,13 @@ class DataCoverageChecker:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        # 総レース数（開催中止を除く - completedのみ対象）
-        cursor.execute("SELECT COUNT(*) FROM races WHERE race_status = 'completed'")
+        # 総レース数（結果があるレースを対象 - race_statusが未設定のレースも含む）
+        cursor.execute("""
+            SELECT COUNT(DISTINCT r.id)
+            FROM races r
+            JOIN results res ON r.id = res.race_id
+            WHERE res.rank IS NOT NULL
+        """)
         total_races = cursor.fetchone()[0]
 
         report = {
@@ -158,12 +163,12 @@ class DataCoverageChecker:
         cursor.execute("""
             SELECT COUNT(*) FROM entries e
             JOIN races r ON e.race_id = r.id
-            WHERE r.race_status = 'completed'
+            WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL)
         """)
         total_entries = cursor.fetchone()[0]
 
         # 選手名・登録番号
-        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.race_status = 'completed' AND e.racer_number IS NOT NULL AND racer_name IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND e.racer_number IS NOT NULL AND racer_name IS NOT NULL")
         count = cursor.fetchone()[0]
         items.append({
             "name": "選手名・登録番号",
@@ -175,7 +180,7 @@ class DataCoverageChecker:
         })
 
         # 級別
-        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.race_status = 'completed' AND e.racer_rank IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND e.racer_rank IS NOT NULL")
         count = cursor.fetchone()[0]
         items.append({
             "name": "級別（A1/A2/B1/B2）",
@@ -202,10 +207,10 @@ class DataCoverageChecker:
         # コース別成績（結果データから計算可能）
         cursor.execute("""
             SELECT COUNT(DISTINCT rd.race_id)
-            FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.race_status = 'completed' AND rd.actual_course IS NOT NULL
+            FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND rd.actual_course IS NOT NULL
         """)
         course_count = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM results res JOIN races r ON res.race_id = r.id WHERE r.race_status = 'completed' AND res.rank IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM results res JOIN races r ON res.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND res.rank IS NOT NULL")
         result_count = cursor.fetchone()[0]
         can_calculate = course_count > 0 and result_count > 0
         items.append({
@@ -219,7 +224,7 @@ class DataCoverageChecker:
         })
 
         # チルト角度
-        cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.race_status = 'completed' AND rd.tilt_angle IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND rd.tilt_angle IS NOT NULL")
         count = cursor.fetchone()[0]
         items.append({
             "name": "チルト角度",
@@ -231,7 +236,7 @@ class DataCoverageChecker:
         })
 
         # F数・L数
-        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.race_status = 'completed' AND (e.f_count IS NOT NULL OR e.l_count IS NOT NULL)")
+        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND (e.f_count IS NOT NULL OR e.l_count IS NOT NULL)")
         count = cursor.fetchone()[0]
         items.append({
             "name": "F数・L数",
@@ -243,7 +248,7 @@ class DataCoverageChecker:
         })
 
         # 平均ST
-        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.race_status = 'completed' AND e.avg_st IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND e.avg_st IS NOT NULL")
         count = cursor.fetchone()[0]
         items.append({
             "name": "平均ST",
@@ -255,7 +260,7 @@ class DataCoverageChecker:
         })
 
         # 会場別勝率
-        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.race_status = 'completed' AND e.local_win_rate IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND e.local_win_rate IS NOT NULL")
         count = cursor.fetchone()[0]
         items.append({
             "name": "会場別勝率",
@@ -280,7 +285,7 @@ class DataCoverageChecker:
         total_entries = cursor.fetchone()[0]
 
         # モーター番号
-        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.race_status = 'completed' AND e.motor_number IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND e.motor_number IS NOT NULL")
         count = cursor.fetchone()[0]
         items.append({
             "name": "モーター番号",
@@ -294,10 +299,10 @@ class DataCoverageChecker:
         # モーター2連対率（計算必要）
         cursor.execute("""
             SELECT COUNT(DISTINCT e.id)
-            FROM entries e JOIN races r ON e.race_id = r.id WHERE r.race_status = 'completed' AND e.motor_number IS NOT NULL
+            FROM entries e JOIN races r ON e.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND e.motor_number IS NOT NULL
         """)
         motor_count = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM results res JOIN races r ON res.race_id = r.id WHERE r.race_status = 'completed' AND res.rank IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM results res JOIN races r ON res.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND res.rank IS NOT NULL")
         result_count = cursor.fetchone()[0]
         can_calculate = motor_count > 0 and result_count > 0
         items.append({
@@ -311,7 +316,7 @@ class DataCoverageChecker:
         })
 
         # ボート番号
-        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.race_status = 'completed' AND e.boat_number IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND e.boat_number IS NOT NULL")
         count = cursor.fetchone()[0]
         items.append({
             "name": "ボート番号",
@@ -325,10 +330,10 @@ class DataCoverageChecker:
         # ボート連対率（計算必要）
         cursor.execute("""
             SELECT COUNT(DISTINCT e.id)
-            FROM entries e JOIN races r ON e.race_id = r.id WHERE r.race_status = 'completed' AND e.boat_number IS NOT NULL
+            FROM entries e JOIN races r ON e.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND e.boat_number IS NOT NULL
         """)
         boat_count = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM results res JOIN races r ON res.race_id = r.id WHERE r.race_status = 'completed' AND res.rank IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM results res JOIN races r ON res.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND res.rank IS NOT NULL")
         result_count = cursor.fetchone()[0]
         can_calculate = boat_count > 0 and result_count > 0
         items.append({
@@ -342,7 +347,7 @@ class DataCoverageChecker:
         })
 
         # モーター三連対率
-        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.race_status = 'completed' AND e.motor_third_rate IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND e.motor_third_rate IS NOT NULL")
         count = cursor.fetchone()[0]
         items.append({
             "name": "モーター三連対率",
@@ -354,7 +359,7 @@ class DataCoverageChecker:
         })
 
         # ボート三連対率
-        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.race_status = 'completed' AND e.boat_third_rate IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND e.boat_third_rate IS NOT NULL")
         count = cursor.fetchone()[0]
         items.append({
             "name": "ボート三連対率",
@@ -385,7 +390,7 @@ class DataCoverageChecker:
             FROM races r
             JOIN weather w ON r.venue_code = w.venue_code AND r.race_date = w.weather_date
             WHERE w.temperature IS NOT NULL
-            AND r.race_status = 'completed'
+            AND r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL)
         """)
         count = cursor.fetchone()[0]
         items.append({
@@ -403,7 +408,7 @@ class DataCoverageChecker:
             FROM races r
             JOIN weather w ON r.venue_code = w.venue_code AND r.race_date = w.weather_date
             WHERE w.wind_direction IS NOT NULL
-            AND r.race_status = 'completed'
+            AND r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL)
         """)
         count = cursor.fetchone()[0]
         items.append({
@@ -421,7 +426,7 @@ class DataCoverageChecker:
             FROM races r
             JOIN weather w ON r.venue_code = w.venue_code AND r.race_date = w.weather_date
             WHERE w.wind_speed IS NOT NULL
-            AND r.race_status = 'completed'
+            AND r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL)
         """)
         count = cursor.fetchone()[0]
         items.append({
@@ -439,7 +444,7 @@ class DataCoverageChecker:
             FROM races r
             JOIN weather w ON r.venue_code = w.venue_code AND r.race_date = w.weather_date
             WHERE w.water_temperature IS NOT NULL
-            AND r.race_status = 'completed'
+            AND r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL)
         """)
         count = cursor.fetchone()[0]
         items.append({
@@ -457,7 +462,7 @@ class DataCoverageChecker:
             FROM races r
             JOIN weather w ON r.venue_code = w.venue_code AND r.race_date = w.weather_date
             WHERE w.wave_height IS NOT NULL
-            AND r.race_status = 'completed'
+            AND r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL)
         """)
         count = cursor.fetchone()[0]
         items.append({
@@ -475,7 +480,7 @@ class DataCoverageChecker:
             FROM races r
             JOIN weather w ON r.venue_code = w.venue_code AND r.race_date = w.weather_date
             WHERE w.humidity IS NOT NULL
-            AND r.race_status = 'completed'
+            AND r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL)
         """)
         count = cursor.fetchone()[0]
         items.append({
@@ -493,7 +498,7 @@ class DataCoverageChecker:
             FROM races r
             JOIN weather w ON r.venue_code = w.venue_code AND r.race_date = w.weather_date
             WHERE w.weather_condition IS NOT NULL
-            AND r.race_status = 'completed'
+            AND r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL)
         """)
         count = cursor.fetchone()[0]
         items.append({
@@ -553,7 +558,7 @@ class DataCoverageChecker:
         total_entries = cursor.fetchone()[0]
 
         # 実際の進入コース
-        cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.race_status = 'completed' AND rd.actual_course IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND rd.actual_course IS NOT NULL")
         count = cursor.fetchone()[0]
         items.append({
             "name": "進入コース",
@@ -565,7 +570,7 @@ class DataCoverageChecker:
         })
 
         # 展示タイム
-        cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.race_status = 'completed' AND rd.exhibition_time IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND rd.exhibition_time IS NOT NULL")
         count = cursor.fetchone()[0]
         items.append({
             "name": "展示タイム",
@@ -577,7 +582,7 @@ class DataCoverageChecker:
         })
 
         # STタイム
-        cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.race_status = 'completed' AND rd.st_time IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND rd.st_time IS NOT NULL")
         count = cursor.fetchone()[0]
         items.append({
             "name": "STタイム",
@@ -623,7 +628,7 @@ class DataCoverageChecker:
         has_trifecta_odds = cursor.fetchone() is not None
 
         if has_trifecta_odds:
-            cursor.execute("SELECT COUNT(DISTINCT t.race_id) FROM trifecta_odds t JOIN races r ON t.race_id = r.id WHERE r.race_status = 'completed'")
+            cursor.execute("SELECT COUNT(DISTINCT t.race_id) FROM trifecta_odds t JOIN races r ON t.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL)")
             count = cursor.fetchone()[0]
         else:
             count = 0
@@ -642,7 +647,7 @@ class DataCoverageChecker:
         has_win_odds = cursor.fetchone() is not None
 
         if has_win_odds:
-            cursor.execute("SELECT COUNT(DISTINCT w.race_id) FROM win_odds w JOIN races r ON w.race_id = r.id WHERE r.race_status = 'completed'")
+            cursor.execute("SELECT COUNT(DISTINCT w.race_id) FROM win_odds w JOIN races r ON w.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL)")
             count = cursor.fetchone()[0]
         else:
             count = 0
@@ -670,7 +675,7 @@ class DataCoverageChecker:
         total_entries = cursor.fetchone()[0]
 
         # 着順
-        cursor.execute("SELECT COUNT(*) FROM results res JOIN races r ON res.race_id = r.id WHERE r.race_status = 'completed' AND res.rank IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM results res JOIN races r ON res.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND res.rank IS NOT NULL")
         count = cursor.fetchone()[0]
         items.append({
             "name": "着順",
@@ -692,7 +697,7 @@ class DataCoverageChecker:
                 SELECT COUNT(*)
                 FROM results res
                 JOIN races r ON res.race_id = r.id
-                WHERE r.race_status = 'completed'
+                WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL)
                 AND res.rank = '1'
                 AND (res.kimarite IS NOT NULL OR res.winning_technique IS NOT NULL)
             """)
@@ -703,7 +708,7 @@ class DataCoverageChecker:
                 SELECT COUNT(*)
                 FROM results res
                 JOIN races r ON res.race_id = r.id
-                WHERE r.race_status = 'completed'
+                WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL)
                 AND res.rank = '1'
             """)
             total_first_place = cursor.fetchone()[0]
@@ -743,11 +748,11 @@ class DataCoverageChecker:
         """直前情報データのチェック"""
         items = []
 
-        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.race_status = 'completed'")
+        cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL)")
         total_entries = cursor.fetchone()[0]
 
         # 直線タイム
-        cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.race_status = 'completed' AND rd.chikusen_time IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND rd.chikusen_time IS NOT NULL")
         count = cursor.fetchone()[0]
         items.append({
             "name": "直線タイム",
@@ -759,7 +764,7 @@ class DataCoverageChecker:
         })
 
         # 一周タイム
-        cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.race_status = 'completed' AND rd.isshu_time IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND rd.isshu_time IS NOT NULL")
         count = cursor.fetchone()[0]
         items.append({
             "name": "一周タイム",
@@ -771,7 +776,7 @@ class DataCoverageChecker:
         })
 
         # まわり足タイム
-        cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.race_status = 'completed' AND rd.mawariashi_time IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND rd.mawariashi_time IS NOT NULL")
         count = cursor.fetchone()[0]
         items.append({
             "name": "まわり足タイム",
@@ -787,7 +792,7 @@ class DataCoverageChecker:
         has_exhibition = cursor.fetchone() is not None
 
         if has_exhibition:
-            cursor.execute("SELECT COUNT(*) FROM exhibition_data ed JOIN races r ON ed.race_id = r.id WHERE r.race_status = 'completed'")
+            cursor.execute("SELECT COUNT(*) FROM exhibition_data ed JOIN races r ON ed.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL)")
             count = cursor.fetchone()[0]
         else:
             count = 0
@@ -806,11 +811,11 @@ class DataCoverageChecker:
         has_actual_courses = cursor.fetchone() is not None
 
         if has_actual_courses:
-            cursor.execute("SELECT COUNT(*) FROM actual_courses ac JOIN races r ON ac.race_id = r.id WHERE r.race_status = 'completed'")
+            cursor.execute("SELECT COUNT(*) FROM actual_courses ac JOIN races r ON ac.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL)")
             count = cursor.fetchone()[0]
         else:
             # race_detailsテーブルから確認
-            cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.race_status = 'completed' AND rd.actual_course IS NOT NULL")
+            cursor.execute("SELECT COUNT(*) FROM race_details rd JOIN races r ON rd.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL) AND rd.actual_course IS NOT NULL")
             count = cursor.fetchone()[0]
 
         items.append({
@@ -837,7 +842,7 @@ class DataCoverageChecker:
         has_payouts = cursor.fetchone() is not None
 
         if has_payouts:
-            cursor.execute("SELECT COUNT(DISTINCT p.race_id) FROM payouts p JOIN races r ON p.race_id = r.id WHERE r.race_status = 'completed'")
+            cursor.execute("SELECT COUNT(DISTINCT p.race_id) FROM payouts p JOIN races r ON p.race_id = r.id WHERE r.id IN (SELECT DISTINCT race_id FROM results WHERE rank IS NOT NULL)")
             count = cursor.fetchone()[0]
         else:
             count = 0
@@ -857,8 +862,7 @@ class DataCoverageChecker:
                 SELECT COUNT(DISTINCT p.race_id)
                 FROM payouts p
                 JOIN races r ON p.race_id = r.id
-                WHERE r.race_status = 'completed'
-                AND p.bet_type = '3連単'
+                WHERE p.bet_type = 'trifecta'
                 AND p.popularity IS NOT NULL
             """)
             count = cursor.fetchone()[0]

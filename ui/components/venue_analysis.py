@@ -71,20 +71,16 @@ def render_venue_analysis_page():
     """会場分析ページのメイン表示"""
     st.header("🏟️ 会場データ分析")
 
-    # タブ分割
-    tab1, tab2, tab3 = st.tabs([
-        "📊 全会場比較",
+    # タブ分割（全会場比較を削除）
+    tab1, tab2 = st.tabs([
         "🎯 会場詳細分析",
         "🗺️ 会場マスタデータ"
     ])
 
     with tab1:
-        render_all_venues_comparison()
-
-    with tab2:
         render_venue_detail_analysis()
 
-    with tab3:
+    with tab2:
         render_venue_master_data()
 
 

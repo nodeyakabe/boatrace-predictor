@@ -281,13 +281,15 @@ class TodayPredictionWorkflow:
         cursor = conn.cursor()
 
         # 既に直前情報が取得済みのレースIDを取得
+        # ※ adjusted_weightは基本データで0.0がセットされるため、
+        #    exhibition_time（展示タイム）で判定する
         today = datetime.now().strftime('%Y-%m-%d')
         cursor.execute("""
             SELECT DISTINCT rd.race_id
             FROM race_details rd
             JOIN races r ON rd.race_id = r.id
             WHERE r.race_date = ?
-              AND rd.adjusted_weight IS NOT NULL
+              AND rd.exhibition_time IS NOT NULL
         """, (today,))
         existing_race_ids = {row[0] for row in cursor.fetchall()}
 

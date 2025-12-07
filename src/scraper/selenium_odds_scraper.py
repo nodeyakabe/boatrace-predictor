@@ -231,6 +231,151 @@ class SeleniumOddsScraper:
 
         return odds_data if odds_data else None
 
+    def get_exacta_odds(self, venue_code: str, race_date: str, race_number: int) -> dict:
+        """
+        2連単オッズを取得
+
+        Args:
+            venue_code: 競艇場コード（2桁の文字列、例: '01'）
+            race_date: レース日付（YYYYMMDD形式）
+            race_number: レース番号
+
+        Returns:
+            {'1-2': 3.5, '1-3': 5.2, ...} or None
+        """
+        self._init_driver()
+
+        # 2連単オッズページのURL
+        url = f"https://www.boatrace.jp/owpc/pc/race/odds2tf?rno={race_number}&jcd={venue_code.zfill(2)}&hd={race_date.replace('-', '')}"
+
+        try:
+            self.driver.get(url)
+            time.sleep(2)
+
+            WebDriverWait(self.driver, self.wait_timeout).until(
+                lambda d: d.execute_script("return document.readyState") == "complete"
+            )
+
+            time.sleep(3)
+
+            page_source = self.driver.page_source
+            odds_data = self._parse_exacta_odds(page_source)
+
+            if odds_data:
+                print(f"[OK] 2連単オッズ取得成功: {len(odds_data)}通り")
+            else:
+                print("[WARNING] 2連単オッズが見つかりませんでした")
+
+            return odds_data
+
+        except Exception as e:
+            print(f"[ERROR] 2連単オッズ取得エラー: {e}")
+            return None
+
+    def _parse_exacta_odds(self, html: str) -> dict:
+        """
+        HTMLから2連単オッズを解析
+
+        Args:
+            html: ページのHTMLソース
+
+        Returns:
+            {'1-2': 3.5, '1-3': 5.2, ...} or None
+        """
+        from bs4 import BeautifulSoup
+
+        odds_data = {}
+        soup = BeautifulSoup(html, 'lxml')
+
+        try:
+            # 方法1: テーブルからオッズを取得
+            tables = soup.find_all('table')
+
+            for table in tables:
+                rows = table.find_all('tr')
+
+                for row in rows:
+                    tds = row.find_all('td')
+
+                    if len(tds) < 2:
+                        continue
+
+                    # 各セルを調査
+                    combination = None
+                    odds_value = None
+
+                    for td in tds:
+                        text = td.get_text(strip=True)
+
+                        # 組番パターン: "1-2" 形式
+                        if not combination:
+                            match = re.match(r'^(\d)-(\d)$', text)
+                            if match:
+                                first, second = match.group(1), match.group(2)
+                                if 1 <= int(first) <= 6 and 1 <= int(second) <= 6 and first != second:
+                                    combination = text
+
+                        # オッズパターン: 数値
+                        if combination and not odds_value:
+                            clean_text = text.replace(',', '').replace('円', '').replace('倍', '').strip()
+                            if clean_text:
+                                try:
+                                    val = float(clean_text)
+                                    if 1.0 <= val <= 9999.0:
+                                        odds_value = val
+                                except ValueError:
+                                    pass
+
+                    if combination and odds_value:
+                        odds_data[combination] = odds_value
+
+            # 方法2: 2連単専用のテーブル構造をパース
+            # ボートレース公式サイトの2連単は6x5のマトリクス形式
+            if not odds_data:
+                for table in tables:
+                    rows = table.find_all('tr')
+                    if len(rows) >= 6:
+                        for row_idx, row in enumerate(rows):
+                            cells = row.find_all('td')
+                            for col_idx, cell in enumerate(cells):
+                                text = cell.get_text(strip=True).replace(',', '')
+                                try:
+                                    odds_val = float(text)
+                                    if 1.0 <= odds_val <= 9999.0:
+                                        # 行と列から組み合わせを推定
+                                        # 1着が行、2着が列
+                                        first = row_idx + 1
+                                        second = col_idx + 1
+                                        if 1 <= first <= 6 and 1 <= second <= 6 and first != second:
+                                            combo = f"{first}-{second}"
+                                            if combo not in odds_data:
+                                                odds_data[combo] = odds_val
+                                except ValueError:
+                                    pass
+
+            # 方法3: パターンマッチング
+            if not odds_data:
+                pattern = re.compile(r'(\d)-(\d)\s*[:\s]*(\d+(?:,\d{3})*(?:\.\d+)?)')
+                all_text = soup.get_text()
+                matches = pattern.findall(all_text)
+
+                for match in matches:
+                    first, second, odds_str = match
+                    if first != second and 1 <= int(first) <= 6 and 1 <= int(second) <= 6:
+                        combo = f"{first}-{second}"
+                        try:
+                            odds_val = float(odds_str.replace(',', ''))
+                            if 1.0 <= odds_val <= 9999.0:
+                                if combo not in odds_data or odds_val < odds_data[combo]:
+                                    odds_data[combo] = odds_val
+                        except ValueError:
+                            pass
+
+        except Exception as e:
+            print(f"[ERROR] 2連単オッズパース失敗: {e}")
+
+        return odds_data if odds_data else None
+
     def get_win_odds(self, venue_code: str, race_date: str, race_number: int) -> dict:
         """
         単勝オッズを取得

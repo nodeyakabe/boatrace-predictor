@@ -9,6 +9,7 @@ from typing import List, Dict
 import logging
 
 from ui.components.common.widgets import render_confidence_badge
+from src.betting import BetTargetEvaluator, BetStatus
 
 logger = logging.getLogger(__name__)
 
@@ -29,14 +30,679 @@ def render_unified_race_list():
     if st.session_state.get('show_beforeinfo_dialog', False):
         _render_beforeinfo_dialog()
 
-    # タブ作成：的中率重視 / 期待値重視
-    tab1, tab2 = st.tabs(["🎯 的中率重視", "💰 期待値重視"])
+    # タブ作成：総合 / 的中率重視 / 期待値重視
+    tab0, tab1, tab2 = st.tabs(["📊 総合", "🎯 的中率重視", "💰 期待値重視"])
+
+    with tab0:
+        _render_bet_targets()
 
     with tab1:
         _render_accuracy_focused()
 
     with tab2:
         _render_value_focused()
+
+
+def _render_next_race_alert(placeholder, target_races: List[Dict]):
+    """次の出走時間アラートを表示"""
+    from datetime import timedelta
+
+    if not target_races:
+        return
+
+    now = datetime.now()
+
+    # 時刻でソート（未確定のみ対象）
+    upcoming_races = []
+    for t in target_races:
+        race_time_str = t.get('race_time')
+        if not race_time_str:
+            continue
+
+        try:
+            # race_timeが "HH:MM:SS" or "HH:MM" 形式の場合の処理
+            if len(race_time_str) == 5:  # "HH:MM"
+                race_time_str = race_time_str + ":00"
+            race_time = datetime.strptime(f"{now.strftime('%Y-%m-%d')} {race_time_str}", "%Y-%m-%d %H:%M:%S")
+            minutes_until = (race_time - now).total_seconds() / 60
+            # まだ終わっていないレース（終了5分後まで表示）
+            if minutes_until > -5:
+                upcoming_races.append({
+                    **t,
+                    'race_time_dt': race_time,
+                    'minutes_until': minutes_until
+                })
+        except Exception as e:
+            # 時刻パースエラーでもスキップ
+            continue
+
+    if not upcoming_races:
+        with placeholder:
+            st.success("✅ 本日の購入対象・候補レースはすべて終了しました")
+        return
+
+    # 時刻順にソート
+    upcoming_races.sort(key=lambda x: x['race_time_dt'])
+
+    # 最も近いレース
+    next_race = upcoming_races[0]
+    minutes = next_race['minutes_until']
+    target = next_race['target']
+
+    # 直前情報取得のタイミング判定（30分前から取得可能）
+    needs_beforeinfo = not next_race['has_beforeinfo'] and target.status != BetStatus.TARGET_CONFIRMED
+
+    with placeholder:
+        if minutes <= 0:
+            # すでに開始
+            st.error(f"🏁 **まもなく発走** | {next_race['venue_name']} {next_race['race_number']}R | 買い目: `{target.combination}`")
+        elif minutes <= 10:
+            # 10分以内
+            if needs_beforeinfo:
+                st.error(f"⚠️ **残り{int(minutes)}分** | {next_race['venue_name']} {next_race['race_number']}R | 🔄 **直前情報を取得してください！**")
+            else:
+                st.warning(f"⏰ **残り{int(minutes)}分** | {next_race['venue_name']} {next_race['race_number']}R | 買い目: `{target.combination}` ({target.odds:.1f}倍)")
+        elif minutes <= 30:
+            # 30分以内
+            if needs_beforeinfo:
+                st.warning(f"📢 **残り{int(minutes)}分** | {next_race['venue_name']} {next_race['race_number']}R | 直前情報取得可能です")
+            else:
+                st.info(f"⏰ **残り{int(minutes)}分** | {next_race['venue_name']} {next_race['race_number']}R | 買い目: `{target.combination}`")
+        else:
+            # 30分以上
+            time_str = next_race['race_time_dt'].strftime('%H:%M')
+            st.info(f"📅 次の対象レース: {next_race['venue_name']} {next_race['race_number']}R ({time_str}) | 約{int(minutes)}分後")
+
+        # 今後1時間以内のレースも表示
+        races_in_hour = [r for r in upcoming_races[1:] if r['minutes_until'] <= 60]
+        if races_in_hour:
+            race_list = ", ".join([f"{r['venue_name']}{r['race_number']}R({r['race_time_dt'].strftime('%H:%M')})" for r in races_in_hour[:5]])
+            st.caption(f"📋 今後1時間以内: {race_list}")
+
+
+def _render_bet_targets():
+    """総合タブ - 購入対象レースを表示（最終運用戦略に基づく）"""
+    from datetime import timedelta
+
+    # 日付選択（コンパクトに）
+    col_date, col_help = st.columns([2, 1])
+    with col_date:
+        target_date = st.date_input(
+            "対象日",
+            value=datetime.now().date(),
+            key="bet_target_date"
+        )
+    with col_help:
+        st.write("")
+        with st.popover("❓ 購入戦略"):
+            st.markdown("""
+            **購入条件（13,413レース検証済み）**
+
+            | 信頼度 | 方式 | オッズ | 1コース | 期待値 |
+            |:------:|:----:|:------:|:-------:|:------:|
+            | C | 従来 | 30-60倍 | A1級 | 127% |
+            | C | 従来 | 50倍+ | A級 | 121% |
+            | D | 新方式 | 30倍+ | A級 | 209% |
+            | D | 新方式 | 20倍+ | A級 | 179% |
+            """)
+
+    try:
+        import sqlite3
+        from config.settings import DATABASE_PATH, VENUES
+
+        conn = sqlite3.connect(DATABASE_PATH)
+        cursor = conn.cursor()
+
+        target_date_str = target_date.strftime('%Y-%m-%d')
+
+        # 会場名マッピング
+        venue_name_map = {}
+        for venue_id, venue_info in VENUES.items():
+            venue_name_map[venue_info['code']] = venue_info['name']
+
+        # レース情報と予想データを取得
+        cursor.execute("""
+            SELECT
+                r.id as race_id,
+                r.venue_code,
+                r.race_number,
+                r.race_time,
+                r.race_date,
+                rp.confidence,
+                rp.prediction_type,
+                GROUP_CONCAT(rp.pit_number || ':' || rp.rank_prediction, '|') as predictions_data
+            FROM races r
+            JOIN race_predictions rp ON r.id = rp.race_id
+            WHERE r.race_date = ? AND rp.rank_prediction <= 6
+            GROUP BY r.id, rp.prediction_type
+            ORDER BY r.venue_code, r.race_number, rp.prediction_type
+        """, (target_date_str,))
+
+        race_rows = cursor.fetchall()
+
+        if not race_rows:
+            st.warning(f"{target_date_str} のレース予想が見つかりませんでした")
+            st.info("「データ準備」タブで「今日の予測を生成」を実行してください")
+            conn.close()
+            return
+
+        # 評価器を初期化
+        evaluator = BetTargetEvaluator()
+
+        # レースごとにデータをグループ化
+        race_data_by_id = {}
+        for row in race_rows:
+            race_id, venue_code, race_number, race_time, race_date, confidence, prediction_type, predictions_data = row
+
+            if race_id not in race_data_by_id:
+                race_data_by_id[race_id] = {
+                    'race_id': race_id,
+                    'venue_code': venue_code,
+                    'race_number': race_number,
+                    'race_time': race_time,
+                    'race_date': race_date,
+                    'venue_name': venue_name_map.get(venue_code, f'会場{venue_code}'),
+                    'initial': None,
+                    'before': None
+                }
+
+            # 予想データをパース
+            predictions = []
+            for pred_str in predictions_data.split('|'):
+                parts = pred_str.split(':')
+                if len(parts) == 2:
+                    pit_number, rank_pred = parts
+                    predictions.append({
+                        'pit_number': int(pit_number),
+                        'rank': int(rank_pred)
+                    })
+            predictions.sort(key=lambda x: x['rank'])
+
+            pred_data = {
+                'predictions': predictions,
+                'confidence': confidence,
+                'top3': predictions[:3] if len(predictions) >= 3 else predictions
+            }
+
+            if prediction_type == 'before':
+                race_data_by_id[race_id]['before'] = pred_data
+            else:
+                race_data_by_id[race_id]['initial'] = pred_data
+
+        # 1コースの級別を取得
+        race_ids = list(race_data_by_id.keys())
+        placeholders = ','.join('?' * len(race_ids))
+        cursor.execute(f"""
+            SELECT race_id, racer_rank
+            FROM entries
+            WHERE race_id IN ({placeholders}) AND pit_number = 1
+        """, race_ids)
+        c1_ranks = {row[0]: row[1] for row in cursor.fetchall()}
+
+        # オッズデータを取得
+        cursor.execute(f"""
+            SELECT race_id, combination, odds
+            FROM trifecta_odds
+            WHERE race_id IN ({placeholders})
+        """, race_ids)
+        odds_by_race = {}
+        for race_id, combination, odds in cursor.fetchall():
+            if race_id not in odds_by_race:
+                odds_by_race[race_id] = {}
+            odds_by_race[race_id][combination] = odds
+
+        conn.close()
+
+        # 購入対象を評価
+        bet_targets = []
+        for race_id, data in race_data_by_id.items():
+            # 直前情報があるか
+            has_beforeinfo = data['before'] is not None
+            pred = data['before'] if has_beforeinfo else data['initial']
+            if not pred:
+                continue
+
+            # 信頼度
+            confidence = pred['confidence']
+            c1_rank = c1_ranks.get(race_id, 'B1')
+
+            # 買い目
+            top3 = pred['top3']
+            if len(top3) < 3:
+                continue
+
+            old_combo = f"{top3[0]['pit_number']}-{top3[1]['pit_number']}-{top3[2]['pit_number']}"
+            new_combo = old_combo  # 新方式予測は後で計算（簡略化のため同じ）
+
+            # オッズ
+            odds_data = odds_by_race.get(race_id, {})
+            old_odds = odds_data.get(old_combo, 0)
+            new_odds = odds_data.get(new_combo, 0)
+
+            # 評価実行
+            target = evaluator.evaluate(
+                confidence=confidence,
+                c1_rank=c1_rank,
+                old_combo=old_combo,
+                new_combo=new_combo,
+                old_odds=old_odds,
+                new_odds=new_odds,
+                has_beforeinfo=has_beforeinfo
+            )
+
+            bet_targets.append({
+                'race_id': race_id,
+                'venue_name': data['venue_name'],
+                'race_number': data['race_number'],
+                'race_time': data['race_time'],
+                'race_date': data['race_date'],
+                'venue_code': data['venue_code'],
+                'has_beforeinfo': has_beforeinfo,
+                'target': target
+            })
+
+        # ステータス別に分類
+        targets_advance = [t for t in bet_targets if t['target'].status == BetStatus.TARGET_ADVANCE]
+        candidates = [t for t in bet_targets if t['target'].status == BetStatus.CANDIDATE]
+        targets_confirmed = [t for t in bet_targets if t['target'].status == BetStatus.TARGET_CONFIRMED]
+        excluded = [t for t in bet_targets if t['target'].status == BetStatus.EXCLUDED]
+
+        # 時間情報を付与して分類
+        now = datetime.now()
+        is_today = target_date == now.date()
+
+        def parse_race_time(race_time_str):
+            """レース時刻をパースしてdatetimeを返す"""
+            if not race_time_str:
+                return None
+            try:
+                if len(race_time_str) == 5:
+                    race_time_str = race_time_str + ":00"
+                return datetime.strptime(f"{target_date.strftime('%Y-%m-%d')} {race_time_str}", "%Y-%m-%d %H:%M:%S")
+            except:
+                return None
+
+        def classify_by_time(race_list):
+            """レースを時間別に分類"""
+            finished = []
+            active = []
+            upcoming = []
+
+            for t in race_list:
+                race_time = parse_race_time(t.get('race_time'))
+                t['race_time_dt'] = race_time
+
+                if not is_today or not race_time:
+                    upcoming.append(t)
+                else:
+                    minutes_until = (race_time - now).total_seconds() / 60
+                    t['minutes_until'] = minutes_until
+                    if minutes_until < -10:  # 10分以上前に開始
+                        finished.append(t)
+                    elif minutes_until <= 5:  # 5分前〜開始後10分
+                        active.append(t)
+                    else:
+                        upcoming.append(t)
+
+            return finished, active, upcoming
+
+        # 購入対象を時間別に分類
+        all_buy_targets = targets_confirmed + targets_advance
+        finished_targets, active_targets, upcoming_targets = classify_by_time(all_buy_targets)
+
+        # 候補も時間別に分類
+        finished_candidates, active_candidates, upcoming_candidates = classify_by_time(candidates)
+
+        # 期待値でソート
+        def sort_by_roi(items):
+            return sorted(items, key=lambda x: x['target'].expected_roi, reverse=True)
+
+        upcoming_targets = sort_by_roi(upcoming_targets)
+        upcoming_candidates = sort_by_roi(upcoming_candidates)
+
+        # ============ メインサマリー ============
+        st.markdown("---")
+
+        # 投資サマリー（大きく表示）
+        active_and_upcoming = active_targets + upcoming_targets
+        if active_and_upcoming:
+            total_bet = sum(t['target'].bet_amount for t in active_and_upcoming)
+            expected_return = sum(t['target'].bet_amount * t['target'].expected_roi / 100 for t in active_and_upcoming)
+            avg_roi = expected_return / total_bet * 100 if total_bet > 0 else 0
+
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%); border-radius: 12px; padding: 20px; margin-bottom: 16px; color: white;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+                    <div>
+                        <div style="font-size: 0.9em; opacity: 0.9;">本日の投資予定</div>
+                        <div style="font-size: 2em; font-weight: bold;">¥{total_bet:,}</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 2.5em; font-weight: bold;">→</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.9em; opacity: 0.9;">期待収益</div>
+                        <div style="font-size: 2em; font-weight: bold; color: #81c784;">¥{expected_return:,.0f}</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 0.9em; opacity: 0.9;">平均期待回収率</div>
+                        <div style="font-size: 1.8em; font-weight: bold; color: #ffeb3b;">{avg_roi:.1f}%</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ステータスカウント
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            active_count = len(active_targets)
+            upcoming_count = len(upcoming_targets)
+            st.metric("🎯 購入対象", f"{active_count + upcoming_count}件",
+                     delta=f"進行中{active_count}" if active_count > 0 else None,
+                     delta_color="normal")
+        with col2:
+            cand_active = len(active_candidates)
+            cand_upcoming = len(upcoming_candidates)
+            st.metric("🟡 候補", f"{cand_active + cand_upcoming}件",
+                     help="直前情報次第で対象になる可能性")
+        with col3:
+            st.metric("✅ 終了", f"{len(finished_targets)}件",
+                     help="本日終了した購入対象レース")
+        with col4:
+            st.metric("⚪ 対象外", f"{len(excluded)}件")
+
+        st.markdown("---")
+
+        # ============ 進行中・まもなく開始 ============
+        if active_targets or active_candidates:
+            st.markdown("### 🔴 まもなく発走・進行中")
+
+            for t in active_targets:
+                _render_race_card_enhanced(t, "active", is_active=True)
+
+            if active_candidates:
+                st.caption("🟡 候補レース（直前情報を取得すると対象になる可能性）")
+                for t in active_candidates:
+                    _render_race_card_enhanced(t, "active_cand", is_candidate=True, is_active=True)
+
+        # ============ 今後のレース ============
+        if upcoming_targets or upcoming_candidates:
+            # 期待値別に分類
+            high_roi = [t for t in upcoming_targets if t['target'].expected_roi >= 150]
+            normal_roi = [t for t in upcoming_targets if t['target'].expected_roi < 150]
+
+            if high_roi:
+                st.markdown("### 💎 高期待値レース（150%以上）")
+                for t in high_roi:
+                    _render_race_card_enhanced(t, "high_roi")
+
+            if normal_roi:
+                st.markdown("### 🎯 購入対象レース")
+                for t in normal_roi:
+                    _render_race_card_enhanced(t, "normal")
+
+            if upcoming_candidates:
+                st.markdown("### 🟡 候補レース")
+                st.caption("直前情報を取得するとオッズ次第で購入対象になる可能性があります")
+                for t in upcoming_candidates[:10]:  # 最大10件表示
+                    _render_race_card_enhanced(t, "candidate", is_candidate=True)
+
+                if len(upcoming_candidates) > 10:
+                    with st.expander(f"その他の候補 ({len(upcoming_candidates) - 10}件)"):
+                        for t in upcoming_candidates[10:]:
+                            _render_race_card_enhanced(t, "candidate_more", is_candidate=True)
+
+        if not active_targets and not upcoming_targets and not active_candidates and not upcoming_candidates:
+            st.info("📅 本日の購入対象・候補レースはありません")
+
+        # ============ 終了済みレース ============
+        if finished_targets:
+            with st.expander(f"✅ 終了済みレース ({len(finished_targets)}件)", expanded=False):
+                # ヘッダー行
+                col1, col2, col3, col4, col5, col6 = st.columns([2, 1.5, 1.5, 1.5, 2, 1])
+                with col1:
+                    st.caption("レース")
+                with col2:
+                    st.caption("買い目")
+                with col3:
+                    st.caption("オッズ")
+                with col4:
+                    st.caption("賭け金")
+                with col5:
+                    st.caption("結果 / 払戻")
+                with col6:
+                    st.caption("")
+                st.markdown("---")
+
+                for t in finished_targets:
+                    _render_race_card_compact(t, "finished")
+
+        # ============ 対象外レース ============
+        if excluded:
+            with st.expander(f"⚪ 対象外レース ({len(excluded)}件)", expanded=False):
+                df_excluded = []
+                for t in excluded:
+                    target = t['target']
+                    df_excluded.append({
+                        '会場': t['venue_name'],
+                        'R': t['race_number'],
+                        '時刻': t['race_time'] or '-',
+                        '信頼度': target.confidence,
+                        '1コース': target.c1_rank,
+                        '理由': target.reason
+                    })
+                st.dataframe(pd.DataFrame(df_excluded), use_container_width=True, hide_index=True)
+
+    except Exception as e:
+        st.error(f"エラーが発生しました: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+
+
+def _render_race_card_enhanced(t: Dict, key_prefix: str, is_candidate: bool = False, is_active: bool = False):
+    """改善版レースカード表示"""
+    target = t['target']
+    race_time = t.get('race_time') or '未定'
+    minutes_until = t.get('minutes_until')
+
+    # 時間表示
+    if minutes_until is not None:
+        if minutes_until <= 0:
+            time_badge = f"<span style='background:#e53935;color:white;padding:2px 8px;border-radius:12px;font-size:0.8em;'>発走中</span>"
+        elif minutes_until <= 10:
+            time_badge = f"<span style='background:#ff5722;color:white;padding:2px 8px;border-radius:12px;font-size:0.8em;'>あと{int(minutes_until)}分</span>"
+        elif minutes_until <= 30:
+            time_badge = f"<span style='background:#ff9800;color:white;padding:2px 8px;border-radius:12px;font-size:0.8em;'>あと{int(minutes_until)}分</span>"
+        else:
+            time_badge = f"<span style='color:#666;font-size:0.85em;'>⏰ {race_time}</span>"
+    else:
+        time_badge = f"<span style='color:#666;font-size:0.85em;'>⏰ {race_time}</span>"
+
+    # スタイル設定
+    if is_active:
+        border_color = "#e53935"
+        bg_gradient = "linear-gradient(135deg, rgba(229, 57, 53, 0.15) 0%, rgba(255,255,255,0.98) 100%)"
+        pulse_anim = "animation: pulse 2s infinite;"
+    elif is_candidate:
+        border_color = "#ffa000"
+        bg_gradient = "linear-gradient(135deg, rgba(255, 160, 0, 0.1) 0%, rgba(255,255,255,0.98) 100%)"
+        pulse_anim = ""
+    elif target.expected_roi >= 150:
+        border_color = "#7b1fa2"
+        bg_gradient = "linear-gradient(135deg, rgba(123, 31, 162, 0.1) 0%, rgba(255,255,255,0.98) 100%)"
+        pulse_anim = ""
+    else:
+        border_color = "#43a047"
+        bg_gradient = "linear-gradient(135deg, rgba(67, 160, 71, 0.08) 0%, rgba(255,255,255,0.98) 100%)"
+        pulse_anim = ""
+
+    # 期待値バッジ
+    if target.expected_roi >= 200:
+        roi_color = "#7b1fa2"
+        roi_icon = "💎"
+    elif target.expected_roi >= 150:
+        roi_color = "#1976d2"
+        roi_icon = "⭐"
+    elif target.expected_roi >= 120:
+        roi_color = "#388e3c"
+        roi_icon = "✓"
+    else:
+        roi_color = "#666"
+        roi_icon = ""
+
+    # オッズ表示
+    odds_display = f"{target.odds:.1f}倍" if target.odds else target.odds_range
+
+    # カードHTML
+    st.markdown(f"""
+    <style>
+        @keyframes pulse {{
+            0% {{ box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.4); }}
+            70% {{ box-shadow: 0 0 0 10px rgba(229, 57, 53, 0); }}
+            100% {{ box-shadow: 0 0 0 0 rgba(229, 57, 53, 0); }}
+        }}
+    </style>
+    <div style="
+        background: {bg_gradient};
+        border-left: 5px solid {border_color};
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        {pulse_anim}
+    ">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+            <div style="flex: 1;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <span style="font-size: 1.3em; font-weight: bold;">{t['venue_name']} {t['race_number']}R</span>
+                    {time_badge}
+                    <span style="
+                        background: {'#e53935' if t['has_beforeinfo'] else '#bdbdbd'};
+                        color: white;
+                        padding: 2px 6px;
+                        border-radius: 4px;
+                        font-size: 0.7em;
+                    ">{'直前済' if t['has_beforeinfo'] else '事前'}</span>
+                </div>
+                <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+                    <div>
+                        <span style="color: #666; font-size: 0.8em;">買い目</span><br>
+                        <span style="font-size: 1.4em; font-weight: bold; font-family: monospace;">{target.combination}</span>
+                    </div>
+                    <div>
+                        <span style="color: #666; font-size: 0.8em;">オッズ</span><br>
+                        <span style="font-size: 1.1em; font-weight: bold;">{odds_display}</span>
+                    </div>
+                    <div>
+                        <span style="color: #666; font-size: 0.8em;">賭け金</span><br>
+                        <span style="font-size: 1.1em; font-weight: bold;">¥{target.bet_amount}</span>
+                    </div>
+                </div>
+            </div>
+            <div style="text-align: right; min-width: 100px;">
+                <div style="font-size: 0.8em; color: #666;">期待回収率</div>
+                <div style="font-size: 1.8em; font-weight: bold; color: {roi_color};">
+                    {roi_icon} {target.expected_roi:.0f}%
+                </div>
+                <div style="font-size: 0.75em; color: #888; margin-top: 4px;">
+                    {target.confidence}級 / 1コース{target.c1_rank}
+                </div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 詳細ボタン
+    col1, col2 = st.columns([4, 1])
+    with col2:
+        if st.button("詳細→", key=f"detail_{key_prefix}_{t['race_id']}", use_container_width=True):
+            st.session_state.selected_race = {
+                'race_date': t['race_date'],
+                'venue_code': t['venue_code'],
+                'race_number': t['race_number'],
+            }
+            st.session_state.show_detail = True
+            st.rerun()
+
+
+def _render_race_card_compact(t: Dict, key_prefix: str):
+    """コンパクト版レースカード（終了済み用）- 結果と払戻金表示付き"""
+    import sqlite3
+    from config.settings import DATABASE_PATH
+
+    target = t['target']
+    odds_display = f"{target.odds:.1f}倍" if target.odds else "-"
+    race_id = t['race_id']
+
+    # レース結果を取得
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+
+    # 着順を取得
+    cursor.execute("""
+        SELECT pit_number, rank
+        FROM results
+        WHERE race_id = ? AND is_invalid = 0 AND rank <= 3
+        ORDER BY rank
+    """, (race_id,))
+    result_rows = cursor.fetchall()
+
+    # 払戻金を取得
+    cursor.execute("""
+        SELECT amount FROM payouts
+        WHERE race_id = ? AND bet_type = 'trifecta'
+    """, (race_id,))
+    payout_row = cursor.fetchone()
+    conn.close()
+
+    # 結果を整形
+    if len(result_rows) >= 3:
+        actual_combo = f"{result_rows[0][0]}-{result_rows[1][0]}-{result_rows[2][0]}"
+        is_hit = target.combination == actual_combo
+    else:
+        actual_combo = "-"
+        is_hit = False
+
+    payout = int(payout_row[0]) if payout_row else 0
+
+    # 的中判定のアイコン
+    if is_hit:
+        hit_icon = "🎉"
+        hit_color = "green"
+    else:
+        hit_icon = "❌"
+        hit_color = "red"
+
+    col1, col2, col3, col4, col5, col6 = st.columns([2, 1.5, 1.5, 1.5, 2, 1])
+    with col1:
+        st.write(f"**{t['venue_name']} {t['race_number']}R**")
+    with col2:
+        st.write(f"`{target.combination}`")
+    with col3:
+        st.write(odds_display)
+    with col4:
+        st.write(f"¥{target.bet_amount}")
+    with col5:
+        # 結果表示
+        if actual_combo != "-":
+            st.markdown(f"<span style='color:{hit_color}'>{hit_icon} {actual_combo}</span> ¥{payout:,}", unsafe_allow_html=True)
+        else:
+            st.write("-")
+    with col6:
+        if st.button("→", key=f"detail_{key_prefix}_{t['race_id']}", use_container_width=True):
+            st.session_state.selected_race = {
+                'race_date': t['race_date'],
+                'venue_code': t['venue_code'],
+                'race_number': t['race_number'],
+            }
+            st.session_state.show_detail = True
+            st.rerun()
+
+
+def _render_bet_target_cards(targets: List[Dict], key_prefix: str):
+    """購入対象レースカードを表示（互換性維持用）"""
+    for idx, t in enumerate(targets, 1):
+        _render_race_card_enhanced(t, f"{key_prefix}_{idx}")
 
 
 def _render_accuracy_focused():

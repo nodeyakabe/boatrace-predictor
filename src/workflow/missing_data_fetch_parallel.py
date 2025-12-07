@@ -53,7 +53,7 @@ class MissingDataFetchWorkflowParallel:
         progress_callback: Callable[[str, str, int], None] = None,
         max_workers_results: int = 16,  # 結果取得の並列数
         max_workers_beforeinfo: int = 8,  # 直前情報取得の並列数
-        max_workers_odds: int = 4  # オッズ取得の並列数
+        max_workers_odds: int = 20  # オッズ取得の並列数（高速化）
     ):
         """
         Args:
@@ -572,27 +572,56 @@ class MissingDataFetchWorkflowParallel:
         current_step: int, total_steps: int, odds_steps: int,
         processed: int, errors: int
     ) -> tuple:
-        """フェーズ3: オッズの取得（並列化版）"""
+        """フェーズ3: オッズの取得（並列化版・高速化）"""
         self._update_progress(
             "フェーズ3",
             f'{len(races_without_odds)}レースのオッズを取得中...',
             int((current_step / total_steps) * 100)
         )
 
-        from src.scraper.odds_scraper import OddsScraper
+        import threading
+        import requests
+        from bs4 import BeautifulSoup
         from src.database.data_manager import DataManager
 
         odds_success = 0
         odds_error = 0
         total = len(races_without_odds)
 
+        # スレッドローカルセッション管理
+        thread_local = threading.local()
+
+        def get_session():
+            """スレッドごとにセッションを再利用"""
+            if not hasattr(thread_local, 'session'):
+                thread_local.session = requests.Session()
+                thread_local.session.headers.update({
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0',
+                    'Accept': 'text/html',
+                })
+            return thread_local.session
+
         def fetch_single_odds(race_info):
-            """1レース分のオッズを取得"""
+            """1レース分のオッズを取得（高速版）"""
             race_id, venue_code, race_date, race_number = race_info
             try:
                 date_str = race_date.replace('-', '')
-                scraper = OddsScraper(delay=0.2)
-                trifecta_odds = scraper.get_trifecta_odds(venue_code, date_str, race_number)
+                url = "https://www.boatrace.jp/owpc/pc/race/odds3t"
+                params = {
+                    'rno': race_number,
+                    'jcd': venue_code.zfill(2),
+                    'hd': date_str
+                }
+
+                time.sleep(0.1)  # 最小限の遅延
+                session = get_session()
+                response = session.get(url, params=params, timeout=30)
+
+                if response.status_code != 200:
+                    return False
+
+                response.encoding = 'utf-8'
+                trifecta_odds = self._parse_odds_html(response.text)
 
                 if trifecta_odds:
                     data_manager = DataManager(self.db_path)
@@ -740,3 +769,77 @@ class MissingDataFetchWorkflowParallel:
                     current_step += 1
 
         return current_step, processed, errors
+
+    def _parse_odds_html(self, html: str) -> dict:
+        """
+        オッズHTMLをパース（高速版）
+
+        Args:
+            html: 3連単オッズページのHTML
+
+        Returns:
+            {'1-2-3': 8.8, '1-2-4': 15.2, ...}
+        """
+        from bs4 import BeautifulSoup
+        import warnings
+        warnings.filterwarnings("ignore")
+
+        odds_data = {}
+        try:
+            soup = BeautifulSoup(html, 'html.parser')
+
+            for table in soup.find_all('table'):
+                rows = table.find_all('tr')
+                if len(rows) < 20:
+                    continue
+
+                second_boats = [2, 3, 4, 5, 6]
+                row_idx = 1
+
+                for second_boat in second_boats:
+                    for sub_row in range(4):
+                        if row_idx >= len(rows):
+                            break
+
+                        row = rows[row_idx]
+                        cells = row.find_all('td')
+                        row_idx += 1
+
+                        if len(cells) >= 18:
+                            for first_boat in range(1, 7):
+                                base_idx = (first_boat - 1) * 3
+                                try:
+                                    cell_second = int(cells[base_idx].text.strip())
+                                    third_boat = int(cells[base_idx + 1].text.strip())
+                                    odds_text = cells[base_idx + 2].text.strip().replace(',', '')
+                                    if odds_text and odds_text != '-':
+                                        odds_value = float(odds_text)
+                                        if 1.0 <= odds_value <= 99999.0:
+                                            if len(set([first_boat, cell_second, third_boat])) == 3:
+                                                odds_data[f"{first_boat}-{cell_second}-{third_boat}"] = odds_value
+                                except (ValueError, IndexError):
+                                    continue
+
+                        elif len(cells) >= 12:
+                            for first_boat in range(1, 7):
+                                if first_boat == second_boat:
+                                    continue
+                                base_idx = (first_boat - 1) * 2
+                                try:
+                                    third_boat = int(cells[base_idx].text.strip())
+                                    odds_text = cells[base_idx + 1].text.strip().replace(',', '')
+                                    if odds_text and odds_text != '-':
+                                        odds_value = float(odds_text)
+                                        if 1.0 <= odds_value <= 99999.0:
+                                            if len(set([first_boat, second_boat, third_boat])) == 3:
+                                                odds_data[f"{first_boat}-{second_boat}-{third_boat}"] = odds_value
+                                except (ValueError, IndexError):
+                                    continue
+
+                if len(odds_data) >= 60:
+                    break
+
+        except Exception as e:
+            logger.warning(f"オッズパースエラー: {e}")
+
+        return odds_data if odds_data else None
