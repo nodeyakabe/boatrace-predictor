@@ -1,0 +1,9 @@
+{
+  "pid": 18400,
+  "job_name": "tenji_collection",
+  "script": "C:\\Users\\User\\Desktop\\BR\\BoatRace_package_20251115_172032\\scripts\\worker_tenji_collection.py",
+  "args": [
+    "-1"
+  ],
+  "started_at": "2025-12-10T13:03:23.281315"
+}

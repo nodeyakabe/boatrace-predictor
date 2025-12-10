@@ -114,7 +114,8 @@ class TenjiCollectionWorkflow:
 
             # UnifiedTenjiCollectorをインポート（遅延読み込み）
             from src.scraper.unified_tenji_collector import UnifiedTenjiCollector
-            collector = UnifiedTenjiCollector(headless=True, timeout=15)
+            # タイムアウト5秒に最適化（旧: 15秒）
+            collector = UnifiedTenjiCollector(headless=True, timeout=5)
 
             for venue_idx, (venue_code, venue_races) in enumerate(venues_dict.items(), 1):
                 venue_success = 0
@@ -147,17 +148,30 @@ class TenjiCollectionWorkflow:
                 if venue_success > 0:
                     result['venues_success'] += 1
 
+            # 収集統計を取得
+            stats = collector.get_stats()
+
             # クリーンアップ
             collector.close()
 
             # 最終結果
             result['success'] = True
             result['races_collected'] = collected_count
-            result['message'] = f"{target_date} 収集完了: {collected_count}/{total_races}レース"
+            result['stats'] = stats
+
+            # 統計情報を含むメッセージ
+            stats_msg = (
+                f"{target_date} 収集完了: {collected_count}/{total_races}レース | "
+                f"成功率: {stats['success_rate']:.1f}% | "
+                f"Boaters: {stats['boaters_success']}件 "
+                f"(リトライ: {stats['boaters_retry_success']}件) | "
+                f"Venue HP: {stats['venue_success']}件"
+            )
+            result['message'] = stats_msg
 
             self._update_progress(
                 "完了",
-                result['message'],
+                stats_msg,
                 100
             )
 

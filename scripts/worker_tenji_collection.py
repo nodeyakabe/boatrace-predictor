@@ -59,6 +59,18 @@ def main():
             print("処理完了")
             print(f"  収集数: {result['races_collected']}")
             print(f"  会場: {result['venues_success']}/{result['venues_total']}")
+
+            # 詳細統計を表示
+            if 'stats' in result:
+                stats = result['stats']
+                print("\n収集統計:")
+                print(f"  成功率: {stats['success_rate']:.1f}%")
+                print(f"  Boaters成功: {stats['boaters_success']}件")
+                print(f"  Boatersリトライ成功: {stats['boaters_retry_success']}件")
+                print(f"  Venue HP成功: {stats['venue_success']}件")
+                print(f"  失敗: {stats['failures']}件")
+                print(f"  タイムアウト失敗: {stats['timeout_failures']}件")
+                print(f"  空データフォールバック: {stats['empty_data_fallbacks']}件")
             print("=" * 60)
         elif result['success']:
             # 成功だが収集件数が0（開催なし等）
