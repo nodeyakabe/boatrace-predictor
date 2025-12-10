@@ -31,6 +31,7 @@ from .negative_pattern_checker import NegativePatternChecker
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
+from src.utils.pattern_cache import RaceDataCache
 from src.utils.scoring_config import ScoringConfig
 from src.utils.db_connection_pool import get_connection
 from src.prediction.rule_based_engine import RuleBasedEngine
@@ -263,6 +264,7 @@ class RacePredictor:
         self.top3_scorer = Top3Scorer(db_path)
         self.pattern_optimizer = PatternPriorityOptimizer()
         self.negative_pattern_checker = NegativePatternChecker()
+        self.race_data_cache = RaceDataCache()
 
         # 階層的確率モデル（条件付き確率ベースの三連単予測）
         self.hierarchical_predictor = None
@@ -1064,6 +1066,12 @@ class RacePredictor:
                 # 階層的予測エラーは無視して従来の予測を返す
                 pass
 
+        # キャッシュ統計をログ出力（定期的に）
+        cache_stats = self.race_data_cache.get_all_stats()
+        if cache_stats['before_info']['hits'] + cache_stats['before_info']['misses'] > 0:
+            logger = logging.getLogger(__name__)
+            logger.debug(f"キャッシュ統計: BEFORE {cache_stats['before_info']['hit_rate']:.1%} hit rate")
+
         return predictions
 
     def _apply_rule_based_adjustment(
@@ -1682,17 +1690,29 @@ class RacePredictor:
 
         import sqlite3
         conn = get_connection(self.db_path)
-        cursor = conn.cursor()
 
-        # BEFORE情報を取得
-        cursor.execute("""
-            SELECT pit_number, exhibition_time, st_time
-            FROM race_details
-            WHERE race_id = ?
-            ORDER BY pit_number
-        """, (race_id,))
-        before_data = cursor.fetchall()
-        cursor.close()
+        # キャッシュから取得試行
+        cached_before_info = self.race_data_cache.get_before_info(race_id)
+
+        if cached_before_info is not None:
+            before_data = cached_before_info
+            logger.debug(f"Race {race_id}: BEFORE情報キャッシュヒット")
+        else:
+            # DBから取得
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT pit_number, exhibition_time, st_time
+                FROM race_details
+                WHERE race_id = ?
+                ORDER BY pit_number
+            """, (race_id,))
+            before_data = cursor.fetchall()
+            cursor.close()
+
+            # キャッシュに保存
+            if before_data and len(before_data) >= 6:
+                self.race_data_cache.set_before_info(race_id, before_data)
+                logger.debug(f"Race {race_id}: BEFORE情報キャッシュ保存")
 
         if not before_data or len(before_data) < 6:
             # BEFORE情報がない場合はそのまま返す
