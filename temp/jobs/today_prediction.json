@@ -1,9 +1,9 @@
 {
-  "status": "running",
-  "step": "Step 1/6",
-  "message": "会場 09 を取得中... (5/12)",
-  "progress": 9,
-  "updated_at": "2025-12-10T11:40:31.623239",
-  "completed_at": "2025-12-09T15:56:29.206848",
+  "status": "completed",
+  "step": "Step 6/6",
+  "message": "今日の予測生成が完了しました（116レース）",
+  "progress": 100,
+  "updated_at": "2025-12-10T11:55:43.424355",
+  "completed_at": "2025-12-10T11:55:43.412535",
   "started_at": "2025-12-10T11:36:47.942875"
 }

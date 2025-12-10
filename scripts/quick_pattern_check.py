@@ -67,11 +67,11 @@ def quick_pattern_check(db_path=None, sample_size=100):
     cursor.close()
 
     if not races:
-        print("❌ 2025年のレースデータが見つかりません")
+        print("[ERROR] 2025年のレースデータが見つかりません")
         return
 
-    print(f"✓ 対象レース数: {len(races)}レース")
-    print(f"  期間: {races[-1][2]} ～ {races[0][2]}")
+    print(f"[OK] 対象レース数: {len(races)}レース")
+    print(f"     期間: {races[-1][2]} - {races[0][2]}")
     print()
 
     # 予測器の初期化
@@ -97,7 +97,7 @@ def quick_pattern_check(db_path=None, sample_size=100):
 
         try:
             # 予測実行
-            predictions = predictor.predict_race(race_id, venue_code)
+            predictions = predictor.predict_race(race_id)
 
             if not predictions:
                 continue
@@ -148,7 +148,9 @@ def quick_pattern_check(db_path=None, sample_size=100):
                     stats['correct_without_pattern'] += 1
 
         except Exception as e:
-            # エラーは無視して続行
+            # エラーを記録（デバッグ用）
+            if i == 0:  # 最初のエラーだけ表示
+                print(f"\n[WARNING] 予測エラー (race_id={race_id}): {str(e)}\n")
             pass
 
     print(f"\r処理完了: {stats['total']}/{len(races)}レース")

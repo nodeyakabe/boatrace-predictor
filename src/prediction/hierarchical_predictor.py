@@ -19,6 +19,7 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from src.features.feature_transforms import FeatureTransformer, RaceRelativeFeatureBuilder
 from src.prediction.trifecta_calculator import TrifectaCalculator, NaiveTrifectaCalculator
+from src.prediction.trifecta_calculator_optimized import TrifectaCalculatorOptimized
 
 
 class HierarchicalPredictor:
@@ -31,14 +32,20 @@ class HierarchicalPredictor:
     4. 期待値計算・買い目推奨
     """
 
-    def __init__(self, db_path: str, model_dir: str = 'models', use_v2: bool = False):
+    def __init__(self, db_path: str, model_dir: str = 'models', use_v2: bool = False, use_optimized: bool = True):
         self.db_path = db_path
         self.model_dir = model_dir
         self.use_v2 = use_v2
+        self.use_optimized = use_optimized
 
         self.feature_transformer = FeatureTransformer()
         self.feature_builder = RaceRelativeFeatureBuilder()
-        self.trifecta_calculator = TrifectaCalculator(model_dir, model_name='conditional', use_v2=use_v2)
+
+        # 最適化版を使用するかどうか
+        if use_optimized:
+            self.trifecta_calculator = TrifectaCalculatorOptimized(model_dir, model_name='conditional', use_v2=use_v2)
+        else:
+            self.trifecta_calculator = TrifectaCalculator(model_dir, model_name='conditional', use_v2=use_v2)
 
         self._model_loaded = False
 

@@ -1,6 +1,18 @@
 # 📚 BoatRace システムドキュメント総合インデックス
 
-**最終更新**: 2025-11-19
+**最終更新**: 2025-12-10
+
+---
+
+## 🔍 よく使うドキュメント（クイックリンク）
+
+| カテゴリ | ドキュメント | 説明 |
+|---------|------------|------|
+| 📊 **DB構造** | [docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md) | **データベース仕様書（最重要）** |
+| 📋 **残タスク** | [docs/残タスク一覧.md](docs/残タスク一覧.md) | 残タスク一覧 |
+| 🎯 **戦略** | [docs/betting_implementation_status.md](docs/betting_implementation_status.md) | ベッティングシステム実装状況 |
+| 🚀 **起動** | [UI起動ガイド.md](UI起動ガイド.md) | UI起動方法 |
+| 📖 **README** | [README.md](README.md) | プロジェクト概要 |
 
 ---
 
@@ -9,8 +21,8 @@
 | 優先度 | ドキュメント | 説明 |
 |--------|------------|------|
 | 1 | [START_HERE.md](START_HERE.md) | 初回セットアップ |
-| 2 | [起動方法.txt](起動方法.txt) | UIアプリの起動 |
-| 3 | [SYSTEM_OVERVIEW_FINAL.md](SYSTEM_OVERVIEW_FINAL.md) | システム全体像 |
+| 2 | [UI起動ガイド.md](UI起動ガイド.md) | UIアプリの起動 |
+| 3 | [README.md](README.md) | プロジェクト概要 |
 
 ---
 

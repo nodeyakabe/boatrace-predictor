@@ -1,7 +1,0 @@
-{
-  "pid": 21848,
-  "job_name": "today_prediction",
-  "script": "C:\\Users\\User\\Desktop\\BR\\BoatRace_package_20251115_172032\\scripts\\background_today_prediction.py",
-  "args": null,
-  "started_at": "2025-12-10T11:36:47.874921"
-}

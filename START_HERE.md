@@ -25,11 +25,21 @@ git pull origin main
 
 ## 📚 ステップ1: ドキュメントを開く
 
+### 🔍 よく使うドキュメント（クイックリファレンス）
+
+| 目的 | ドキュメント |
+|------|------------|
+| 📊 **DB構造を確認** | [docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md) |
+| 📋 **残タスク確認** | [docs/残タスク一覧.md](docs/残タスク一覧.md) |
+| 🎯 **戦略・実装状況** | [docs/betting_implementation_status.md](docs/betting_implementation_status.md) |
+| 📖 **プロジェクト概要** | [README.md](README.md) |
+| 🚀 **UI起動方法** | [UI起動ガイド.md](UI起動ガイド.md) |
+
 ### 🎯 メインドキュメント（必ず確認）
 
 **【今すぐ開く】**
 
-1. **[README_WORK_GUIDE.md](README_WORK_GUIDE.md)** ← すべてのドキュメントへのリンク集
+1. **[DOCS_INDEX.md](DOCS_INDEX.md)** ← すべてのドキュメントへのリンク集
 2. **[WORK_CHECKLIST.md](WORK_CHECKLIST.md)** ← 作業前の必須チェックリスト
 3. **[SYSTEM_CONSTRAINTS.md](SYSTEM_CONSTRAINTS.md)** ← 絶対に守るべき制約
 
