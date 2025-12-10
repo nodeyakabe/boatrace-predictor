@@ -5,6 +5,7 @@
 総合予想スコアと買い目推奨を提供
 """
 
+import logging
 from typing import Dict, List, Tuple, Optional
 from .statistics_calculator import StatisticsCalculator
 from .racer_analyzer import RacerAnalyzer
@@ -25,6 +26,7 @@ from .entry_prediction_model import EntryPredictionModel
 from .probability_calibrator import ProbabilityCalibrator
 from .beforeinfo_flag_adjuster import BeforeInfoFlagAdjuster
 from .top3_scorer import Top3Scorer
+from .pattern_priority_optimizer import PatternPriorityOptimizer
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -258,6 +260,7 @@ class RacePredictor:
         self.entry_prediction_model = EntryPredictionModel(db_path)
         self.probability_calibrator = ProbabilityCalibrator(db_path)
         self.top3_scorer = Top3Scorer(db_path)
+        self.pattern_optimizer = PatternPriorityOptimizer()
 
         # 階層的確率モデル（条件付き確率ベースの三連単予測）
         self.hierarchical_predictor = None
@@ -1634,9 +1637,10 @@ class RacePredictor:
         """
         BEFORE情報パターンボーナスを適用
 
-        バックテスト検証済み（200レース）:
-        - ベースライン55.5%を維持
-        - 該当時60-82%の高精度
+        バックテスト検証済み（1000レース、2025年データ）:
+        - 信頼度B: +9.5pt効果（65.3% vs 55.9%）
+        - 信頼度C: +8.3pt効果（47.7% vs 39.4%）
+        - 信頼度A: -6.5pt（逆効果のため適用しない）
 
         Args:
             predictions: 予測結果リスト（PRE_SCOREが格納されている）
@@ -1645,6 +1649,35 @@ class RacePredictor:
         Returns:
             パターンボーナス適用後の予測結果
         """
+        logger = logging.getLogger(__name__)
+
+        # 信頼度チェック: 信頼度A/Eではパターンを適用しない
+        if predictions:
+            top_confidence = predictions[0].get('confidence', 'C')
+
+            if top_confidence in ['A', 'E']:
+                # 信頼度Aは高精度なのでパターン不要、Eはデータ不足
+                logger.info(f"Race {race_id}: パターンスキップ（信頼度{top_confidence}）")
+                for pred in predictions:
+                    pred['pre_score'] = round(pred['total_score'], 1)
+                    pred['integration_mode'] = f'pattern_skipped_confidence_{top_confidence}'
+                    pred['pattern_multiplier'] = 1.0
+                    pred['matched_patterns'] = []
+                return predictions
+
+            # 信頼度Dは慎重モード（フィーチャーフラグで制御）
+            if top_confidence == 'D':
+                if not is_feature_enabled('apply_pattern_to_confidence_d'):
+                    logger.info(f"Race {race_id}: パターンスキップ（信頼度D・フラグ無効）")
+                    for pred in predictions:
+                        pred['pre_score'] = round(pred['total_score'], 1)
+                        pred['integration_mode'] = 'pattern_skipped_confidence_D'
+                        pred['pattern_multiplier'] = 1.0
+                        pred['matched_patterns'] = []
+                    return predictions
+                else:
+                    logger.info(f"Race {race_id}: パターン適用（信頼度D・フラグ有効）")
+
         import sqlite3
         conn = get_connection(self.db_path)
         cursor = conn.cursor()
@@ -1685,6 +1718,21 @@ class RacePredictor:
         # PRE順位マップを作成（現在のtotal_scoreベース）
         predictions_sorted = sorted(predictions, key=lambda x: x['total_score'], reverse=True)
         pre_rank_map = {pred['pit_number']: rank+1 for rank, pred in enumerate(predictions_sorted)}
+
+        # 会場コードを取得（パターン最適化で使用）
+        venue_code = None
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT venue_code FROM races WHERE id = ?", (race_id,))
+            venue_row = cursor.fetchone()
+            if venue_row:
+                venue_code = venue_row[0]
+            cursor.close()
+        except Exception:
+            pass
+
+        # 信頼度を取得（トップ予測の信頼度を使用）
+        top_confidence = predictions[0].get('confidence', 'C') if predictions else 'C'
 
         # 各艇にパターンボーナスを適用
         for pred in predictions:
@@ -1778,6 +1826,26 @@ class RacePredictor:
                     except Exception:
                         pass
 
+                # 複数パターンマッチ時は PatternPriorityOptimizer で最適化
+                if len(matched_patterns) > 1:
+                    best_pattern = self.pattern_optimizer.select_best_pattern(
+                        matched_patterns,
+                        top_confidence,
+                        venue_code
+                    )
+                    if best_pattern:
+                        final_multiplier = best_pattern['multiplier']
+                        # デバッグ用に選択されたパターンを記録
+                        pred['selected_pattern'] = best_pattern['name']
+                        logger.debug(
+                            f"Race {race_id} 艇{pit_number}: {len(matched_patterns)}個のパターンマッチ → "
+                            f"選択: {best_pattern['name']} (倍率{best_pattern['multiplier']:.3f})"
+                        )
+                elif len(matched_patterns) == 1:
+                    # 単一パターンの場合はそのまま使用
+                    final_multiplier = matched_patterns[0]['multiplier']
+                    pred['selected_pattern'] = matched_patterns[0]['name']
+
             # 最終スコア計算
             final_score = pre_score * final_multiplier
 
@@ -1795,6 +1863,17 @@ class RacePredictor:
 
         # スコア降順で再ソート
         predictions.sort(key=lambda x: x['total_score'], reverse=True)
+
+        # サマリーログ
+        if predictions:
+            top_pred = predictions[0]
+            logger.info(
+                f"Race {race_id}: パターン適用完了 - "
+                f"信頼度{top_confidence} | "
+                f"トップ予測: 艇{top_pred.get('pit_number')} "
+                f"倍率{top_pred.get('pattern_multiplier', 1.0):.3f} "
+                f"({top_pred.get('selected_pattern', 'なし')})"
+            )
 
         return predictions
 

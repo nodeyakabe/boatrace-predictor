@@ -15,7 +15,8 @@ FEATURE_FLAGS = {
     'gated_before_integration': False,  # ゲーティング方式（PRE拮抗時のみBEFORE使用）
     'before_safe_integration': False,  # BEFORE_SAFE統合（安全版直前情報統合、正規化統合に置き換え）
     'before_safe_st_exhibition': False,  # BEFORE_SAFEにST/展示タイム統合（Phase 5テスト結果: 悪化、無効化）
-    'before_pattern_bonus': True,     # パターン方式（検証結果: 1着55.5%維持、該当時60-82%）
+    'before_pattern_bonus': True,     # パターン方式（検証結果: 信頼度B +9.5pt, C +8.3pt, A -6.5pt）
+    'apply_pattern_to_confidence_d': False,  # 信頼度Dへのパターン適用（効果限定的+3.9pt、慎重モード）
     'entry_prediction_model': True,   # 進入予測モデル
     'confidence_refinement': False,   # 信頼度細分化（未実装）
     'st_course_interaction': True,    # ST×course交互作用（実装完了・再訓練済み）
