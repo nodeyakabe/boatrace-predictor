@@ -27,6 +27,7 @@ from .probability_calibrator import ProbabilityCalibrator
 from .beforeinfo_flag_adjuster import BeforeInfoFlagAdjuster
 from .top3_scorer import Top3Scorer
 from .pattern_priority_optimizer import PatternPriorityOptimizer
+from .negative_pattern_checker import NegativePatternChecker
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -261,6 +262,7 @@ class RacePredictor:
         self.probability_calibrator = ProbabilityCalibrator(db_path)
         self.top3_scorer = Top3Scorer(db_path)
         self.pattern_optimizer = PatternPriorityOptimizer()
+        self.negative_pattern_checker = NegativePatternChecker()
 
         # 階層的確率モデル（条件付き確率ベースの三連単予測）
         self.hierarchical_predictor = None
@@ -1863,6 +1865,23 @@ class RacePredictor:
 
         # スコア降順で再ソート
         predictions.sort(key=lambda x: x['total_score'], reverse=True)
+
+        # ネガティブパターンチェック（フィーチャーフラグで制御）
+        if is_feature_enabled('negative_patterns'):
+            # before_ranksマップを作成
+            before_ranks_map = {}
+            for pred in predictions:
+                pit_num = pred.get('pit_number')
+                before_ranks_data = pred.get('before_ranks', {})
+                if before_ranks_data:
+                    before_ranks_map[pit_num] = before_ranks_data
+
+            if before_ranks_map:
+                predictions = self.negative_pattern_checker.apply_negative_adjustments(
+                    predictions,
+                    before_ranks_map
+                )
+                logger.debug(f"Race {race_id}: ネガティブパターンチェック完了")
 
         # サマリーログ
         if predictions:
