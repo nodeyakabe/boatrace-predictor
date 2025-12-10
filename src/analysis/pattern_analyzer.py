@@ -540,16 +540,55 @@ class PatternAnalyzer:
     # 一括分析
     # ========================================
 
-    def analyze_all_venues(self, days: int = 90) -> Dict[str, Dict]:
-        """全競艇場の傾向を一括分析"""
+    def analyze_all_venues(self, days: int = 90, parallel: bool = True) -> Dict[str, Dict]:
+        """
+        全競艇場の傾向を一括分析
+
+        Args:
+            days: 集計期間（日数）
+            parallel: 並列処理を使用するか（デフォルト: True）
+
+        Returns:
+            {venue_code: analysis_result, ...}
+        """
         from config.settings import VENUES
 
-        results = {}
-        for venue_code in VENUES.keys():
-            analysis = self.analyze_venue_pattern(venue_code, days)
-            if analysis:
-                results[venue_code] = analysis
+        if not parallel:
+            # 従来の逐次処理
+            results = {}
+            for venue_code in VENUES.keys():
+                analysis = self.analyze_venue_pattern(venue_code, days)
+                if analysis:
+                    results[venue_code] = analysis
+            return results
 
+        # 並列処理版（4スレッド並列）
+        import concurrent.futures
+        import logging
+
+        logger = logging.getLogger(__name__)
+        results = {}
+        venue_codes = list(VENUES.keys())
+
+        def analyze_single_venue(venue_code):
+            """1会場を分析"""
+            try:
+                analysis = self.analyze_venue_pattern(venue_code, days)
+                return (venue_code, analysis)
+            except Exception as e:
+                logger.warning(f"会場{venue_code}の分析エラー: {e}")
+                return (venue_code, None)
+
+        # ThreadPoolExecutorで並列処理（4スレッド）
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {executor.submit(analyze_single_venue, vc): vc for vc in venue_codes}
+
+            for future in concurrent.futures.as_completed(futures):
+                venue_code, analysis = future.result()
+                if analysis:
+                    results[venue_code] = analysis
+
+        logger.info(f"法則分析完了: {len(results)}/{len(venue_codes)}会場")
         return results
 
     def get_venue_summary_text(self, venue_code: str, days: int = 90) -> str:

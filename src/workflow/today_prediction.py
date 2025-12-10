@@ -32,19 +32,22 @@ class TodayPredictionWorkflow:
         self,
         db_path: str = None,
         project_root: str = None,
-        progress_callback: Callable[[str, str, int], None] = None
+        progress_callback: Callable[[str, str, int], None] = None,
+        skip_pattern_analysis: bool = False
     ):
         """
         Args:
             db_path: データベースパス
             project_root: プロジェクトルートパス
             progress_callback: 進捗コールバック関数 (step, message, progress_percent)
+            skip_pattern_analysis: 法則再解析をスキップ（高速化オプション）
         """
         self.project_root = project_root or os.path.abspath(
             os.path.join(os.path.dirname(__file__), '../..')
         )
         self.db_path = db_path or os.path.join(self.project_root, 'data/boatrace.db')
         self.progress_callback = progress_callback or self._default_progress
+        self.skip_pattern_analysis = skip_pattern_analysis
 
         # 並列処理用の共有カウンター
         self._parallel_lock = threading.Lock()
@@ -137,8 +140,12 @@ class TodayPredictionWorkflow:
                 39
             )
 
-            # Step 4: 法則再解析
-            self.reanalyze_rules()
+            # Step 4: 法則再解析（スキップ可能）
+            if not self.skip_pattern_analysis:
+                self.reanalyze_rules()
+            else:
+                self._update_progress("Step 4/6", "法則再解析スキップ（高速モード）", 55)
+                logger.info("法則再解析をスキップしました（skip_pattern_analysis=True）")
 
             # Step 5: 予測生成
             self.generate_predictions(today_schedule)
@@ -361,7 +368,8 @@ class TodayPredictionWorkflow:
         success_count = 0
         total = len(all_races)
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        # 並列数を8→16に増加（高速化）
+        with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
             futures = {executor.submit(fetch_single_beforeinfo, race): race for race in all_races}
 
             for future in concurrent.futures.as_completed(futures, timeout=300):
@@ -466,7 +474,8 @@ class TodayPredictionWorkflow:
         success_count = 0
         total = len(all_races)
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        # 並列数を8→16に増加（高速化）
+        with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
             futures = {executor.submit(fetch_single_odds, race): race for race in all_races}
 
             for future in concurrent.futures.as_completed(futures, timeout=300):

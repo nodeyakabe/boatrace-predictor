@@ -1,11 +1,11 @@
 {
-  "status": "running",
-  "progress": 43,
-  "message": "14 R 3 収集中... (57/144)",
+  "status": "cancelled",
+  "progress": 70,
+  "message": "キャンセルされました",
   "started_at": "2025-12-10T13:03:23.282138",
-  "updated_at": "2025-12-10T13:21:12.466971",
+  "updated_at": "2025-12-10T13:29:20.578710",
   "target_date": "2025-12-01",
-  "cancelled_at": "2025-11-30T14:52:30.510139",
+  "cancelled_at": "2025-12-10T13:29:20.578003",
   "completed_at": "2025-12-09T15:40:18.482010",
   "step": "データ収集"
 }

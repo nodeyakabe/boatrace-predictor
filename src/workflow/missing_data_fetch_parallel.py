@@ -52,7 +52,7 @@ class MissingDataFetchWorkflowParallel:
         project_root: str = None,
         progress_callback: Callable[[str, str, int], None] = None,
         max_workers_results: int = 16,  # 結果取得の並列数
-        max_workers_beforeinfo: int = 8,  # 直前情報取得の並列数
+        max_workers_beforeinfo: int = 16,  # 直前情報取得の並列数（8→16に高速化）
         max_workers_odds: int = 20  # オッズ取得の並列数（高速化）
     ):
         """
