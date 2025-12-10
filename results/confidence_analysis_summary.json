@@ -1,0 +1,21 @@
+{
+  "analysis_date": "2025-12-08",
+  "confidence_b": {
+    "total_races": 150,
+    "first_accuracy": 54.0,
+    "issue": "購入対象レース少・3連単的中率20%"
+  },
+  "confidence_cd": {
+    "C": {
+      "total_races": 761,
+      "course1_bias": 78.71222076215506,
+      "issue": "イン・A1重視でオッズ低い買い目が出やすい"
+    },
+    "D": {
+      "total_races": 371,
+      "course1_bias": 68.46361185983828,
+      "issue": "イン・A1重視でオッズ低い買い目が出やすい"
+    }
+  },
+  "upset_patterns": {}
+}

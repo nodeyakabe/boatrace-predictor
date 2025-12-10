@@ -12,7 +12,25 @@
 
 ## 起動方法
 
-### 方法1: バッチファイルで起動（推奨）
+### ⚠️ 重要: 必ずPythonモジュールとして起動してください
+
+Windows環境では`streamlit`コマンドがパスに通っていない場合があります。
+以下のいずれかの方法で起動してください：
+
+### 方法1: コマンドラインから起動（推奨）
+
+```cmd
+cd ui
+python -m streamlit run app.py
+```
+
+または、プロジェクトルートから：
+
+```cmd
+python -m streamlit run ui/app.py
+```
+
+### 方法2: バッチファイルで起動
 
 ```cmd
 start_ui.bat
@@ -20,13 +38,13 @@ start_ui.bat
 
 ダブルクリックで実行可能です。
 
-### 方法2: コマンドラインから起動
+### ❌ 使用しないでください
 
 ```cmd
-python -m streamlit run ui/app.py
+streamlit run ui/app.py  # これは失敗する可能性が高い
 ```
 
-**注意**: `streamlit`コマンドが認識されない場合は、上記のように`python -m streamlit`を使用してください。
+**理由**: Streamlitはインストール済みでも、`streamlit`コマンドがシステムパスに登録されていない場合があります。`python -m streamlit`を使用することで確実に起動できます。
 
 ---
 

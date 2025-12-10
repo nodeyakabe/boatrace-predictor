@@ -210,6 +210,10 @@ assert 0 <= probability <= 1
 ## ⚡ クイックコマンド
 
 ```bash
+# UI起動（⚠️ 必ずこの方法で起動）
+cd ui
+python -m streamlit run app.py
+
 # 全テスト実行
 python run_tests.py
 
@@ -219,6 +223,20 @@ python -m pytest tests/test_integration.py::TestDataFlow::test_database_integrit
 # 計算ロジックチェック
 python -m pytest tests/test_core_logic.py -v
 ```
+
+### ⚠️ UI起動の注意点
+
+**絶対にこれを使用**:
+```bash
+python -m streamlit run ui/app.py
+```
+
+**使用しないでください**（失敗する可能性が高い）:
+```bash
+streamlit run ui/app.py  # ❌ パスが通っていない
+```
+
+詳細は [UI起動ガイド.md](UI起動ガイド.md) を参照してください。
 
 ---
 

@@ -8,9 +8,14 @@
 # 機能フラグ設定
 FEATURE_FLAGS = {
     # Phase 1: 実装完了・動作確認済み
+    'beforeinfo_flag_adjustment': False,  # 状態フラグ方式（検証結果: 1着的中率-3.65%悪化のためロールバック）
+    'hierarchical_before_prediction': False,  # 階層的予測（検証結果: 1着的中率-0.5%悪化のためロールバック）
+    'normalized_before_integration': False,  # 正規化統合（検証結果: 1着的中率-0.5%悪化のためロールバック）
     'dynamic_integration': False,     # 動的合成比（BEFORE_SCORE停止中 - 逆相関のため）
-    'before_safe_integration': True,  # BEFORE_SAFE統合（安全版直前情報統合、テスト中）
+    'gated_before_integration': False,  # ゲーティング方式（PRE拮抗時のみBEFORE使用）
+    'before_safe_integration': False,  # BEFORE_SAFE統合（安全版直前情報統合、正規化統合に置き換え）
     'before_safe_st_exhibition': False,  # BEFORE_SAFEにST/展示タイム統合（Phase 5テスト結果: 悪化、無効化）
+    'before_pattern_bonus': True,     # パターン方式（検証結果: 1着55.5%維持、該当時60-82%）
     'entry_prediction_model': True,   # 進入予測モデル
     'confidence_refinement': False,   # 信頼度細分化（未実装）
     'st_course_interaction': True,    # ST×course交互作用（実装完了・再訓練済み）

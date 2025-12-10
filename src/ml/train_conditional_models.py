@@ -131,6 +131,75 @@ class ConditionalModelTrainer:
 
         return X, y
 
+    def prepare_stage2_data_v2(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, np.ndarray]:
+        """
+        Stage2（2着予測）用のデータを準備（改善版）
+
+        予想1位を条件として使用することで、学習データと予測時のデータ分布を一致させる
+        """
+        # 6艇揃っているレースのみ
+        race_counts = df.groupby('race_id').size()
+        valid_races = race_counts[race_counts == 6].index
+        df_valid = df[df['race_id'].isin(valid_races)].copy()
+
+        if len(df_valid) == 0:
+            return pd.DataFrame(), np.array([])
+
+        # 特徴量カラム
+        feature_cols = [c for c in df_valid.columns
+                       if c not in ['rank', 'race_id', 'pit_number', 'race_date',
+                                   'venue_code', 'racer_number', 'race_number']]
+
+        # 各レースで予想1位を計算（Stage1スコアベース：勝率ベースの簡易版）
+        # 本格版ではStage1モデルの予測確率を使用
+        df_valid['predicted_score'] = (
+            df_valid['win_rate'].fillna(0) * 0.4 +
+            df_valid['second_rate'].fillna(0) * 0.2 +
+            df_valid['motor_second_rate'].fillna(0) * 0.2 +
+            df_valid['boat_second_rate'].fillna(0) * 0.1 +
+            (df_valid['exhibition_time'].fillna(100) < 6.8).astype(float) * 0.1
+        )
+
+        # 各レースの予想1位を取得
+        predicted_first = df_valid.loc[
+            df_valid.groupby('race_id')['predicted_score'].idxmax()
+        ][['race_id', 'pit_number']].copy()
+        predicted_first.columns = ['race_id', 'predicted_first_pit']
+
+        # 予想1位艇の特徴量を取得
+        predicted_first_features = df_valid.merge(
+            predicted_first, left_on=['race_id', 'pit_number'],
+            right_on=['race_id', 'predicted_first_pit']
+        )[['race_id'] + feature_cols].copy()
+        predicted_first_features.columns = ['race_id'] + [f'pred_winner_{c}' for c in feature_cols]
+
+        # 予想1位を除外した候補データ
+        df_with_pred = df_valid.merge(predicted_first, on='race_id')
+        remaining = df_with_pred[
+            df_with_pred['pit_number'] != df_with_pred['predicted_first_pit']
+        ].copy()
+        remaining = remaining.drop('predicted_first_pit', axis=1)
+
+        # 予想1位艇の特徴量をマージ
+        remaining = remaining.merge(predicted_first_features, on='race_id')
+
+        # 差分特徴量を追加
+        for col in feature_cols:
+            if col in remaining.columns and f'pred_winner_{col}' in remaining.columns:
+                if remaining[col].dtype in [np.float64, np.int64, float, int]:
+                    remaining[f'diff_{col}'] = remaining[col] - remaining[f'pred_winner_{col}']
+
+        # ラベル：実際の2着かどうか
+        y = (remaining['rank'] == 2).astype(int).values
+
+        # 特徴量
+        exclude_cols = ['rank', 'race_id', 'pit_number', 'race_date', 'venue_code',
+                       'racer_number', 'race_number', 'predicted_score']
+        X = remaining.drop([c for c in exclude_cols if c in remaining.columns], axis=1)
+        X = X.select_dtypes(include=[np.number])
+
+        return X, y
+
     def prepare_stage3_data(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, np.ndarray]:
         """Stage3（3着予測）用のデータを準備"""
         # 6艇揃っているレースのみ
@@ -187,6 +256,96 @@ class ConditionalModelTrainer:
         # 特徴量
         exclude_cols = ['rank', 'race_id', 'pit_number', 'race_date', 'venue_code',
                        'racer_number', 'race_number']
+        X = remaining.drop([c for c in exclude_cols if c in remaining.columns], axis=1)
+        X = X.select_dtypes(include=[np.number])
+
+        return X, y
+
+    def prepare_stage3_data_v2(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, np.ndarray]:
+        """
+        Stage3（3着予測）用のデータを準備（改善版）
+
+        予想1位・予想2位を条件として使用
+        """
+        # 6艇揃っているレースのみ
+        race_counts = df.groupby('race_id').size()
+        valid_races = race_counts[race_counts == 6].index
+        df_valid = df[df['race_id'].isin(valid_races)].copy()
+
+        if len(df_valid) == 0:
+            return pd.DataFrame(), np.array([])
+
+        # 特徴量カラム
+        feature_cols = [c for c in df_valid.columns
+                       if c not in ['rank', 'race_id', 'pit_number', 'race_date',
+                                   'venue_code', 'racer_number', 'race_number']]
+
+        # 各レースで予想1位を計算
+        df_valid['predicted_score'] = (
+            df_valid['win_rate'].fillna(0) * 0.4 +
+            df_valid['second_rate'].fillna(0) * 0.2 +
+            df_valid['motor_second_rate'].fillna(0) * 0.2 +
+            df_valid['boat_second_rate'].fillna(0) * 0.1 +
+            (df_valid['exhibition_time'].fillna(100) < 6.8).astype(float) * 0.1
+        )
+
+        # 予想1位を取得
+        predicted_first = df_valid.loc[
+            df_valid.groupby('race_id')['predicted_score'].idxmax()
+        ][['race_id', 'pit_number']].copy()
+        predicted_first.columns = ['race_id', 'predicted_first_pit']
+
+        # 予想1位を除外して予想2位を計算
+        df_no_first = df_valid.merge(predicted_first, on='race_id')
+        df_no_first = df_no_first[
+            df_no_first['pit_number'] != df_no_first['predicted_first_pit']
+        ].copy()
+
+        predicted_second = df_no_first.loc[
+            df_no_first.groupby('race_id')['predicted_score'].idxmax()
+        ][['race_id', 'pit_number']].copy()
+        predicted_second.columns = ['race_id', 'predicted_second_pit']
+
+        # 予想1位・2位の特徴量を取得
+        predicted_first_features = df_valid.merge(
+            predicted_first, left_on=['race_id', 'pit_number'],
+            right_on=['race_id', 'predicted_first_pit']
+        )[['race_id'] + feature_cols].copy()
+        predicted_first_features.columns = ['race_id'] + [f'pred_winner_{c}' for c in feature_cols]
+
+        predicted_second_features = df_valid.merge(
+            predicted_second, left_on=['race_id', 'pit_number'],
+            right_on=['race_id', 'predicted_second_pit']
+        )[['race_id'] + feature_cols].copy()
+        predicted_second_features.columns = ['race_id'] + [f'pred_second_{c}' for c in feature_cols]
+
+        # 予想1位・2位を除外した候補データ
+        df_with_preds = df_valid.merge(predicted_first, on='race_id').merge(predicted_second, on='race_id')
+        remaining = df_with_preds[
+            (df_with_preds['pit_number'] != df_with_preds['predicted_first_pit']) &
+            (df_with_preds['pit_number'] != df_with_preds['predicted_second_pit'])
+        ].copy()
+        remaining = remaining.drop(['predicted_first_pit', 'predicted_second_pit'], axis=1)
+
+        # 予想1位・2位艇の特徴量をマージ
+        remaining = remaining.merge(predicted_first_features, on='race_id')
+        remaining = remaining.merge(predicted_second_features, on='race_id')
+
+        # 差分特徴量を追加
+        for col in feature_cols:
+            if col in remaining.columns:
+                if remaining[col].dtype in [np.float64, np.int64, float, int]:
+                    if f'pred_winner_{col}' in remaining.columns:
+                        remaining[f'diff_pred_winner_{col}'] = remaining[col] - remaining[f'pred_winner_{col}']
+                    if f'pred_second_{col}' in remaining.columns:
+                        remaining[f'diff_pred_second_{col}'] = remaining[col] - remaining[f'pred_second_{col}']
+
+        # ラベル：実際の3着かどうか
+        y = (remaining['rank'] == 3).astype(int).values
+
+        # 特徴量
+        exclude_cols = ['rank', 'race_id', 'pit_number', 'race_date', 'venue_code',
+                       'racer_number', 'race_number', 'predicted_score']
         X = remaining.drop([c for c in exclude_cols if c in remaining.columns], axis=1)
         X = X.select_dtypes(include=[np.number])
 

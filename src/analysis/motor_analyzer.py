@@ -255,6 +255,178 @@ class MotorAnalyzer:
         }
 
     # ========================================
+    # バッチ取得メソッド（高速化）
+    # ========================================
+
+    def _get_motors_batch(self, venue_code: str, motor_numbers: List[int]) -> Dict:
+        """
+        複数モーターのデータを一括取得（高速化）
+
+        Returns:
+            {motor_number: {'stats': {...}, 'recent': {...}}, ...}
+        """
+        if not motor_numbers:
+            return {}
+
+        placeholders = ','.join('?' * len(motor_numbers))
+
+        # モーター統計を一括取得
+        stats_query = f"""
+            SELECT
+                e.motor_number,
+                COUNT(*) as total_races,
+                SUM(CASE WHEN CAST(r.rank AS INTEGER) = 1 THEN 1 ELSE 0 END) as win_count,
+                SUM(CASE WHEN CAST(r.rank AS INTEGER) <= 2 THEN 1 ELSE 0 END) as place_2_count,
+                SUM(CASE WHEN CAST(r.rank AS INTEGER) <= 3 THEN 1 ELSE 0 END) as place_3_count,
+                AVG(CAST(r.rank AS INTEGER)) as avg_rank
+            FROM results r
+            JOIN races ra ON r.race_id = ra.id
+            JOIN entries e ON r.race_id = e.race_id AND r.pit_number = e.pit_number
+            WHERE ra.venue_code = ?
+              AND e.motor_number IN ({placeholders})
+              AND r.is_invalid = 0
+              AND ra.race_date >= date('now', '-90 days')
+            GROUP BY e.motor_number
+        """
+
+        rows = self._fetch_all(stats_query, [venue_code] + motor_numbers)
+
+        result = {}
+        for row in rows:
+            motor_num = row['motor_number']
+            total = row['total_races']
+            if total > 0:
+                result[motor_num] = {
+                    'stats': {
+                        'total_races': total,
+                        'win_count': row['win_count'],
+                        'win_rate': row['win_count'] / total,
+                        'place_rate_2': row['place_2_count'] / total,
+                        'place_rate_3': row['place_3_count'] / total,
+                        'avg_rank': row['avg_rank']
+                    },
+                    'recent': {}
+                }
+
+        # 直近成績を一括取得
+        recent_query = f"""
+            SELECT
+                e.motor_number,
+                r.rank,
+                ra.race_date,
+                ra.race_number
+            FROM results r
+            JOIN races ra ON r.race_id = ra.id
+            JOIN entries e ON r.race_id = e.race_id AND r.pit_number = e.pit_number
+            WHERE ra.venue_code = ?
+              AND e.motor_number IN ({placeholders})
+              AND r.is_invalid = 0
+            ORDER BY e.motor_number, ra.race_date DESC, ra.race_number DESC
+        """
+
+        rows = self._fetch_all(recent_query, [venue_code] + motor_numbers)
+
+        # モーター番号ごとにグループ化
+        recent_by_motor = {}
+        for row in rows:
+            motor_num = row['motor_number']
+            if motor_num not in recent_by_motor:
+                recent_by_motor[motor_num] = []
+            if len(recent_by_motor[motor_num]) < 10:  # 直近10レース
+                recent_by_motor[motor_num].append(int(row['rank']))
+
+        # 統計計算
+        for motor_num, ranks in recent_by_motor.items():
+            if motor_num in result and ranks:
+                total = len(ranks)
+                result[motor_num]['recent'] = {
+                    'recent_races': ranks,
+                    'recent_win_rate': sum(1 for r in ranks if r == 1) / total,
+                    'recent_place_rate_3': sum(1 for r in ranks if r <= 3) / total
+                }
+
+        # デフォルト値を設定（データがないモーター用）
+        for motor_num in motor_numbers:
+            if motor_num not in result:
+                result[motor_num] = {
+                    'stats': {
+                        'total_races': 0,
+                        'win_count': 0,
+                        'win_rate': 0.0,
+                        'place_rate_2': 0.0,
+                        'place_rate_3': 0.0,
+                        'avg_rank': 0.0
+                    },
+                    'recent': {
+                        'recent_races': [],
+                        'recent_win_rate': 0.0,
+                        'recent_place_rate_3': 0.0
+                    }
+                }
+
+        return result
+
+    def _get_boats_batch(self, venue_code: str, boat_numbers: List[int]) -> Dict:
+        """
+        複数ボートのデータを一括取得（高速化）
+
+        Returns:
+            {boat_number: {...}, ...}
+        """
+        if not boat_numbers:
+            return {}
+
+        placeholders = ','.join('?' * len(boat_numbers))
+
+        query = f"""
+            SELECT
+                e.boat_number,
+                COUNT(*) as total_races,
+                SUM(CASE WHEN CAST(r.rank AS INTEGER) = 1 THEN 1 ELSE 0 END) as win_count,
+                SUM(CASE WHEN CAST(r.rank AS INTEGER) <= 2 THEN 1 ELSE 0 END) as place_2_count,
+                SUM(CASE WHEN CAST(r.rank AS INTEGER) <= 3 THEN 1 ELSE 0 END) as place_3_count,
+                AVG(CAST(r.rank AS INTEGER)) as avg_rank
+            FROM results r
+            JOIN races ra ON r.race_id = ra.id
+            JOIN entries e ON r.race_id = e.race_id AND r.pit_number = e.pit_number
+            WHERE ra.venue_code = ?
+              AND e.boat_number IN ({placeholders})
+              AND r.is_invalid = 0
+              AND ra.race_date >= date('now', '-90 days')
+            GROUP BY e.boat_number
+        """
+
+        rows = self._fetch_all(query, [venue_code] + boat_numbers)
+
+        result = {}
+        for row in rows:
+            boat_num = row['boat_number']
+            total = row['total_races']
+            if total > 0:
+                result[boat_num] = {
+                    'total_races': total,
+                    'win_count': row['win_count'],
+                    'win_rate': row['win_count'] / total,
+                    'place_rate_2': row['place_2_count'] / total,
+                    'place_rate_3': row['place_3_count'] / total,
+                    'avg_rank': row['avg_rank']
+                }
+
+        # デフォルト値を設定（データがないボート用）
+        for boat_num in boat_numbers:
+            if boat_num not in result:
+                result[boat_num] = {
+                    'total_races': 0,
+                    'win_count': 0,
+                    'win_rate': 0.0,
+                    'place_rate_2': 0.0,
+                    'place_rate_3': 0.0,
+                    'avg_rank': 0.0
+                }
+
+        return result
+
+    # ========================================
     # レース単位でのモーター・ボート分析
     # ========================================
 
@@ -278,7 +450,7 @@ class MotorAnalyzer:
                 ...
             ]
         """
-        # キャッシュ使用時
+        # キャッシュ使用時（バッチ取得で高速化）
         if self._use_cache and self.batch_loader:
             race_info = self.batch_loader.get_race_info(race_id)
             entries = self.batch_loader.get_race_entries(race_id)
@@ -286,25 +458,26 @@ class MotorAnalyzer:
             if race_info and entries:
                 venue_code = race_info['venue_code']
 
+                # モーター番号・ボート番号のリストを取得
+                motor_numbers = [e.get('motor_number') for e in entries if e.get('motor_number')]
+                boat_numbers = [e.get('boat_number') for e in entries if e.get('boat_number')]
+
+                # 一括取得
+                motors_data = self._get_motors_batch(venue_code, motor_numbers) if motor_numbers else {}
+                boats_data = self._get_boats_batch(venue_code, boat_numbers) if boat_numbers else {}
+
                 results = []
                 for entry in entries:
                     motor_number = entry.get('motor_number')
                     boat_number = entry.get('boat_number')
 
-                    # モーター成績
-                    motor_stats = self.get_motor_stats(venue_code, motor_number) if motor_number else {}
-                    motor_recent = self.get_motor_recent_form(venue_code, motor_number) if motor_number else {}
-
-                    # ボート成績
-                    boat_stats = self.get_boat_stats(venue_code, boat_number) if boat_number else {}
-
                     results.append({
                         'pit_number': entry['pit_number'],
                         'motor_number': motor_number,
                         'boat_number': boat_number,
-                        'motor_stats': motor_stats,
-                        'motor_recent_form': motor_recent,
-                        'boat_stats': boat_stats
+                        'motor_stats': motors_data.get(motor_number, {}).get('stats', {}),
+                        'motor_recent_form': motors_data.get(motor_number, {}).get('recent', {}),
+                        'boat_stats': boats_data.get(boat_number, {})
                     })
 
                 return results

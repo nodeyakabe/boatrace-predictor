@@ -20,9 +20,10 @@ class TrifectaCalculator:
     Stage1/2/3モデルを統合して120通りの三連単確率を計算
     """
 
-    def __init__(self, model_dir: str = 'models', model_name: str = 'conditional'):
+    def __init__(self, model_dir: str = 'models', model_name: str = 'conditional', use_v2: bool = False):
         self.model_dir = model_dir
         self.model_name = model_name
+        self.use_v2 = use_v2
         self.models = {}
         self.feature_names = {}
         self._loaded = False
@@ -32,21 +33,61 @@ class TrifectaCalculator:
         if self._loaded:
             return
 
+        if self.use_v2:
+            self._load_v2_models()
+        else:
+            self._load_v1_models()
+
+        self._loaded = True
+
+    def _load_v1_models(self):
+        """v1モデルを読み込み"""
         # メタ情報を読み込み
         meta_path = os.path.join(self.model_dir, f'{self.model_name}_meta.json')
         if os.path.exists(meta_path):
             with open(meta_path, 'r', encoding='utf-8') as f:
                 meta = json.load(f)
-            self.feature_names = meta.get('feature_names', {})
+            self.feature_names = meta.get('feature_names', meta.get('features', {}))
 
         # 各Stageモデルを読み込み
         for stage in ['stage1', 'stage2', 'stage3']:
             model_path = os.path.join(self.model_dir, f'{self.model_name}_{stage}.joblib')
             if os.path.exists(model_path):
                 self.models[stage] = joblib.load(model_path)
-                print(f"読み込み: {stage}")
+                print(f"v1モデル読み込み: {stage}")
 
-        self._loaded = True
+    def _load_v2_models(self):
+        """v2モデルを読み込み（最新版を自動検索）"""
+        from pathlib import Path
+
+        model_dir_path = Path(self.model_dir)
+
+        # 最新のv2モデルを検索
+        v2_files = list(model_dir_path.glob("conditional_stage2_v2_*.joblib"))
+        if not v2_files:
+            print("v2モデルが見つかりません。v1モデルを使用します。")
+            self._load_v1_models()
+            return
+
+        latest = sorted(v2_files)[-1]
+        parts = latest.stem.split('_')
+        timestamp = '_'.join(parts[-2:])
+
+        print(f"v2モデルタイムスタンプ: {timestamp}")
+
+        # v2モデル読み込み
+        for stage in ['stage1', 'stage2', 'stage3']:
+            model_path = model_dir_path / f"conditional_{stage}_v2_{timestamp}.joblib"
+            if model_path.exists():
+                self.models[stage] = joblib.load(model_path)
+                print(f"v2モデル読み込み: {stage}")
+
+        # v2メタ情報を読み込み
+        meta_path = model_dir_path / f"conditional_meta_v2_{timestamp}.json"
+        if meta_path.exists():
+            with open(meta_path, 'r', encoding='utf-8') as f:
+                meta = json.load(f)
+            self.feature_names = meta.get('features', {})
 
     def calculate(self, race_features: pd.DataFrame,
                   pit_column: str = 'pit_number') -> Dict[str, float]:
@@ -128,7 +169,7 @@ class TrifectaCalculator:
 
     def _predict_second_place(self, race_features: pd.DataFrame,
                                first_idx: int) -> np.ndarray:
-        """1着が確定した場合の2着確率を予測"""
+        """1着が確定した場合の2着確率を予測（バッチ最適化版）"""
         if 'stage2' not in self.models or self.models['stage2'] is None:
             # モデルがない場合は残り5艇で均等確率
             probs = np.ones(6) / 5
@@ -140,22 +181,23 @@ class TrifectaCalculator:
         # 1着艇の特徴量
         first_features = race_features.iloc[first_idx]
 
-        # 各候補艇について予測
-        probs = np.zeros(6)
+        # 候補艇の特徴量を一括作成（バッチ処理）
+        candidate_indices = [j for j in range(6) if j != first_idx]
+        feature_batch = []
 
-        for j in range(6):
-            if j == first_idx:
-                probs[j] = 0
-                continue
-
-            # 候補艇の特徴量 + 1着艇の特徴量を結合
+        for j in candidate_indices:
             candidate_features = self._create_stage2_features(
                 race_features.iloc[j], first_features, feature_cols
             )
-
             if len(candidate_features) > 0:
-                pred = self.models['stage2'].predict_proba([candidate_features])[:, 1]
-                probs[j] = pred[0]
+                feature_batch.append(candidate_features)
+
+        # バッチ予測（1回のpredict_probaで全候補を予測）
+        probs = np.zeros(6)
+        if len(feature_batch) > 0:
+            batch_preds = self.models['stage2'].predict_proba(feature_batch)[:, 1]
+            for i, j in enumerate(candidate_indices):
+                probs[j] = batch_preds[i]
 
         # 正規化
         total = probs.sum()
@@ -166,7 +208,7 @@ class TrifectaCalculator:
 
     def _predict_third_place(self, race_features: pd.DataFrame,
                               first_idx: int, second_idx: int) -> np.ndarray:
-        """1着・2着が確定した場合の3着確率を予測"""
+        """1着・2着が確定した場合の3着確率を予測（バッチ最適化版）"""
         if 'stage3' not in self.models or self.models['stage3'] is None:
             # モデルがない場合は残り4艇で均等確率
             probs = np.ones(6) / 4
@@ -180,22 +222,23 @@ class TrifectaCalculator:
         first_features = race_features.iloc[first_idx]
         second_features = race_features.iloc[second_idx]
 
-        # 各候補艇について予測
-        probs = np.zeros(6)
+        # 候補艇の特徴量を一括作成（バッチ処理）
+        candidate_indices = [k for k in range(6) if k != first_idx and k != second_idx]
+        feature_batch = []
 
-        for k in range(6):
-            if k == first_idx or k == second_idx:
-                probs[k] = 0
-                continue
-
-            # 候補艇の特徴量 + 1着艇・2着艇の特徴量を結合
+        for k in candidate_indices:
             candidate_features = self._create_stage3_features(
                 race_features.iloc[k], first_features, second_features, feature_cols
             )
-
             if len(candidate_features) > 0:
-                pred = self.models['stage3'].predict_proba([candidate_features])[:, 1]
-                probs[k] = pred[0]
+                feature_batch.append(candidate_features)
+
+        # バッチ予測（1回のpredict_probaで全候補を予測）
+        probs = np.zeros(6)
+        if len(feature_batch) > 0:
+            batch_preds = self.models['stage3'].predict_proba(feature_batch)[:, 1]
+            for i, k in enumerate(candidate_indices):
+                probs[k] = batch_preds[i]
 
         # 正規化
         total = probs.sum()
@@ -221,92 +264,84 @@ class TrifectaCalculator:
     def _create_stage2_features(self, candidate: pd.Series,
                                  winner: pd.Series,
                                  feature_cols: List[str]) -> np.ndarray:
-        """Stage2用の特徴量を作成"""
+        """Stage2用の特徴量を作成（高速化版）"""
         if not feature_cols:
             return np.array([])
 
+        # 除外カラム
+        exclude_cols = {'race_id', 'pit_number', 'race_date', 'venue_code',
+                       'racer_number', 'race_number', 'rank'}
+
         features = {}
 
-        # 候補艇の特徴量
-        for col in candidate.index:
-            if col not in ['race_id', 'pit_number', 'race_date', 'venue_code',
-                          'racer_number', 'race_number', 'rank']:
-                if pd.api.types.is_numeric_dtype(type(candidate[col])):
-                    features[col] = candidate[col]
+        # 数値型カラムのみを事前フィルタリング
+        candidate_numeric = candidate[candidate.apply(lambda x: isinstance(x, (int, float, np.number)))]
+        winner_numeric = winner[winner.apply(lambda x: isinstance(x, (int, float, np.number)))]
 
-        # 1着艇の特徴量（winner_プレフィックス）
-        for col in winner.index:
-            if col not in ['race_id', 'pit_number', 'race_date', 'venue_code',
-                          'racer_number', 'race_number', 'rank']:
-                if pd.api.types.is_numeric_dtype(type(winner[col])):
-                    features[f'winner_{col}'] = winner[col]
+        # 候補艇の特徴量（ベクトル化）
+        for col in candidate_numeric.index:
+            if col not in exclude_cols:
+                features[col] = candidate_numeric[col]
 
-        # 差分特徴量
-        for col in candidate.index:
-            if col not in ['race_id', 'pit_number', 'race_date', 'venue_code',
-                          'racer_number', 'race_number', 'rank']:
-                if col in winner.index:
-                    try:
-                        features[f'diff_{col}'] = float(candidate[col]) - float(winner[col])
-                    except (TypeError, ValueError):
-                        pass
+        # 1着艇の特徴量（ベクトル化）
+        for col in winner_numeric.index:
+            if col not in exclude_cols:
+                features[f'winner_{col}'] = winner_numeric[col]
+
+        # 差分特徴量（共通カラムのみ）
+        common_cols = set(candidate_numeric.index) & set(winner_numeric.index) - exclude_cols
+        for col in common_cols:
+            features[f'diff_{col}'] = candidate_numeric[col] - winner_numeric[col]
 
         # 特徴量リストに合わせて並び替え
-        result = []
-        for col in feature_cols:
-            result.append(features.get(col, 0))
+        result = np.array([features.get(col, 0) for col in feature_cols])
 
-        return np.array(result)
+        return result
 
     def _create_stage3_features(self, candidate: pd.Series,
                                  winner: pd.Series,
                                  second: pd.Series,
                                  feature_cols: List[str]) -> np.ndarray:
-        """Stage3用の特徴量を作成"""
+        """Stage3用の特徴量を作成（高速化版）"""
         if not feature_cols:
             return np.array([])
 
+        # 除外カラム
+        exclude_cols = {'race_id', 'pit_number', 'race_date', 'venue_code',
+                       'racer_number', 'race_number', 'rank'}
+
         features = {}
 
-        # 候補艇の特徴量
-        for col in candidate.index:
-            if col not in ['race_id', 'pit_number', 'race_date', 'venue_code',
-                          'racer_number', 'race_number', 'rank']:
-                if pd.api.types.is_numeric_dtype(type(candidate[col])):
-                    features[col] = candidate[col]
+        # 数値型カラムのみを事前フィルタリング
+        candidate_numeric = candidate[candidate.apply(lambda x: isinstance(x, (int, float, np.number)))]
+        winner_numeric = winner[winner.apply(lambda x: isinstance(x, (int, float, np.number)))]
+        second_numeric = second[second.apply(lambda x: isinstance(x, (int, float, np.number)))]
 
-        # 1着艇の特徴量
-        for col in winner.index:
-            if col not in ['race_id', 'pit_number', 'race_date', 'venue_code',
-                          'racer_number', 'race_number', 'rank']:
-                if pd.api.types.is_numeric_dtype(type(winner[col])):
-                    features[f'winner_{col}'] = winner[col]
+        # 候補艇の特徴量（ベクトル化）
+        for col in candidate_numeric.index:
+            if col not in exclude_cols:
+                features[col] = candidate_numeric[col]
 
-        # 2着艇の特徴量
-        for col in second.index:
-            if col not in ['race_id', 'pit_number', 'race_date', 'venue_code',
-                          'racer_number', 'race_number', 'rank']:
-                if pd.api.types.is_numeric_dtype(type(second[col])):
-                    features[f'second_{col}'] = second[col]
+        # 1着艇の特徴量（ベクトル化）
+        for col in winner_numeric.index:
+            if col not in exclude_cols:
+                features[f'winner_{col}'] = winner_numeric[col]
 
-        # 差分特徴量
-        for col in candidate.index:
-            if col not in ['race_id', 'pit_number', 'race_date', 'venue_code',
-                          'racer_number', 'race_number', 'rank']:
-                try:
-                    if col in winner.index:
-                        features[f'diff_winner_{col}'] = float(candidate[col]) - float(winner[col])
-                    if col in second.index:
-                        features[f'diff_second_{col}'] = float(candidate[col]) - float(second[col])
-                except (TypeError, ValueError):
-                    pass
+        # 2着艇の特徴量（ベクトル化）
+        for col in second_numeric.index:
+            if col not in exclude_cols:
+                features[f'second_{col}'] = second_numeric[col]
+
+        # 差分特徴量（共通カラムのみ）
+        common_cols = set(candidate_numeric.index) & set(winner_numeric.index) & set(second_numeric.index) - exclude_cols
+        for col in common_cols:
+            features[f'diff_winner_{col}'] = candidate_numeric[col] - winner_numeric[col]
+            features[f'diff_second_{col}'] = candidate_numeric[col] - second_numeric[col]
 
         # 特徴量リストに合わせて並び替え
-        result = []
-        for col in feature_cols:
-            result.append(features.get(col, 0))
+        result = np.array([features.get(col, 0) for col in feature_cols])
 
-        return np.array(result)
+        return result
 
     def get_top_combinations(self, probs: Dict[str, float],
                              top_n: int = 10) -> List[Tuple[str, float]]:

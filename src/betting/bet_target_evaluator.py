@@ -51,61 +51,117 @@ class BetTargetEvaluator:
     """購入対象判定クラス"""
 
     # ============================================================
-    # 購入条件定義（2025年12月 最終最適化版）
+    # イン強会場定義（2025年12月8日 Opus分析結果）
     # ============================================================
-    # 11ヶ月バックテスト検証結果に基づく厳選条件
-    # - MODERATE戦略: 年間回収率114.0%, 黒字月7/11ヶ月(63.6%)
-    # - 条件を厳選し、安定性と回収率のバランスを最適化
+    # 1コース勝率が高い会場（大村/下関/徳山）
+    # 信頼度D × イン強会場で ROI +53.1% を確認
+    HIGH_IN_VENUES = [24, 19, 18]  # 大村、下関、徳山
+
+    # ============================================================
+    # 購入条件定義（2025年12月8日更新 - 戦略A）
+    # ============================================================
+    # 正しい払戻金データによる包括的検証結果に基づく最適条件
+    # - 戦略A（バランス型）: 年間ROI 304.6%, 収支 +383,670円
+    # - 3層構造: Tier1(超高配当) + Tier2(中高配当) + Tier3(堅実)
+    # - 検証期間: 2025年全期間（625レース購入、52回的中）
     # ============================================================
     BET_CONDITIONS = {
-        # 信頼度C: 従来方式、A1級のみ
+        # 信頼度C: 超高配当のみ（Tier 1）
         'C': [
-            # C × 従来 × 30-60倍 × A1級: 回収率127.2%, 的中率3.3%
-            # → 最も安定した条件（月間安定性7/12月）
+            # C × B1 × 150-200倍: ROI 369.2%, 収支 +42,810円
+            # → Tier 1: 超高配当狙い
             {
-                'method': '従来',
-                'odds_min': 30, 'odds_max': 60,
-                'c1_rank': ['A1'],
-                'expected_roi': 127.2,
-                'bet_amount': 500,
-                'sample_count': 363,
+                'method': '両方式',
+                'odds_min': 150, 'odds_max': 200,
+                'c1_rank': ['B1'],
+                'expected_roi': 376.3,
+                'bet_amount': 300,
                 'priority': 1,
-            },
-            # C × 従来 × 20-40倍 × A1級: 回収率122.8%, 的中率4.2%
-            # → 中オッズで的中率が高い
-            {
-                'method': '従来',
-                'odds_min': 20, 'odds_max': 40,
-                'c1_rank': ['A1'],
-                'expected_roi': 122.8,
-                'bet_amount': 400,
-                'sample_count': 451,
-                'priority': 2,
+                'description': 'Tier1: C×B1級超高配当',
             },
         ],
-        # 信頼度D: 新方式・従来方式混合、A1級のみ
+        # 信頼度D: 3層すべて
         'D': [
-            # D × 新方式 × 25-50倍 × A1級: 回収率251.5%, 的中率8.0%
-            # → 高回収率と高的中率を両立
+            # ===== Tier 1: 超高配当狙い（ROI 486.5%） =====
+
+            # D × B1 × 200-300倍: ROI 758.6%, 収支 +124,470円
+            # → 最強条件（月1-2回の大型的中）
             {
-                'method': '新方式',
-                'odds_min': 25, 'odds_max': 50,
-                'c1_rank': ['A1'],
-                'expected_roi': 251.5,
+                'method': '両方式',
+                'odds_min': 200, 'odds_max': 300,
+                'c1_rank': ['B1'],
+                'expected_roi': 838.4,
                 'bet_amount': 300,
-                'sample_count': 75,
                 'priority': 1,
+                'description': 'Tier1: D×B1級超高配当（最強）',
             },
-            # D × 従来 × 20-50倍 × A1級: 回収率215.7%, 的中率4.0%
-            # → 従来方式でも高回収率
+            # D × A1 × 100-150倍: ROI 396.6%, 収支 +52,500円
             {
-                'method': '従来',
-                'odds_min': 20, 'odds_max': 50,
+                'method': '両方式',
+                'odds_min': 100, 'odds_max': 150,
                 'c1_rank': ['A1'],
-                'expected_roi': 215.7,
+                'expected_roi': 425.5,
                 'bet_amount': 300,
-                'sample_count': 173,
                 'priority': 2,
+                'description': 'Tier1: D×A1級超高配当',
+            },
+            # D × A1 × 200-300倍: ROI 391.2%, 収支 +51,540円
+            {
+                'method': '両方式',
+                'odds_min': 200, 'odds_max': 300,
+                'c1_rank': ['A1'],
+                'expected_roi': 397.9,
+                'bet_amount': 300,
+                'priority': 3,
+                'description': 'Tier1: D×A1級超高配当',
+            },
+
+            # ===== Tier 2: 中高配当狙い（ROI 325.0%） =====
+
+            # D × A2 × 30-40倍: ROI 254.9%, 収支 +33,450円
+            # → A2級が穴場（月2-3回の中型的中）
+            {
+                'method': '両方式',
+                'odds_min': 30, 'odds_max': 40,
+                'c1_rank': ['A2'],
+                'expected_roi': 273.9,
+                'bet_amount': 300,
+                'priority': 4,
+                'description': 'Tier2: D×A2級中高配当',
+            },
+            # D × A1 × 40-50倍: ROI 500.2%, 収支 +51,630円
+            {
+                'method': '両方式',
+                'odds_min': 40, 'odds_max': 50,
+                'c1_rank': ['A1'],
+                'expected_roi': 537.8,
+                'bet_amount': 300,
+                'priority': 5,
+                'description': 'Tier2: D×A1級中高配当',
+            },
+            # D × A1 × 20-25倍: ROI 264.4%, 収支 +20,220円
+            {
+                'method': '両方式',
+                'odds_min': 20, 'odds_max': 25,
+                'c1_rank': ['A1'],
+                'expected_roi': 277.9,
+                'bet_amount': 300,
+                'priority': 6,
+                'description': 'Tier2: D×A1級中配当',
+            },
+
+            # ===== Tier 3: 堅実狙い（ROI 110.0%） =====
+
+            # D × B1 × 5-10倍: ROI 110.0%, 収支 +7,050円
+            # → 高頻度的中（月3-5回、的中率14.9%）
+            {
+                'method': '両方式',
+                'odds_min': 5, 'odds_max': 10,
+                'c1_rank': ['B1'],
+                'expected_roi': 111.1,
+                'bet_amount': 300,
+                'priority': 7,
+                'description': 'Tier3: D×B1級堅実',
             },
         ],
     }
@@ -113,8 +169,8 @@ class BetTargetEvaluator:
     # 除外条件
     # - 信頼度A, B: サンプル不足・安定性低
     EXCLUDED_CONFIDENCE = ['A', 'B']
-    # - B1, B2級: 低回収率のため除外
-    EXCLUDED_C1_RANKS = ['B1', 'B2']
+    # - B2級のみ除外（B1級は高配当範囲で超優秀なため使用）
+    EXCLUDED_C1_RANKS = ['B2']
 
     # ============================================================
     # 2連単 購入条件定義（2025年12月追加）
@@ -144,7 +200,8 @@ class BetTargetEvaluator:
         new_combo: str,
         old_odds: Optional[float] = None,
         new_odds: Optional[float] = None,
-        has_beforeinfo: bool = False
+        has_beforeinfo: bool = False,
+        venue_code: Optional[int] = None
     ) -> BetTarget:
         """
         購入対象を判定する
@@ -157,6 +214,7 @@ class BetTargetEvaluator:
             old_odds: 従来方式買い目のオッズ
             new_odds: 新方式買い目のオッズ
             has_beforeinfo: 直前情報が取得済みか
+            venue_code: 会場コード（イン強会場条件チェック用）
 
         Returns:
             BetTarget: 購入対象情報
@@ -176,8 +234,15 @@ class BetTargetEvaluator:
                 reason=f'信頼度{confidence}は購入対象外（サンプル不足）'
             )
 
-        # 1コース級別チェック
-        if c1_rank in self.EXCLUDED_C1_RANKS or c1_rank not in ['A1', 'A2']:
+        # 信頼度に応じた条件をチェック
+        conditions = self.BET_CONDITIONS.get(confidence, [])
+
+        # 1コース級別チェック（条件定義で許可されている級別かチェック）
+        # 条件定義に合致する級別があるかを先に確認
+        has_matching_rank = any(c1_rank in cond.get('c1_rank', []) for cond in conditions)
+
+        # デフォルトの除外条件（条件定義にない場合のみ適用）
+        if not has_matching_rank and (c1_rank in self.EXCLUDED_C1_RANKS or c1_rank not in ['A1', 'A2', 'B1', 'B2']):
             return BetTarget(
                 status=BetStatus.EXCLUDED,
                 confidence=confidence,
@@ -191,8 +256,6 @@ class BetTargetEvaluator:
                 reason=f'1コース{c1_rank}級は購入対象外（回収率低）'
             )
 
-        # 信頼度に応じた条件をチェック
-        conditions = self.BET_CONDITIONS.get(confidence, [])
         if not conditions:
             return BetTarget(
                 status=BetStatus.EXCLUDED,
@@ -207,19 +270,43 @@ class BetTargetEvaluator:
                 reason=f'信頼度{confidence}は購入対象外'
             )
 
-        # 各条件をチェック
-        for cond in conditions:
+        # 各条件をチェック（優先度順にソート）
+        sorted_conditions = sorted(conditions, key=lambda x: x.get('priority', 999))
+
+        for i, cond in enumerate(sorted_conditions):
             # 級別チェック
             if c1_rank not in cond['c1_rank']:
                 continue
+
+            # 会場コードチェック（venue_codes が指定されている場合）
+            if 'venue_codes' in cond:
+                if venue_code is None or venue_code not in cond['venue_codes']:
+                    continue
 
             # 方式と買い目の決定
             if cond['method'] == '従来':
                 combo = old_combo
                 odds = old_odds
-            else:
+            elif cond['method'] == '新方式':
                 combo = new_combo
                 odds = new_odds
+            else:  # '両方式'の場合、オッズが高い方を選択
+                if old_odds and new_odds:
+                    if old_odds >= new_odds:
+                        combo = old_combo
+                        odds = old_odds
+                    else:
+                        combo = new_combo
+                        odds = new_odds
+                elif old_odds:
+                    combo = old_combo
+                    odds = old_odds
+                elif new_odds:
+                    combo = new_combo
+                    odds = new_odds
+                else:
+                    combo = old_combo
+                    odds = old_odds
 
             odds_min = cond['odds_min']
             odds_max = cond['odds_max']
@@ -249,6 +336,12 @@ class BetTargetEvaluator:
             # オッズ範囲チェック
             if odds_min <= odds < odds_max:
                 status = BetStatus.TARGET_CONFIRMED if has_beforeinfo else BetStatus.TARGET_ADVANCE
+                # 理由の構築
+                reason_parts = [f'信頼度{confidence}', cond['method'], odds_range, f'1コース{c1_rank}']
+                if 'venue_codes' in cond:
+                    reason_parts.append('イン強会場')
+                reason = ' + '.join(reason_parts)
+
                 return BetTarget(
                     status=status,
                     confidence=confidence,
@@ -259,7 +352,7 @@ class BetTargetEvaluator:
                     c1_rank=c1_rank,
                     expected_roi=cond['expected_roi'],
                     bet_amount=cond['bet_amount'],
-                    reason=f'信頼度{confidence} + {cond["method"]} + {odds_range} + 1コース{c1_rank}'
+                    reason=reason
                 )
 
         # オッズが範囲外の場合、候補として返す（直前情報でオッズが変動する可能性）
@@ -324,6 +417,9 @@ class BetTargetEvaluator:
         c1_entry = next((e for e in entries if e.get('pit_number') == 1), None)
         c1_rank = c1_entry.get('racer_rank', 'B1') if c1_entry else 'B1'
 
+        # 会場コードを取得
+        venue_code = race_data.get('venue_code')
+
         # 予測情報
         confidence = predictions.get('confidence', 'D')
         old_pred = predictions.get('old_prediction', [1, 2, 3])
@@ -344,7 +440,8 @@ class BetTargetEvaluator:
             new_combo=new_combo,
             old_odds=old_odds,
             new_odds=new_odds,
-            has_beforeinfo=has_beforeinfo
+            has_beforeinfo=has_beforeinfo,
+            venue_code=venue_code
         )
 
     def get_summary(self, targets: List[BetTarget]) -> Dict[str, Any]:

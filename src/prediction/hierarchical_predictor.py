@@ -31,13 +31,14 @@ class HierarchicalPredictor:
     4. 期待値計算・買い目推奨
     """
 
-    def __init__(self, db_path: str, model_dir: str = 'models'):
+    def __init__(self, db_path: str, model_dir: str = 'models', use_v2: bool = False):
         self.db_path = db_path
         self.model_dir = model_dir
+        self.use_v2 = use_v2
 
         self.feature_transformer = FeatureTransformer()
         self.feature_builder = RaceRelativeFeatureBuilder()
-        self.trifecta_calculator = TrifectaCalculator(model_dir, model_name='hierarchical')
+        self.trifecta_calculator = TrifectaCalculator(model_dir, model_name='conditional', use_v2=use_v2)
 
         self._model_loaded = False
 

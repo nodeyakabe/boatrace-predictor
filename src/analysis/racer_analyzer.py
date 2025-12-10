@@ -404,6 +404,197 @@ class RacerAnalyzer:
         }
 
     # ========================================
+    # バッチ取得メソッド（高速化）
+    # ========================================
+
+    def _get_racers_batch(self, racer_numbers: List[str], venue_code: str) -> Dict:
+        """
+        複数選手のデータを一括取得（高速化）
+
+        Returns:
+            {racer_number: {'overall': {}, 'courses': {}, 'venues': {}, 'recent': {}, 'st': {}}, ...}
+        """
+        if not racer_numbers:
+            return {}
+
+        placeholders = ','.join('?' * len(racer_numbers))
+
+        # 全体成績を一括取得
+        overall_query = f"""
+            SELECT
+                e.racer_number,
+                COUNT(*) as total_races,
+                SUM(CASE WHEN CAST(r.rank AS INTEGER) = 1 THEN 1 ELSE 0 END) as win_count,
+                SUM(CASE WHEN CAST(r.rank AS INTEGER) <= 2 THEN 1 ELSE 0 END) as place_2_count,
+                SUM(CASE WHEN CAST(r.rank AS INTEGER) <= 3 THEN 1 ELSE 0 END) as place_3_count,
+                AVG(CAST(r.rank AS INTEGER)) as avg_rank
+            FROM results r
+            JOIN races ra ON r.race_id = ra.id
+            JOIN entries e ON r.race_id = e.race_id AND r.pit_number = e.pit_number
+            WHERE e.racer_number IN ({placeholders})
+              AND r.is_invalid = 0
+              AND ra.race_date >= date('now', '-180 days')
+            GROUP BY e.racer_number
+        """
+
+        rows = self._fetch_all(overall_query, racer_numbers)
+
+        result = {}
+        for row in rows:
+            racer_num = row['racer_number']
+            total = row['total_races']
+            if total > 0:
+                result[racer_num] = {
+                    'overall': {
+                        'total_races': total,
+                        'win_count': row['win_count'],
+                        'win_rate': row['win_count'] / total,
+                        'place_rate_2': row['place_2_count'] / total,
+                        'place_rate_3': row['place_3_count'] / total,
+                        'avg_rank': row['avg_rank']
+                    },
+                    'courses': {},
+                    'venues': {},
+                    'recent': {
+                        'recent_races': [],
+                        'recent_win_rate': 0.0,
+                        'recent_place_rate_3': 0.0,
+                        'form_trend': 'unknown'
+                    },
+                    'st': {}
+                }
+
+        # コース別成績を一括取得
+        course_query = f"""
+            SELECT
+                e.racer_number,
+                rd.actual_course,
+                COUNT(*) as total_races,
+                SUM(CASE WHEN CAST(r.rank AS INTEGER) = 1 THEN 1 ELSE 0 END) as win_count,
+                SUM(CASE WHEN CAST(r.rank AS INTEGER) <= 3 THEN 1 ELSE 0 END) as place_3_count
+            FROM results r
+            JOIN races ra ON r.race_id = ra.id
+            JOIN entries e ON r.race_id = e.race_id AND r.pit_number = e.pit_number
+            LEFT JOIN race_details rd ON r.race_id = rd.race_id AND r.pit_number = rd.pit_number
+            WHERE e.racer_number IN ({placeholders})
+              AND rd.actual_course IS NOT NULL
+              AND r.is_invalid = 0
+              AND ra.race_date >= date('now', '-180 days')
+            GROUP BY e.racer_number, rd.actual_course
+        """
+
+        rows = self._fetch_all(course_query, racer_numbers)
+        for row in rows:
+            racer_num = row['racer_number']
+            course = row['actual_course']
+            total = row['total_races']
+            if racer_num in result and total > 0:
+                result[racer_num]['courses'][course] = {
+                    'total_races': total,
+                    'win_count': row['win_count'],
+                    'win_rate': row['win_count'] / total,
+                    'place_rate_3': row['place_3_count'] / total
+                }
+
+        # 会場別成績を一括取得
+        venue_query = f"""
+            SELECT
+                e.racer_number,
+                ra.venue_code,
+                COUNT(*) as total_races,
+                SUM(CASE WHEN CAST(r.rank AS INTEGER) = 1 THEN 1 ELSE 0 END) as win_count,
+                SUM(CASE WHEN CAST(r.rank AS INTEGER) <= 3 THEN 1 ELSE 0 END) as place_3_count
+            FROM results r
+            JOIN races ra ON r.race_id = ra.id
+            JOIN entries e ON r.race_id = e.race_id AND r.pit_number = e.pit_number
+            WHERE e.racer_number IN ({placeholders})
+              AND ra.venue_code = ?
+              AND r.is_invalid = 0
+              AND ra.race_date >= date('now', '-180 days')
+            GROUP BY e.racer_number, ra.venue_code
+        """
+
+        rows = self._fetch_all(venue_query, racer_numbers + [venue_code])
+        for row in rows:
+            racer_num = row['racer_number']
+            venue = row['venue_code']
+            total = row['total_races']
+            if racer_num in result and total > 0:
+                result[racer_num]['venues'][venue] = {
+                    'total_races': total,
+                    'win_count': row['win_count'],
+                    'win_rate': row['win_count'] / total,
+                    'place_rate_3': row['place_3_count'] / total
+                }
+
+        # ST統計を一括取得
+        st_query = f"""
+            SELECT
+                e.racer_number,
+                COUNT(*) as total_records,
+                AVG(rd.st_time) as avg_st,
+                SUM(CASE WHEN rd.st_time < 0 THEN 1 ELSE 0 END) as flying_count,
+                SUM(CASE WHEN rd.st_time >= 0.15 THEN 1 ELSE 0 END) as late_count
+            FROM entries e
+            JOIN races ra ON e.race_id = ra.id
+            LEFT JOIN race_details rd ON e.race_id = rd.race_id AND e.pit_number = rd.pit_number
+            WHERE e.racer_number IN ({placeholders})
+              AND rd.st_time IS NOT NULL
+              AND ra.race_date >= date('now', '-180 days')
+            GROUP BY e.racer_number
+        """
+
+        rows = self._fetch_all(st_query, racer_numbers)
+        for row in rows:
+            racer_num = row['racer_number']
+            total = row['total_records']
+            if racer_num in result and total > 0:
+                result[racer_num]['st'] = {
+                    'avg_st': row['avg_st'],
+                    'flying_rate': row['flying_count'] / total,
+                    'late_rate': row['late_count'] / total,
+                    'total_st_records': total
+                }
+
+        # デフォルト値を設定（データがない選手用）
+        for racer_num in racer_numbers:
+            if racer_num not in result:
+                result[racer_num] = {
+                    'overall': {
+                        'total_races': 0,
+                        'win_count': 0,
+                        'win_rate': 0.0,
+                        'place_rate_2': 0.0,
+                        'place_rate_3': 0.0,
+                        'avg_rank': 0.0
+                    },
+                    'courses': {},
+                    'venues': {},
+                    'recent': {
+                        'recent_races': [],
+                        'recent_win_rate': 0.0,
+                        'recent_place_rate_3': 0.0,
+                        'form_trend': 'unknown'
+                    },
+                    'st': {
+                        'avg_st': 0.0,
+                        'flying_rate': 0.0,
+                        'late_rate': 0.0,
+                        'total_st_records': 0
+                    }
+                }
+            # venues が空の場合も補完（会場データがない選手がいる可能性）
+            if racer_num in result and venue_code not in result[racer_num]['venues']:
+                result[racer_num]['venues'][venue_code] = {
+                    'total_races': 0,
+                    'win_count': 0,
+                    'win_rate': 0.0,
+                    'place_rate_3': 0.0
+                }
+
+        return result
+
+    # ========================================
     # レース単位での選手分析
     # ========================================
 
@@ -429,7 +620,7 @@ class RacerAnalyzer:
                 ...
             ]
         """
-        # キャッシュ使用時
+        # キャッシュ使用時（バッチ取得で高速化）
         if self._use_cache and self.batch_loader:
             race_info = self.batch_loader.get_race_info(race_id)
             entries = self.batch_loader.get_race_entries(race_id)
@@ -437,34 +628,29 @@ class RacerAnalyzer:
             if race_info and entries:
                 venue_code = race_info['venue_code']
 
+                # 選手番号のリストを取得
+                racer_numbers = [e['racer_number'] for e in entries]
+
+                # 一括取得
+                racers_data = self._get_racers_batch(racer_numbers, venue_code) if racer_numbers else {}
+
                 results = []
                 for entry in entries:
                     racer_number = entry['racer_number']
                     actual_course = entry['actual_course']
+                    course_for_stats = actual_course if actual_course else entry['pit_number']
 
-                    # 各種統計を取得
-                    overall_stats = self.get_racer_overall_stats(racer_number)
-
-                    # コース別成績（進入コースが分かる場合）
-                    if actual_course:
-                        course_stats = self.get_racer_course_stats(racer_number, actual_course)
-                    else:
-                        # 進入コース不明の場合は枠番を仮のコースとして使用
-                        course_stats = self.get_racer_course_stats(racer_number, entry['pit_number'])
-
-                    venue_stats = self.get_racer_venue_stats(racer_number, venue_code)
-                    recent_form = self.get_racer_recent_form(racer_number)
-                    st_stats = self.get_racer_st_stats(racer_number)
+                    racer_data = racers_data.get(racer_number, {})
 
                     results.append({
                         'pit_number': entry['pit_number'],
                         'racer_number': racer_number,
                         'racer_name': entry['racer_name'],
-                        'overall_stats': overall_stats,
-                        'course_stats': course_stats,
-                        'venue_stats': venue_stats,
-                        'recent_form': recent_form,
-                        'st_stats': st_stats
+                        'overall_stats': racer_data.get('overall', {}),
+                        'course_stats': racer_data.get('courses', {}).get(course_for_stats, {}),
+                        'venue_stats': racer_data.get('venues', {}).get(venue_code, {}),
+                        'recent_form': racer_data.get('recent', {}),
+                        'st_stats': racer_data.get('st', {})
                     })
 
                 return results

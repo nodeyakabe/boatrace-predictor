@@ -23,6 +23,8 @@ from .before_safe_scorer import BeforeSafeScorer
 from .safe_integrator import SafeIntegrator
 from .entry_prediction_model import EntryPredictionModel
 from .probability_calibrator import ProbabilityCalibrator
+from .beforeinfo_flag_adjuster import BeforeInfoFlagAdjuster
+from .top3_scorer import Top3Scorer
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -43,6 +45,169 @@ from config.settings import (
     HIGH_IN_VENUES, LOW_IN_VENUES, EXTENDED_SCORE_WEIGHTS,
     EXTENDED_SCORE_MAX, EXTENDED_SCORE_MIN
 )
+
+
+# ==================================================
+# BEFORE情報パターンボーナス定義
+# ==================================================
+# バックテスト検証済み（200レース、2025年データ）
+# 基準: ベースライン55.5%を維持しつつ、該当時60-82%の高精度
+
+BEFORE_PATTERNS_1ST = [
+    # 1着予測用パターン（4パターン、全て55.5%維持確認済み）
+    {
+        'name': 'pre1_st1',
+        'description': 'PRE1位 & ST1位',
+        'multiplier': 1.411,
+        'target_rank': 1,
+        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 1 and st_rank == 1,
+    },
+    {
+        'name': 'pre1_ex1',
+        'description': 'PRE1位 & 展示1位',
+        'multiplier': 1.286,
+        'target_rank': 1,
+        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 1 and ex_rank == 1,
+    },
+    {
+        'name': 'pre1_ex1_3_st1_3',
+        'description': 'PRE1位 & 展示1-3位 & ST1-3位',
+        'multiplier': 1.328,
+        'target_rank': 1,
+        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 1 and ex_rank <= 3 and st_rank <= 3,
+    },
+    {
+        'name': 'pre1_st1_3',
+        'description': 'PRE1位 & ST1-3位',
+        'multiplier': 1.310,
+        'target_rank': 1,
+        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 1 and st_rank <= 3,
+    },
+]
+
+BEFORE_PATTERNS_2ND = [
+    # 2着予測用パターン（7パターン、20%以上または+5%以上）
+    {
+        'name': 'pre2_3_ex1_2',
+        'description': 'PRE2-3位 & 展示1-2位',
+        'multiplier': 1.084,
+        'target_rank': 2,
+        'condition': lambda pre_rank, ex_rank, st_rank: 2 <= pre_rank <= 3 and ex_rank <= 2,
+    },
+    {
+        'name': 'pre2_ex1_3_st1_3',
+        'description': 'PRE2位 & 展示1-3位 & ST1-3位',
+        'multiplier': 1.081,
+        'target_rank': 2,
+        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 2 and ex_rank <= 3 and st_rank <= 3,
+    },
+    {
+        'name': 'ex1_3_pre2_3',
+        'description': '展示1-3位 & PRE2-3位',
+        'multiplier': 1.069,
+        'target_rank': 2,
+        'condition': lambda pre_rank, ex_rank, st_rank: ex_rank <= 3 and 2 <= pre_rank <= 3,
+    },
+    {
+        'name': 'pre2_st1_3',
+        'description': 'PRE2位 & ST1-3位',
+        'multiplier': 1.064,
+        'target_rank': 2,
+        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 2 and st_rank <= 3,
+    },
+    {
+        'name': 'pre2_ex1_3',
+        'description': 'PRE2位 & 展示1-3位',
+        'multiplier': 1.063,
+        'target_rank': 2,
+        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 2 and ex_rank <= 3,
+    },
+    {
+        'name': 'ex_rank_2',
+        'description': '展示2位',
+        'multiplier': 1.035,
+        'target_rank': 2,
+        'condition': lambda pre_rank, ex_rank, st_rank: ex_rank == 2,
+    },
+    {
+        'name': 'st_rank_2_3',
+        'description': 'ST2-3位',
+        'multiplier': 1.034,
+        'target_rank': 2,
+        'condition': lambda pre_rank, ex_rank, st_rank: 2 <= st_rank <= 3,
+    },
+]
+
+BEFORE_PATTERNS_3RD = [
+    # 3着予測用パターン（4パターン、20%以上または+3%以上）
+    {
+        'name': 'pre3_4_ex2_4',
+        'description': 'PRE3-4位 & 展示2-4位',
+        'multiplier': 1.032,
+        'target_rank': 3,
+        'condition': lambda pre_rank, ex_rank, st_rank: 3 <= pre_rank <= 4 and 2 <= ex_rank <= 4,
+    },
+    {
+        'name': 'pre3_ex1_3',
+        'description': 'PRE3位 & 展示1-3位',
+        'multiplier': 1.031,
+        'target_rank': 3,
+        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 3 and ex_rank <= 3,
+    },
+    {
+        'name': 'outer_st1_2',
+        'description': 'アウトコース(4-6枠) & ST1-2位',
+        'multiplier': 1.022,
+        'target_rank': 3,
+        'condition': lambda pre_rank, ex_rank, st_rank, pit_number=None: pit_number >= 4 and st_rank <= 2 if pit_number is not None else False,
+    },
+    {
+        'name': 'pre3_4_ex1_3_st1_3',
+        'description': 'PRE3-4位 & 展示1-3位 & ST1-3位',
+        'multiplier': 1.020,
+        'target_rank': 3,
+        'condition': lambda pre_rank, ex_rank, st_rank: 3 <= pre_rank <= 4 and ex_rank <= 3 and st_rank <= 3,
+    },
+]
+
+BEFORE_PATTERNS_TOP3 = [
+    # 3着以内予測用パターン（5パターン、三連単・三連複に最適）
+    {
+        'name': 'pre1_3_st1_3',
+        'description': 'PRE1-3位 & ST1-3位',
+        'multiplier': 1.130,
+        'target_rank': 'top3',
+        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank <= 3 and st_rank <= 3,
+    },
+    {
+        'name': 'pre1_3_ex1_3',
+        'description': 'PRE1-3位 & 展示1-3位',
+        'multiplier': 1.123,
+        'target_rank': 'top3',
+        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank <= 3 and ex_rank <= 3,
+    },
+    {
+        'name': 'ex1_3_st1_3',
+        'description': '展示1-3位 & ST1-3位',
+        'multiplier': 1.108,
+        'target_rank': 'top3',
+        'condition': lambda pre_rank, ex_rank, st_rank: ex_rank <= 3 and st_rank <= 3,
+    },
+    {
+        'name': 'pre1_4_ex1_2',
+        'description': 'PRE1-4位 & 展示1-2位',
+        'multiplier': 1.104,
+        'target_rank': 'top3',
+        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank <= 4 and ex_rank <= 2,
+    },
+    {
+        'name': 'ex_rank_1_2',
+        'description': '展示1-2位',
+        'multiplier': 1.051,
+        'target_rank': 'top3',
+        'condition': lambda pre_rank, ex_rank, st_rank: ex_rank <= 2,
+    },
+]
 
 
 class RacePredictor:
@@ -84,6 +249,7 @@ class RacePredictor:
         self.compound_buff_system = CompoundBuffSystem(db_path)
         self.beforeinfo_scorer = BeforeInfoScorer(db_path)
         self.dynamic_integrator = DynamicIntegrator(db_path)
+        self.beforeinfo_flag_adjuster = BeforeInfoFlagAdjuster(db_path)
 
         # Phase 4: ST/展示タイム統合フラグを使用
         use_st_exhibition = is_feature_enabled('before_safe_st_exhibition')
@@ -91,6 +257,7 @@ class RacePredictor:
         self.safe_integrator = SafeIntegrator(before_safe_weight=0.15)  # Phase 5: 15%に引き上げ
         self.entry_prediction_model = EntryPredictionModel(db_path)
         self.probability_calibrator = ProbabilityCalibrator(db_path)
+        self.top3_scorer = Top3Scorer(db_path)
 
         # 階層的確率モデル（条件付き確率ベースの三連単予測）
         self.hierarchical_predictor = None
@@ -847,7 +1014,19 @@ class RacePredictor:
         # ========================================
         predictions = self._apply_probability_calibration(predictions)
 
-        # スコア順にソート
+        # スコア順にソート（信頼度判定のため）
+        predictions.sort(key=lambda x: x['total_score'], reverse=True)
+
+        # ========================================
+        # 三連対スコアを計算して追加（2着・3着予測の精度向上）
+        # 信頼度Bレースのみに適用（固いレースを確実に的中させる戦略）
+        # 信頼度C/Dは荒れレースも拾えるよう従来のスコアリングを維持
+        # ========================================
+        top_confidence = predictions[0]['confidence'] if predictions else 'E'
+        if top_confidence == 'B':
+            predictions = self._add_top3_scores(predictions, venue_code, race_date)
+
+        # 再ソート（ハイブリッドスコア適用後）
         predictions.sort(key=lambda x: x['total_score'], reverse=True)
 
         # 順位予想を付与
@@ -1447,6 +1626,178 @@ class RacePredictor:
 
         return predictions
 
+    def _apply_pattern_bonus(
+        self,
+        predictions: List[Dict],
+        race_id: int
+    ) -> List[Dict]:
+        """
+        BEFORE情報パターンボーナスを適用
+
+        バックテスト検証済み（200レース）:
+        - ベースライン55.5%を維持
+        - 該当時60-82%の高精度
+
+        Args:
+            predictions: 予測結果リスト（PRE_SCOREが格納されている）
+            race_id: レースID
+
+        Returns:
+            パターンボーナス適用後の予測結果
+        """
+        import sqlite3
+        conn = get_connection(self.db_path)
+        cursor = conn.cursor()
+
+        # BEFORE情報を取得
+        cursor.execute("""
+            SELECT pit_number, exhibition_time, st_time
+            FROM race_details
+            WHERE race_id = ?
+            ORDER BY pit_number
+        """, (race_id,))
+        before_data = cursor.fetchall()
+        cursor.close()
+
+        if not before_data or len(before_data) < 6:
+            # BEFORE情報がない場合はそのまま返す
+            for pred in predictions:
+                pred['pre_score'] = round(pred['total_score'], 1)
+                pred['integration_mode'] = 'pattern_bonus_unavailable'
+            return predictions
+
+        # 展示タイム順位を計算
+        exhibition_times = [(row[0], row[1]) for row in before_data if row[1] is not None]
+        if len(exhibition_times) >= 6:
+            exhibition_times_sorted = sorted(exhibition_times, key=lambda x: x[1])
+            exhibition_rank_map = {pit: rank+1 for rank, (pit, _) in enumerate(exhibition_times_sorted)}
+        else:
+            exhibition_rank_map = {}
+
+        # ST順位を計算（0に近いほど良い）
+        st_times = [(row[0], row[2]) for row in before_data if row[2] is not None]
+        if len(st_times) >= 6:
+            st_times_sorted = sorted(st_times, key=lambda x: abs(x[1]))
+            st_rank_map = {pit: rank+1 for rank, (pit, _) in enumerate(st_times_sorted)}
+        else:
+            st_rank_map = {}
+
+        # PRE順位マップを作成（現在のtotal_scoreベース）
+        predictions_sorted = sorted(predictions, key=lambda x: x['total_score'], reverse=True)
+        pre_rank_map = {pred['pit_number']: rank+1 for rank, pred in enumerate(predictions_sorted)}
+
+        # 各艇にパターンボーナスを適用
+        for pred in predictions:
+            pit_number = pred['pit_number']
+            pre_score = pred['total_score']
+
+            # PRE順位、展示順位、ST順位を取得
+            pre_rank = pre_rank_map.get(pit_number)
+            ex_rank = exhibition_rank_map.get(pit_number)
+            st_rank = st_rank_map.get(pit_number)
+
+            # デフォルト値
+            final_multiplier = 1.0
+            matched_patterns = []
+
+            if pre_rank is not None and ex_rank is not None and st_rank is not None:
+                # 1着予測パターンをチェック
+                for pattern in BEFORE_PATTERNS_1ST:
+                    try:
+                        if pattern['condition'](pre_rank, ex_rank, st_rank):
+                            matched_patterns.append({
+                                'name': pattern['name'],
+                                'description': pattern['description'],
+                                'multiplier': pattern['multiplier'],
+                                'target_rank': pattern['target_rank']
+                            })
+                            # 最も高い倍率を使用
+                            if pattern['multiplier'] > final_multiplier:
+                                final_multiplier = pattern['multiplier']
+                    except Exception:
+                        pass
+
+                # 2着予測パターンをチェック（PRE2位周辺の艇用）
+                if pre_rank in [2, 3]:
+                    for pattern in BEFORE_PATTERNS_2ND:
+                        try:
+                            if pattern['condition'](pre_rank, ex_rank, st_rank):
+                                matched_patterns.append({
+                                    'name': pattern['name'],
+                                    'description': pattern['description'],
+                                    'multiplier': pattern['multiplier'],
+                                    'target_rank': pattern['target_rank']
+                                })
+                                # 2着パターンのボーナスは加算方式
+                                if pattern['multiplier'] > final_multiplier:
+                                    final_multiplier = pattern['multiplier']
+                        except Exception:
+                            pass
+
+                # 3着予測パターンをチェック（PRE3-4位周辺の艇用）
+                if pre_rank in [3, 4]:
+                    for pattern in BEFORE_PATTERNS_3RD:
+                        try:
+                            # outer_st1_2パターンは特別処理（pit_number必要）
+                            if pattern['name'] == 'outer_st1_2':
+                                if pit_number >= 4 and st_rank <= 2:
+                                    matched_patterns.append({
+                                        'name': pattern['name'],
+                                        'description': pattern['description'],
+                                        'multiplier': pattern['multiplier'],
+                                        'target_rank': pattern['target_rank']
+                                    })
+                                    if pattern['multiplier'] > final_multiplier:
+                                        final_multiplier = pattern['multiplier']
+                            elif pattern['condition'](pre_rank, ex_rank, st_rank):
+                                matched_patterns.append({
+                                    'name': pattern['name'],
+                                    'description': pattern['description'],
+                                    'multiplier': pattern['multiplier'],
+                                    'target_rank': pattern['target_rank']
+                                })
+                                if pattern['multiplier'] > final_multiplier:
+                                    final_multiplier = pattern['multiplier']
+                        except Exception:
+                            pass
+
+                # 3着以内予測パターンをチェック（全艇対象）
+                for pattern in BEFORE_PATTERNS_TOP3:
+                    try:
+                        if pattern['condition'](pre_rank, ex_rank, st_rank):
+                            matched_patterns.append({
+                                'name': pattern['name'],
+                                'description': pattern['description'],
+                                'multiplier': pattern['multiplier'],
+                                'target_rank': pattern['target_rank']
+                            })
+                            # TOP3パターンは他より優先度低め（既に1着/2着/3着パターンがあれば使わない）
+                            if len([p for p in matched_patterns if p['target_rank'] != 'top3']) == 0:
+                                if pattern['multiplier'] > final_multiplier:
+                                    final_multiplier = pattern['multiplier']
+                    except Exception:
+                        pass
+
+            # 最終スコア計算
+            final_score = pre_score * final_multiplier
+
+            # スコアを更新
+            pred['pre_score'] = round(pre_score, 1)
+            pred['total_score'] = round(final_score, 1)
+            pred['integration_mode'] = 'pattern_bonus'
+            pred['pattern_multiplier'] = round(final_multiplier, 3)
+            pred['matched_patterns'] = matched_patterns
+            pred['before_ranks'] = {
+                'pre_rank': pre_rank,
+                'ex_rank': ex_rank,
+                'st_rank': st_rank
+            }
+
+        # スコア降順で再ソート
+        predictions.sort(key=lambda x: x['total_score'], reverse=True)
+
+        return predictions
+
     def _apply_beforeinfo_integration(
         self,
         predictions: List[Dict],
@@ -1457,6 +1808,9 @@ class RacePredictor:
         直前情報スコアリングと統合を適用
 
         統合式:
+        - パターンボーナス有効時: BEFORE条件パターンに応じてスコア乗算（最新・最推奨）
+        - 階層的予測有効時: BEFORE順位に応じてPRE_SCOREにボーナス加算（推奨）
+        - 正規化統合有効時: 同一レース内で正規化してから統合
         - 動的統合有効時: DynamicIntegratorが条件に応じて重みを決定
         - レガシーモード: FINAL_SCORE = PRE_SCORE * 0.6 + BEFORE_SCORE * 0.4
 
@@ -1468,6 +1822,24 @@ class RacePredictor:
         Returns:
             統合スコア適用後の予測結果
         """
+        # パターンボーナス方式が有効かチェック（最新・最優先）
+        use_pattern_bonus = is_feature_enabled('before_pattern_bonus')
+
+        if use_pattern_bonus:
+            return self._apply_pattern_bonus(predictions, race_id)
+
+        # 状態フラグ方式が有効かチェック（新モード・最推奨）
+        use_flag_adjustment = is_feature_enabled('beforeinfo_flag_adjustment')
+
+        # ゲーティング方式が有効かチェック（新方式：PRE拮抗時のみBEFORE使用）
+        use_gated_integration = is_feature_enabled('gated_before_integration')
+
+        # 階層的予測が有効かチェック
+        use_hierarchical_prediction = is_feature_enabled('hierarchical_before_prediction')
+
+        # 正規化統合が有効かチェック
+        use_normalized_integration = is_feature_enabled('normalized_before_integration')
+
         # 動的統合が有効かチェック
         use_dynamic_integration = is_feature_enabled('dynamic_integration')
 
@@ -1484,10 +1856,16 @@ class RacePredictor:
                 venue_code=venue_code
             )
 
-        # BeforeInfoScorerでスコア計算
+        # BeforeInfoScorerでスコア計算（全艇分を先に計算）
+        before_scores = {}
+        before_results = {}
+        pre_scores_list = []
+        before_scores_list = []
+
         for pred in predictions:
             pit_number = pred['pit_number']
             pre_score = pred['total_score']  # 既存の総合スコア = PRE_SCORE
+            pre_scores_list.append(pre_score)
 
             # 直前情報スコアを計算（BeforeInfoScorerが内部でDBから取得）
             beforeinfo_result = self.beforeinfo_scorer.calculate_beforeinfo_score(
@@ -1496,8 +1874,226 @@ class RacePredictor:
             )
 
             before_score = beforeinfo_result['total_score']  # 0-100点
-            before_confidence = beforeinfo_result['confidence']  # 0.0-1.0
-            data_completeness = beforeinfo_result['data_completeness']  # 0.0-1.0
+            before_scores[pit_number] = before_score
+            before_results[pit_number] = beforeinfo_result
+            before_scores_list.append(before_score)
+
+        # 状態フラグ方式の処理（最優先）
+        if use_flag_adjustment:
+            for pred in predictions:
+                pit_number = pred['pit_number']
+                pre_score = pred['total_score']
+
+                # 状態フラグによる調整係数を取得
+                adjustment = self.beforeinfo_flag_adjuster.calculate_adjustment_factors(
+                    race_id, pit_number
+                )
+
+                # PRE_SCOREに調整係数を適用
+                adjusted_score = pre_score * adjustment['score_multiplier']
+
+                # スコアを更新
+                pred['pre_score'] = round(pre_score, 1)
+                pred['total_score'] = round(adjusted_score, 1)
+                pred['integration_mode'] = 'flag_adjustment'
+                pred['score_multiplier'] = round(adjustment['score_multiplier'], 3)
+                pred['confidence_multiplier'] = round(adjustment['confidence_multiplier'], 3)
+                pred['beforeinfo_flags'] = adjustment['flags']
+                pred['beforeinfo_reasons'] = adjustment['reasons']
+
+            # スコア降順で再ソート
+            predictions.sort(key=lambda x: x['total_score'], reverse=True)
+            return predictions
+
+        # ゲーティング方式の処理（PRE拮抗時のみBEFORE使用）
+        if use_gated_integration:
+            # BEFORE順位を算出（スコア降順）
+            before_ranking = sorted(before_scores.items(), key=lambda x: x[1], reverse=True)
+            before_rank_map = {pit: rank+1 for rank, (pit, score) in enumerate(before_ranking)}
+
+            # PRE_SCOREでソート（total_scoreはまだPREのみ）
+            predictions_sorted = sorted(predictions, key=lambda x: x['total_score'], reverse=True)
+
+            # PRE 1位-2位の得点差を計算
+            if len(predictions_sorted) >= 2:
+                pre_margin = predictions_sorted[0]['total_score'] - predictions_sorted[1]['total_score']
+            else:
+                pre_margin = 999.9  # 艇数不足の場合は拮抗していないとみなす
+
+            # 拮抗判定（閾値: 5.0点）
+            GATING_THRESHOLD = 5.0
+            is_contested = pre_margin < GATING_THRESHOLD
+
+            # 各艇のスコアを更新
+            for pred in predictions:
+                pit_number = pred['pit_number']
+                pre_score = pred['total_score']
+                before_rank = before_rank_map[pit_number]
+                before_result = before_results[pit_number]
+                before_score = before_scores[pit_number]
+
+                # 拮抗時のみBEFOREボーナスを適用
+                if is_contested:
+                    if before_rank == 1:
+                        bonus_multiplier = 1.05  # BEFORE 1位: +5%
+                    elif before_rank == 2:
+                        bonus_multiplier = 1.02  # BEFORE 2位: +2%
+                    else:
+                        bonus_multiplier = 1.00  # それ以外: ボーナスなし
+                else:
+                    bonus_multiplier = 1.00  # 拮抗していない場合はボーナスなし
+
+                # 最終スコア計算
+                final_score = pre_score * bonus_multiplier
+
+                # スコアを更新
+                pred['pre_score'] = round(pre_score, 1)
+                pred['total_score'] = round(final_score, 1)
+                pred['integration_mode'] = 'gated'
+                pred['before_rank'] = before_rank
+                pred['gating_bonus'] = round(bonus_multiplier, 3)
+                pred['is_contested'] = is_contested
+                pred['pre_margin'] = round(pre_margin, 1)
+
+                # 直前情報の詳細を追加
+                pred['beforeinfo_score'] = round(before_score, 1)
+                pred['beforeinfo_confidence'] = round(before_result['confidence'], 3)
+                pred['beforeinfo_completeness'] = round(before_result['data_completeness'], 3)
+                pred['beforeinfo_detail'] = {
+                    'exhibition_time': round(before_result['exhibition_time_score'], 1),
+                    'st': round(before_result['st_score'], 1),
+                    'entry': round(before_result['entry_score'], 1),
+                    'prev_race': round(before_result['prev_race_score'], 1),
+                    'tilt_wind': round(before_result['tilt_wind_score'], 1),
+                    'parts_weight': round(before_result['parts_weight_score'], 1)
+                }
+
+            # スコア降順で再ソート
+            predictions.sort(key=lambda x: x['total_score'], reverse=True)
+            return predictions
+
+        # 階層的予測モードの処理
+        if use_hierarchical_prediction:
+            # BEFORE順位を算出（スコア降順）
+            before_ranking = sorted(before_scores.items(), key=lambda x: x[1], reverse=True)
+            before_rank_map = {pit: rank+1 for rank, (pit, score) in enumerate(before_ranking)}
+
+            # BEFORE順位に応じてPRE_SCOREにボーナスを加算
+            for pred in predictions:
+                pit_number = pred['pit_number']
+                pre_score = pred['total_score']
+                before_rank = before_rank_map[pit_number]
+                before_result = before_results[pit_number]
+                before_score = before_scores[pit_number]
+
+                # ボーナス倍率を決定
+                if before_rank == 1:
+                    bonus_multiplier = 1.10  # BEFORE 1位: 10%ボーナス
+                elif before_rank == 2:
+                    bonus_multiplier = 1.05  # BEFORE 2位: 5%ボーナス
+                else:
+                    bonus_multiplier = 1.00  # それ以外: ボーナスなし
+
+                # 最終スコア計算
+                final_score = pre_score * bonus_multiplier
+
+                # スコアを更新
+                pred['pre_score'] = round(pre_score, 1)
+                pred['total_score'] = round(final_score, 1)
+                pred['integration_mode'] = 'hierarchical'
+                pred['before_rank'] = before_rank
+                pred['bonus_multiplier'] = round(bonus_multiplier, 3)
+
+                # 直前情報の詳細を追加
+                pred['beforeinfo_score'] = round(before_score, 1)
+                pred['beforeinfo_confidence'] = round(before_result['confidence'], 3)
+                pred['beforeinfo_completeness'] = round(before_result['data_completeness'], 3)
+                pred['beforeinfo_detail'] = {
+                    'exhibition_time': round(before_result['exhibition_time_score'], 1),
+                    'st': round(before_result['st_score'], 1),
+                    'entry': round(before_result['entry_score'], 1),
+                    'prev_race': round(before_result['prev_race_score'], 1),
+                    'tilt_wind': round(before_result['tilt_wind_score'], 1),
+                    'parts_weight': round(before_result['parts_weight_score'], 1)
+                }
+
+            # スコア降順で再ソート
+            predictions.sort(key=lambda x: x['total_score'], reverse=True)
+            return predictions
+
+        # 正規化統合モードの処理
+        if use_normalized_integration and len(pre_scores_list) >= 2:
+            # 同一レース内で正規化（0-100に正規化）
+            pre_min, pre_max = min(pre_scores_list), max(pre_scores_list)
+            before_min, before_max = min(before_scores_list), max(before_scores_list)
+
+            # 正規化関数（0-100範囲に変換）
+            def normalize(score, min_val, max_val):
+                if max_val == min_val:
+                    return 50.0  # 全艇同点の場合は中央値
+                return (score - min_val) / (max_val - min_val) * 100.0
+
+            # 統合重み（データ充実度に応じて調整）
+            # デフォルト: PRE 60%, BEFORE 40%
+            default_pre_weight = 0.6
+            default_before_weight = 0.4
+
+            for pred in predictions:
+                pit_number = pred['pit_number']
+                pre_score = pred['total_score']
+                before_result = before_results[pit_number]
+                before_score = before_scores[pit_number]
+
+                # PRE・BEFOREスコアを正規化
+                pre_normalized = normalize(pre_score, pre_min, pre_max)
+                before_normalized = normalize(before_score, before_min, before_max)
+
+                # データ充実度に応じて重みを調整
+                data_completeness = before_result['data_completeness']
+                if data_completeness >= 0.5:
+                    # データ充実: デフォルト重み
+                    pre_weight = default_pre_weight
+                    before_weight = default_before_weight
+                else:
+                    # データ不足: BEFOREの重みを下げる
+                    pre_weight = 0.8
+                    before_weight = 0.2
+
+                # 正規化スコアを統合
+                final_score = pre_normalized * pre_weight + before_normalized * before_weight
+
+                # スコアを更新
+                pred['pre_score'] = round(pre_score, 1)
+                pred['total_score'] = round(final_score, 1)
+                pred['integration_mode'] = 'normalized'
+                pred['pre_weight'] = round(pre_weight, 3)
+                pred['before_weight'] = round(before_weight, 3)
+                pred['pre_normalized'] = round(pre_normalized, 1)
+                pred['before_normalized'] = round(before_normalized, 1)
+
+                # 直前情報の詳細を追加
+                pred['beforeinfo_score'] = round(before_score, 1)
+                pred['beforeinfo_confidence'] = round(before_result['confidence'], 3)
+                pred['beforeinfo_completeness'] = round(data_completeness, 3)
+                pred['beforeinfo_detail'] = {
+                    'exhibition_time': round(before_result['exhibition_time_score'], 1),
+                    'st': round(before_result['st_score'], 1),
+                    'entry': round(before_result['entry_score'], 1),
+                    'prev_race': round(before_result['prev_race_score'], 1),
+                    'tilt_wind': round(before_result['tilt_wind_score'], 1),
+                    'parts_weight': round(before_result['parts_weight_score'], 1)
+                }
+
+            return predictions
+
+        # 動的統合 or レガシーモードの処理（既存のまま）
+        for pred in predictions:
+            pit_number = pred['pit_number']
+            pre_score = pred['total_score']
+            before_result = before_results[pit_number]
+            before_score = before_scores[pit_number]
+            before_confidence = before_result['confidence']
+            data_completeness = before_result['data_completeness']
 
             # 統合式を適用
             if use_dynamic_integration and integration_weights:
@@ -1823,6 +2419,101 @@ class RacePredictor:
 
         except Exception as e:
             # エラーが発生しても処理を継続
+            pass
+
+        return predictions
+
+    def _add_top3_scores(
+        self,
+        predictions: List[Dict],
+        venue_code: str,
+        race_date: str
+    ) -> List[Dict]:
+        """
+        三連対スコアを計算して追加し、ハイブリッドスコアリングを適用
+
+        1着予測: 現在のスコア（1着確率ベース）を維持
+        2着・3着予測: 三連対スコア（3着以内確率ベース）を使用
+
+        Args:
+            predictions: 予測結果リスト
+            venue_code: 会場コード
+            race_date: レース日
+
+        Returns:
+            三連対スコア追加・調整後の予測結果
+        """
+        try:
+            # 各艇の三連対スコアを計算
+            for pred in predictions:
+                top3_result = self.top3_scorer.calculate_top3_score(
+                    racer_number=pred['racer_number'],
+                    venue_code=venue_code,
+                    course=pred['pit_number'],
+                    motor_number=pred['motor_number'],
+                    race_date=race_date
+                )
+
+                # 三連対スコアと詳細を追加
+                pred['top3_score'] = top3_result['top3_score']
+                pred['racer_top3_rate'] = top3_result['racer_top3_rate']
+                pred['course_top3_rate'] = top3_result['course_top3_rate']
+                pred['motor_top3_rate'] = top3_result['motor_top3_rate']
+                pred['venue_top3_rate'] = top3_result['venue_top3_rate']
+
+            # 現在のスコアでソートして仮順位を付与
+            sorted_by_current = sorted(predictions, key=lambda x: x['total_score'], reverse=True)
+
+            # 三連対スコアでソート
+            sorted_by_top3 = sorted(predictions, key=lambda x: x['top3_score'], reverse=True)
+
+            # ハイブリッドスコアリング適用
+            # 1位予測: 現在のスコアの1位を維持
+            # 2位・3位予測: 三連対スコアの上位を使用
+
+            first_place_candidate = sorted_by_current[0]
+
+            # 三連対スコアで1位候補を除いた上位2艇を抽出
+            remaining_by_top3 = [p for p in sorted_by_top3 if p['pit_number'] != first_place_candidate['pit_number']]
+
+            if len(remaining_by_top3) >= 2:
+                second_place_candidate = remaining_by_top3[0]
+                third_place_candidate = remaining_by_top3[1]
+
+                # ハイブリッドスコアを計算（2着・3着予測の精度向上）
+                # 1位: 現在のスコア重視（1着確率ベース）
+                # 2位・3位: 三連対スコア重視（3着以内確率ベース）
+
+                for pred in predictions:
+                    pit = pred['pit_number']
+
+                    if pit == first_place_candidate['pit_number']:
+                        # 1位候補: 現在のスコア + ボーナス
+                        pred['hybrid_score'] = pred['total_score'] + 10.0
+                        pred['hybrid_reason'] = '1位候補（1着確率ベース）'
+                    elif pit == second_place_candidate['pit_number']:
+                        # 2位候補: 三連対スコア + ボーナス
+                        pred['hybrid_score'] = pred['top3_score'] + 5.0
+                        pred['hybrid_reason'] = '2位候補（三連対スコアベース）'
+                    elif pit == third_place_candidate['pit_number']:
+                        # 3位候補: 三連対スコア + 小ボーナス
+                        pred['hybrid_score'] = pred['top3_score'] + 2.0
+                        pred['hybrid_reason'] = '3位候補（三連対スコアベース）'
+                    else:
+                        # その他: 三連対スコアベース
+                        pred['hybrid_score'] = pred['top3_score']
+                        pred['hybrid_reason'] = 'その他（三連対スコアベース）'
+
+                # ハイブリッドスコアでソート
+                predictions.sort(key=lambda x: x['hybrid_score'], reverse=True)
+
+                # total_scoreをハイブリッドスコアで上書き（既存ロジックとの互換性維持）
+                for pred in predictions:
+                    pred['original_total_score'] = pred['total_score']  # 元のスコアを保存
+                    pred['total_score'] = pred['hybrid_score']  # ハイブリッドスコアを使用
+
+        except Exception as e:
+            # エラーが発生しても既存のスコアで継続
             pass
 
         return predictions
