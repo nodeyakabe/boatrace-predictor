@@ -3,8 +3,7 @@ setlocal enabledelayedexpansion
 chcp 65001 > nul
 
 REM ========================================
-REM å¤œé–“ãƒãƒƒãƒå‡¦ç†ãƒžã‚¹ã‚¿ãƒ¼ã‚¹ã‚¯ãƒªãƒ—ãƒˆ
-REM ãƒãƒƒãƒˆãƒ¯ãƒ¼ã‚¯å¯¾ç­–ãƒ»ã‚¨ãƒ©ãƒ¼ãƒãƒ³ãƒ‰ãƒªãƒ³ã‚°ä»˜ã
+REM –éŠÔƒoƒbƒ`ˆ—ƒ}ƒXƒ^[ƒXƒNƒŠƒvƒg
 REM ========================================
 
 set LOG_DIR=logs\night_batch
@@ -17,153 +16,136 @@ set TIMESTAMP=%TIMESTAMP: =0%
 set LOG_FILE=%LOG_DIR%\batch_%TIMESTAMP%.log
 
 echo ======================================== >> "%LOG_FILE%"
-echo å¤œé–“ãƒãƒƒãƒé–‹å§‹: %date% %time% >> "%LOG_FILE%"
+echo –éŠÔƒoƒbƒ`ŠJŽn: %date% %time% >> "%LOG_FILE%"
 echo ======================================== >> "%LOG_FILE%"
 echo. >> "%LOG_FILE%"
 
-echo å¤œé–“ãƒãƒƒãƒã‚’é–‹å§‹ã—ã¾ã™...
-echo ãƒ­ã‚°ãƒ•ã‚¡ã‚¤ãƒ«: %LOG_FILE%
+echo –éŠÔƒoƒbƒ`‚ðŠJŽn‚µ‚Ü‚·...
+echo ƒƒOƒtƒ@ƒCƒ‹: %LOG_FILE%
 echo.
 
 REM ========================================
-REM ã‚¿ã‚¹ã‚¯1: ãƒ‡ãƒ¼ã‚¿åŽé›†å®Œäº†å¾…æ©Ÿï¼ˆæœ€å¤§4æ™‚é–“ï¼‰
+REM ƒ^ƒXƒN1: ƒf[ƒ^ŽûWŠ®—¹‘Ò‹@
 REM ========================================
-echo [1/7] ãƒ‡ãƒ¼ã‚¿åŽé›†å®Œäº†ã‚’å¾…æ©Ÿä¸­...
-echo [1/7] ãƒ‡ãƒ¼ã‚¿åŽé›†å®Œäº†ã‚’å¾…æ©Ÿä¸­... >> "%LOG_FILE%"
+echo [1/7] ƒf[ƒ^ŽûWŠ®—¹‚ð‘Ò‹@’†...
+echo [1/7] ƒf[ƒ^ŽûWŠ®—¹‚ð‘Ò‹@’†... >> "%LOG_FILE%"
 
-REM ãƒãƒƒã‚¯ã‚°ãƒ©ã‚¦ãƒ³ãƒ‰å‡¦ç†ã®ç¢ºèªï¼ˆPythonã‚¹ã‚¯ãƒªãƒ—ãƒˆã®å®Ÿè¡ŒçŠ¶æ…‹ãƒã‚§ãƒƒã‚¯ï¼‰
 set WAIT_COUNT=0
 set MAX_WAIT=240
 
 :WAIT_LOOP
 if !WAIT_COUNT! GEQ !MAX_WAIT! goto WAIT_TIMEOUT
 
-REM é€²æ—ç¢ºèªï¼ˆãƒ‡ãƒ¼ã‚¿åŽé›†å®Œäº†ã‚’ç¢ºèªï¼‰
-python -c "import sqlite3; conn = sqlite3.connect('data/boatrace.db'); cursor = conn.cursor(); cursor.execute('SELECT COUNT(DISTINCT race_date) FROM race_predictions WHERE generated_at >= \"2025-12-10\"'); print(cursor.fetchone()[0]); conn.close()" > temp_count.txt 2>&1
+python -c "import sqlite3; conn = sqlite3.connect('data/boatrace.db'); cursor = conn.cursor(); cursor.execute('SELECT COUNT(DISTINCT r.race_date) FROM race_predictions rp JOIN races r ON rp.race_id = r.id WHERE rp.generated_at >= \"2025-12-10\"'); print(cursor.fetchone()[0]); conn.close()" > temp_count.txt 2>&1
 set /p COMPLETED=<temp_count.txt
 del temp_count.txt
 
 if !COMPLETED! GEQ 365 (
-    echo ãƒ‡ãƒ¼ã‚¿åŽé›†å®Œäº†ï¼ 365æ—¥åˆ†ã®ãƒ‡ãƒ¼ã‚¿ã‚’ç¢ºèªã—ã¾ã—ãŸã€‚
-    echo ãƒ‡ãƒ¼ã‚¿åŽé›†å®Œäº†ï¼ 365æ—¥åˆ†ã®ãƒ‡ãƒ¼ã‚¿ã‚’ç¢ºèªã—ã¾ã—ãŸã€‚ >> "%LOG_FILE%"
+    echo ƒf[ƒ^ŽûWŠ®—¹I 365“ú•ª‚Ìƒf[ƒ^‚ðŠm”F‚µ‚Ü‚µ‚½B
+    echo ƒf[ƒ^ŽûWŠ®—¹I 365“ú•ª‚Ìƒf[ƒ^‚ðŠm”F‚µ‚Ü‚µ‚½B >> "%LOG_FILE%"
     goto DATA_READY
 )
 
-echo é€²æ—: !COMPLETED!/365æ—¥å®Œäº†...
-echo é€²æ—: !COMPLETED!/365æ—¥å®Œäº†... >> "%LOG_FILE%"
+echo i’»: !COMPLETED!/365“úŠ®—¹...
+echo i’»: !COMPLETED!/365“úŠ®—¹... >> "%LOG_FILE%"
 timeout /t 60 /nobreak > nul
 set /a WAIT_COUNT+=1
 goto WAIT_LOOP
 
 :WAIT_TIMEOUT
-echo [è­¦å‘Š] ã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆ: ãƒ‡ãƒ¼ã‚¿åŽé›†ãŒå®Œäº†ã—ã¾ã›ã‚“ã§ã—ãŸï¼ˆ!COMPLETED!/365æ—¥ï¼‰
-echo [è­¦å‘Š] ã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆ: ãƒ‡ãƒ¼ã‚¿åŽé›†ãŒå®Œäº†ã—ã¾ã›ã‚“ã§ã—ãŸï¼ˆ!COMPLETED!/365æ—¥ï¼‰ >> "%LOG_FILE%"
-echo åŽé›†æ¸ˆã¿ãƒ‡ãƒ¼ã‚¿ã§åˆ†æžã‚’ç¶šè¡Œã—ã¾ã™...
-echo åŽé›†æ¸ˆã¿ãƒ‡ãƒ¼ã‚¿ã§åˆ†æžã‚’ç¶šè¡Œã—ã¾ã™... >> "%LOG_FILE%"
+echo [Œx] ƒ^ƒCƒ€ƒAƒEƒg: ƒf[ƒ^ŽûW‚ªŠ®—¹‚µ‚Ü‚¹‚ñ‚Å‚µ‚½
+echo [Œx] ƒ^ƒCƒ€ƒAƒEƒg: ƒf[ƒ^ŽûW‚ªŠ®—¹‚µ‚Ü‚¹‚ñ‚Å‚µ‚½ >> "%LOG_FILE%"
+echo ŽûWÏ‚Ýƒf[ƒ^‚Å•ªÍ‚ð‘±s‚µ‚Ü‚·...
+echo ŽûWÏ‚Ýƒf[ƒ^‚Å•ªÍ‚ð‘±s‚µ‚Ü‚·... >> "%LOG_FILE%"
 
 :DATA_READY
 echo. >> "%LOG_FILE%"
 
 REM ========================================
-REM ã‚¿ã‚¹ã‚¯2: å…¨æœŸé–“æ¤œè¨¼
+REM ƒ^ƒXƒN2-7: •ªÍƒXƒNƒŠƒvƒgŽÀs
 REM ========================================
-echo [2/7] å…¨æœŸé–“ä¿¡é ¼åº¦Bä¸‰é€£å˜çš„ä¸­çŽ‡æ¤œè¨¼...
-echo [2/7] å…¨æœŸé–“ä¿¡é ¼åº¦Bä¸‰é€£å˜çš„ä¸­çŽ‡æ¤œè¨¼... >> "%LOG_FILE%"
+echo [2/7] ‘SŠúŠÔM—Š“xBŽO˜A’P“I’†—¦ŒŸØ...
+echo [2/7] ‘SŠúŠÔM—Š“xBŽO˜A’P“I’†—¦ŒŸØ... >> "%LOG_FILE%"
 python scripts/validate_confidence_b_trifecta.py --start 2025-01-01 --end 2025-12-31 >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
-    echo [ã‚¨ãƒ©ãƒ¼] ã‚¿ã‚¹ã‚¯2ã§ã‚¨ãƒ©ãƒ¼ãŒç™ºç”Ÿã—ã¾ã—ãŸãŒç¶šè¡Œã—ã¾ã™
-    echo [ã‚¨ãƒ©ãƒ¼] ã‚¿ã‚¹ã‚¯2ã§ã‚¨ãƒ©ãƒ¼ãŒç™ºç”Ÿã—ã¾ã—ãŸãŒç¶šè¡Œã—ã¾ã™ >> "%LOG_FILE%"
+    echo [ƒGƒ‰[] ƒ^ƒXƒN2‚ÅƒGƒ‰[‚ª”­¶‚µ‚Ü‚µ‚½‚ª‘±s‚µ‚Ü‚·
+    echo [ƒGƒ‰[] ƒ^ƒXƒN2‚ÅƒGƒ‰[‚ª”­¶‚µ‚Ü‚µ‚½‚ª‘±s‚µ‚Ü‚· >> "%LOG_FILE%"
 ) else (
-    echo [OK] ã‚¿ã‚¹ã‚¯2å®Œäº†
-    echo [OK] ã‚¿ã‚¹ã‚¯2å®Œäº† >> "%LOG_FILE%"
+    echo [OK] ƒ^ƒXƒN2Š®—¹
+    echo [OK] ƒ^ƒXƒN2Š®—¹ >> "%LOG_FILE%"
 )
 echo. >> "%LOG_FILE%"
 
-REM ========================================
-REM ã‚¿ã‚¹ã‚¯3: å­£ç¯€å¤‰å‹•åˆ†æž
-REM ========================================
-echo [3/7] å­£ç¯€å¤‰å‹•åˆ†æžï¼ˆä¿¡é ¼åº¦Bï¼‰...
-echo [3/7] å­£ç¯€å¤‰å‹•åˆ†æžï¼ˆä¿¡é ¼åº¦Bï¼‰... >> "%LOG_FILE%"
+echo [3/7] ‹Gß•Ï“®•ªÍiM—Š“xBj...
+echo [3/7] ‹Gß•Ï“®•ªÍiM—Š“xBj... >> "%LOG_FILE%"
 python scripts/analyze_seasonal_trends.py --confidence B >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
-    echo [ã‚¨ãƒ©ãƒ¼] ã‚¿ã‚¹ã‚¯3ã§ã‚¨ãƒ©ãƒ¼ãŒç™ºç”Ÿã—ã¾ã—ãŸãŒç¶šè¡Œã—ã¾ã™
-    echo [ã‚¨ãƒ©ãƒ¼] ã‚¿ã‚¹ã‚¯3ã§ã‚¨ãƒ©ãƒ¼ãŒç™ºç”Ÿã—ã¾ã—ãŸãŒç¶šè¡Œã—ã¾ã™ >> "%LOG_FILE%"
+    echo [ƒGƒ‰[] ƒ^ƒXƒN3‚ÅƒGƒ‰[‚ª”­¶‚µ‚Ü‚µ‚½‚ª‘±s‚µ‚Ü‚·
+    echo [ƒGƒ‰[] ƒ^ƒXƒN3‚ÅƒGƒ‰[‚ª”­¶‚µ‚Ü‚µ‚½‚ª‘±s‚µ‚Ü‚· >> "%LOG_FILE%"
 ) else (
-    echo [OK] ã‚¿ã‚¹ã‚¯3å®Œäº†
-    echo [OK] ã‚¿ã‚¹ã‚¯3å®Œäº† >> "%LOG_FILE%"
+    echo [OK] ƒ^ƒXƒN3Š®—¹
+    echo [OK] ƒ^ƒXƒN3Š®—¹ >> "%LOG_FILE%"
 )
 echo. >> "%LOG_FILE%"
 
-REM ========================================
-REM ã‚¿ã‚¹ã‚¯4: ä¼šå ´åˆ¥åˆ†æž
-REM ========================================
-echo [4/7] ä¼šå ´åˆ¥ãƒ»æ¡ä»¶åˆ¥åˆ†æžï¼ˆä¿¡é ¼åº¦Bï¼‰...
-echo [4/7] ä¼šå ´åˆ¥ãƒ»æ¡ä»¶åˆ¥åˆ†æžï¼ˆä¿¡é ¼åº¦Bï¼‰... >> "%LOG_FILE%"
+echo [4/7] ‰ïê•ÊEðŒ•Ê•ªÍiM—Š“xBj...
+echo [4/7] ‰ïê•ÊEðŒ•Ê•ªÍiM—Š“xBj... >> "%LOG_FILE%"
 python scripts/analyze_conditions.py --confidence B >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
-    echo [ã‚¨ãƒ©ãƒ¼] ã‚¿ã‚¹ã‚¯4ã§ã‚¨ãƒ©ãƒ¼ãŒç™ºç”Ÿã—ã¾ã—ãŸãŒç¶šè¡Œã—ã¾ã™
-    echo [ã‚¨ãƒ©ãƒ¼] ã‚¿ã‚¹ã‚¯4ã§ã‚¨ãƒ©ãƒ¼ãŒç™ºç”Ÿã—ã¾ã—ãŸãŒç¶šè¡Œã—ã¾ã™ >> "%LOG_FILE%"
+    echo [ƒGƒ‰[] ƒ^ƒXƒN4‚ÅƒGƒ‰[‚ª”­¶‚µ‚Ü‚µ‚½‚ª‘±s‚µ‚Ü‚·
+    echo [ƒGƒ‰[] ƒ^ƒXƒN4‚ÅƒGƒ‰[‚ª”­¶‚µ‚Ü‚µ‚½‚ª‘±s‚µ‚Ü‚· >> "%LOG_FILE%"
 ) else (
-    echo [OK] ã‚¿ã‚¹ã‚¯4å®Œäº†
-    echo [OK] ã‚¿ã‚¹ã‚¯4å®Œäº† >> "%LOG_FILE%"
+    echo [OK] ƒ^ƒXƒN4Š®—¹
+    echo [OK] ƒ^ƒXƒN4Š®—¹ >> "%LOG_FILE%"
 )
 echo. >> "%LOG_FILE%"
 
-REM ========================================
-REM ã‚¿ã‚¹ã‚¯5: ä¿¡é ¼åº¦Bç´°åˆ†åŒ–æ¤œè¨¼
-REM ========================================
-echo [5/7] ä¿¡é ¼åº¦Bç´°åˆ†åŒ–æ¤œè¨¼...
-echo [5/7] ä¿¡é ¼åº¦Bç´°åˆ†åŒ–æ¤œè¨¼... >> "%LOG_FILE%"
+echo [5/7] M—Š“xB×•ª‰»ŒŸØ...
+echo [5/7] M—Š“xB×•ª‰»ŒŸØ... >> "%LOG_FILE%"
 python scripts/validate_confidence_b_split.py --threshold 70 >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
-    echo [ã‚¨ãƒ©ãƒ¼] ã‚¿ã‚¹ã‚¯5ã§ã‚¨ãƒ©ãƒ¼ãŒç™ºç”Ÿã—ã¾ã—ãŸãŒç¶šè¡Œã—ã¾ã™
-    echo [ã‚¨ãƒ©ãƒ¼] ã‚¿ã‚¹ã‚¯5ã§ã‚¨ãƒ©ãƒ¼ãŒç™ºç”Ÿã—ã¾ã—ãŸãŒç¶šè¡Œã—ã¾ã™ >> "%LOG_FILE%"
+    echo [ƒGƒ‰[] ƒ^ƒXƒN5‚ÅƒGƒ‰[‚ª”­¶‚µ‚Ü‚µ‚½‚ª‘±s‚µ‚Ü‚·
+    echo [ƒGƒ‰[] ƒ^ƒXƒN5‚ÅƒGƒ‰[‚ª”­¶‚µ‚Ü‚µ‚½‚ª‘±s‚µ‚Ü‚· >> "%LOG_FILE%"
 ) else (
-    echo [OK] ã‚¿ã‚¹ã‚¯5å®Œäº†
-    echo [OK] ã‚¿ã‚¹ã‚¯5å®Œäº† >> "%LOG_FILE%"
+    echo [OK] ƒ^ƒXƒN5Š®—¹
+    echo [OK] ƒ^ƒXƒN5Š®—¹ >> "%LOG_FILE%"
 )
 echo. >> "%LOG_FILE%"
 
-REM ========================================
-REM ã‚¿ã‚¹ã‚¯6: ç·åˆç²¾åº¦ãƒ¬ãƒãƒ¼ãƒˆ
-REM ========================================
-echo [6/7] ä¿¡é ¼åº¦åˆ¥ç·åˆç²¾åº¦ãƒ¬ãƒãƒ¼ãƒˆä½œæˆ...
-echo [6/7] ä¿¡é ¼åº¦åˆ¥ç·åˆç²¾åº¦ãƒ¬ãƒãƒ¼ãƒˆä½œæˆ... >> "%LOG_FILE%"
+echo [6/7] M—Š“x•Ê‘‡¸“xƒŒƒ|[ƒgì¬...
+echo [6/7] M—Š“x•Ê‘‡¸“xƒŒƒ|[ƒgì¬... >> "%LOG_FILE%"
 python scripts/analyze_comprehensive_accuracy.py >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
-    echo [ã‚¨ãƒ©ãƒ¼] ã‚¿ã‚¹ã‚¯6ã§ã‚¨ãƒ©ãƒ¼ãŒç™ºç”Ÿã—ã¾ã—ãŸãŒç¶šè¡Œã—ã¾ã™
-    echo [ã‚¨ãƒ©ãƒ¼] ã‚¿ã‚¹ã‚¯6ã§ã‚¨ãƒ©ãƒ¼ãŒç™ºç”Ÿã—ã¾ã—ãŸãŒç¶šè¡Œã—ã¾ã™ >> "%LOG_FILE%"
+    echo [ƒGƒ‰[] ƒ^ƒXƒN6‚ÅƒGƒ‰[‚ª”­¶‚µ‚Ü‚µ‚½‚ª‘±s‚µ‚Ü‚·
+    echo [ƒGƒ‰[] ƒ^ƒXƒN6‚ÅƒGƒ‰[‚ª”­¶‚µ‚Ü‚µ‚½‚ª‘±s‚µ‚Ü‚· >> "%LOG_FILE%"
 ) else (
-    echo [OK] ã‚¿ã‚¹ã‚¯6å®Œäº†
-    echo [OK] ã‚¿ã‚¹ã‚¯6å®Œäº† >> "%LOG_FILE%"
+    echo [OK] ƒ^ƒXƒN6Š®—¹
+    echo [OK] ƒ^ƒXƒN6Š®—¹ >> "%LOG_FILE%"
 )
 echo. >> "%LOG_FILE%"
 
-REM ========================================
-REM ã‚¿ã‚¹ã‚¯7: ä¿¡é ¼åº¦Cåˆ†æžï¼ˆå‚è€ƒï¼‰
-REM ========================================
-echo [7/7] å­£ç¯€å¤‰å‹•åˆ†æžï¼ˆä¿¡é ¼åº¦Cï¼‰...
-echo [7/7] å­£ç¯€å¤‰å‹•åˆ†æžï¼ˆä¿¡é ¼åº¦Cï¼‰... >> "%LOG_FILE%"
+echo [7/7] ‹Gß•Ï“®•ªÍiM—Š“xCj...
+echo [7/7] ‹Gß•Ï“®•ªÍiM—Š“xCj... >> "%LOG_FILE%"
 python scripts/analyze_seasonal_trends.py --confidence C >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
-    echo [ã‚¨ãƒ©ãƒ¼] ã‚¿ã‚¹ã‚¯7ã§ã‚¨ãƒ©ãƒ¼ãŒç™ºç”Ÿã—ã¾ã—ãŸãŒç¶šè¡Œã—ã¾ã™
-    echo [ã‚¨ãƒ©ãƒ¼] ã‚¿ã‚¹ã‚¯7ã§ã‚¨ãƒ©ãƒ¼ãŒç™ºç”Ÿã—ã¾ã—ãŸãŒç¶šè¡Œã—ã¾ã™ >> "%LOG_FILE%"
+    echo [ƒGƒ‰[] ƒ^ƒXƒN7‚ÅƒGƒ‰[‚ª”­¶‚µ‚Ü‚µ‚½‚ª‘±s‚µ‚Ü‚·
+    echo [ƒGƒ‰[] ƒ^ƒXƒN7‚ÅƒGƒ‰[‚ª”­¶‚µ‚Ü‚µ‚½‚ª‘±s‚µ‚Ü‚· >> "%LOG_FILE%"
 ) else (
-    echo [OK] ã‚¿ã‚¹ã‚¯7å®Œäº†
-    echo [OK] ã‚¿ã‚¹ã‚¯7å®Œäº† >> "%LOG_FILE%"
+    echo [OK] ƒ^ƒXƒN7Š®—¹
+    echo [OK] ƒ^ƒXƒN7Š®—¹ >> "%LOG_FILE%"
 )
 echo. >> "%LOG_FILE%"
 
 REM ========================================
-REM å®Œäº†ã‚µãƒžãƒªãƒ¼
+REM Š®—¹ƒTƒ}ƒŠ[
 REM ========================================
 echo. >> "%LOG_FILE%"
 echo ======================================== >> "%LOG_FILE%"
-echo å¤œé–“ãƒãƒƒãƒå®Œäº†: %date% %time% >> "%LOG_FILE%"
+echo –éŠÔƒoƒbƒ`Š®—¹: %date% %time% >> "%LOG_FILE%"
 echo ======================================== >> "%LOG_FILE%"
 echo. >> "%LOG_FILE%"
 
-echo ç”Ÿæˆã•ã‚ŒãŸãƒ¬ãƒãƒ¼ãƒˆ: >> "%LOG_FILE%"
+echo ¶¬‚³‚ê‚½ƒŒƒ|[ƒg: >> "%LOG_FILE%"
 dir /b "%OUTPUT_DIR%\*.csv" >> "%LOG_FILE%" 2>&1
 dir /b "%OUTPUT_DIR%\*.png" >> "%LOG_FILE%" 2>&1
 dir /b "%OUTPUT_DIR%\*.md" >> "%LOG_FILE%" 2>&1
@@ -171,15 +153,14 @@ echo. >> "%LOG_FILE%"
 
 echo.
 echo ========================================
-echo å¤œé–“ãƒãƒƒãƒãŒå®Œäº†ã—ã¾ã—ãŸ
+echo –éŠÔƒoƒbƒ`‚ªŠ®—¹‚µ‚Ü‚µ‚½
 echo ========================================
 echo.
-echo ãƒ­ã‚°ãƒ•ã‚¡ã‚¤ãƒ«: %LOG_FILE%
-echo å‡ºåŠ›ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒª: %OUTPUT_DIR%
+echo ƒƒOƒtƒ@ƒCƒ‹: %LOG_FILE%
+echo o—ÍƒfƒBƒŒƒNƒgƒŠ: %OUTPUT_DIR%
 echo.
-echo ç”Ÿæˆã•ã‚ŒãŸãƒ•ã‚¡ã‚¤ãƒ«:
+echo ¶¬‚³‚ê‚½ƒtƒ@ƒCƒ‹:
 dir /b "%OUTPUT_DIR%\*.csv" 2>nul
 dir /b "%OUTPUT_DIR%\*.png" 2>nul
 dir /b "%OUTPUT_DIR%\*.md" 2>nul
 echo.
-

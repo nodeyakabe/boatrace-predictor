@@ -675,6 +675,14 @@ class RacePredictor:
                 ...
             ]
         """
+        logger = logging.getLogger(__name__)
+
+        # キャッシュチェック（Phase 2.5: 予測結果キャッシュ）
+        cached_prediction = self.race_data_cache.get_prediction(race_id)
+        if cached_prediction is not None:
+            logger.debug(f"Race {race_id}: 予測結果キャッシュヒット")
+            return cached_prediction
+
         # レース情報取得
         import sqlite3
         conn = get_connection(self.db_path)
@@ -1066,11 +1074,19 @@ class RacePredictor:
                 # 階層的予測エラーは無視して従来の予測を返す
                 pass
 
+        # 予測結果をキャッシュに保存（Phase 2.5）
+        self.race_data_cache.set_prediction(race_id, predictions)
+        logger.debug(f"Race {race_id}: 予測結果キャッシュ保存")
+
         # キャッシュ統計をログ出力（定期的に）
         cache_stats = self.race_data_cache.get_all_stats()
-        if cache_stats['before_info']['hits'] + cache_stats['before_info']['misses'] > 0:
-            logger = logging.getLogger(__name__)
-            logger.debug(f"キャッシュ統計: BEFORE {cache_stats['before_info']['hit_rate']:.1%} hit rate")
+        total_requests = cache_stats['prediction']['hits'] + cache_stats['prediction']['misses']
+        if total_requests > 0:
+            logger.debug(
+                f"キャッシュ統計: "
+                f"BEFORE {cache_stats['before_info']['hit_rate']:.1%} | "
+                f"予測 {cache_stats['prediction']['hit_rate']:.1%}"
+            )
 
         return predictions
 
