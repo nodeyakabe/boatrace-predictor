@@ -28,7 +28,8 @@ echo.
 REM ========================================
 REM タスク1: データ収集完了待機（最大4時間）
 REM ========================================
-echo [1/7] データ収集完了を待機中... | tee -a "%LOG_FILE%"
+echo [1/7] データ収集完了を待機中...
+echo [1/7] データ収集完了を待機中... >> "%LOG_FILE%"
 
 REM バックグラウンド処理の確認（Pythonスクリプトの実行状態チェック）
 set WAIT_COUNT=0
@@ -43,18 +44,22 @@ set /p COMPLETED=<temp_count.txt
 del temp_count.txt
 
 if !COMPLETED! GEQ 365 (
-    echo データ収集完了！ 365日分のデータを確認しました。 | tee -a "%LOG_FILE%"
+    echo データ収集完了！ 365日分のデータを確認しました。
+    echo データ収集完了！ 365日分のデータを確認しました。 >> "%LOG_FILE%"
     goto DATA_READY
 )
 
-echo 進捗: !COMPLETED!/365日完了... | tee -a "%LOG_FILE%"
+echo 進捗: !COMPLETED!/365日完了...
+echo 進捗: !COMPLETED!/365日完了... >> "%LOG_FILE%"
 timeout /t 60 /nobreak > nul
 set /a WAIT_COUNT+=1
 goto WAIT_LOOP
 
 :WAIT_TIMEOUT
-echo [警告] タイムアウト: データ収集が完了しませんでした（!COMPLETED!/365日） | tee -a "%LOG_FILE%"
-echo 収集済みデータで分析を続行します... | tee -a "%LOG_FILE%"
+echo [警告] タイムアウト: データ収集が完了しませんでした（!COMPLETED!/365日）
+echo [警告] タイムアウト: データ収集が完了しませんでした（!COMPLETED!/365日） >> "%LOG_FILE%"
+echo 収集済みデータで分析を続行します...
+echo 収集済みデータで分析を続行します... >> "%LOG_FILE%"
 
 :DATA_READY
 echo. >> "%LOG_FILE%"
@@ -62,72 +67,90 @@ echo. >> "%LOG_FILE%"
 REM ========================================
 REM タスク2: 全期間検証
 REM ========================================
-echo [2/7] 全期間信頼度B三連単的中率検証... | tee -a "%LOG_FILE%"
+echo [2/7] 全期間信頼度B三連単的中率検証...
+echo [2/7] 全期間信頼度B三連単的中率検証... >> "%LOG_FILE%"
 python scripts/validate_confidence_b_trifecta.py --start 2025-01-01 --end 2025-12-31 >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
-    echo [エラー] タスク2でエラーが発生しましたが続行します | tee -a "%LOG_FILE%"
+    echo [エラー] タスク2でエラーが発生しましたが続行します
+    echo [エラー] タスク2でエラーが発生しましたが続行します >> "%LOG_FILE%"
 ) else (
-    echo [OK] タスク2完了 | tee -a "%LOG_FILE%"
+    echo [OK] タスク2完了
+    echo [OK] タスク2完了 >> "%LOG_FILE%"
 )
 echo. >> "%LOG_FILE%"
 
 REM ========================================
 REM タスク3: 季節変動分析
 REM ========================================
-echo [3/7] 季節変動分析（信頼度B）... | tee -a "%LOG_FILE%"
+echo [3/7] 季節変動分析（信頼度B）...
+echo [3/7] 季節変動分析（信頼度B）... >> "%LOG_FILE%"
 python scripts/analyze_seasonal_trends.py --confidence B >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
-    echo [エラー] タスク3でエラーが発生しましたが続行します | tee -a "%LOG_FILE%"
+    echo [エラー] タスク3でエラーが発生しましたが続行します
+    echo [エラー] タスク3でエラーが発生しましたが続行します >> "%LOG_FILE%"
 ) else (
-    echo [OK] タスク3完了 | tee -a "%LOG_FILE%"
+    echo [OK] タスク3完了
+    echo [OK] タスク3完了 >> "%LOG_FILE%"
 )
 echo. >> "%LOG_FILE%"
 
 REM ========================================
 REM タスク4: 会場別分析
 REM ========================================
-echo [4/7] 会場別・条件別分析（信頼度B）... | tee -a "%LOG_FILE%"
+echo [4/7] 会場別・条件別分析（信頼度B）...
+echo [4/7] 会場別・条件別分析（信頼度B）... >> "%LOG_FILE%"
 python scripts/analyze_conditions.py --confidence B >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
-    echo [エラー] タスク4でエラーが発生しましたが続行します | tee -a "%LOG_FILE%"
+    echo [エラー] タスク4でエラーが発生しましたが続行します
+    echo [エラー] タスク4でエラーが発生しましたが続行します >> "%LOG_FILE%"
 ) else (
-    echo [OK] タスク4完了 | tee -a "%LOG_FILE%"
+    echo [OK] タスク4完了
+    echo [OK] タスク4完了 >> "%LOG_FILE%"
 )
 echo. >> "%LOG_FILE%"
 
 REM ========================================
 REM タスク5: 信頼度B細分化検証
 REM ========================================
-echo [5/7] 信頼度B細分化検証... | tee -a "%LOG_FILE%"
+echo [5/7] 信頼度B細分化検証...
+echo [5/7] 信頼度B細分化検証... >> "%LOG_FILE%"
 python scripts/validate_confidence_b_split.py --threshold 70 >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
-    echo [エラー] タスク5でエラーが発生しましたが続行します | tee -a "%LOG_FILE%"
+    echo [エラー] タスク5でエラーが発生しましたが続行します
+    echo [エラー] タスク5でエラーが発生しましたが続行します >> "%LOG_FILE%"
 ) else (
-    echo [OK] タスク5完了 | tee -a "%LOG_FILE%"
+    echo [OK] タスク5完了
+    echo [OK] タスク5完了 >> "%LOG_FILE%"
 )
 echo. >> "%LOG_FILE%"
 
 REM ========================================
 REM タスク6: 総合精度レポート
 REM ========================================
-echo [6/7] 信頼度別総合精度レポート作成... | tee -a "%LOG_FILE%"
+echo [6/7] 信頼度別総合精度レポート作成...
+echo [6/7] 信頼度別総合精度レポート作成... >> "%LOG_FILE%"
 python scripts/analyze_comprehensive_accuracy.py >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
-    echo [エラー] タスク6でエラーが発生しましたが続行します | tee -a "%LOG_FILE%"
+    echo [エラー] タスク6でエラーが発生しましたが続行します
+    echo [エラー] タスク6でエラーが発生しましたが続行します >> "%LOG_FILE%"
 ) else (
-    echo [OK] タスク6完了 | tee -a "%LOG_FILE%"
+    echo [OK] タスク6完了
+    echo [OK] タスク6完了 >> "%LOG_FILE%"
 )
 echo. >> "%LOG_FILE%"
 
 REM ========================================
 REM タスク7: 信頼度C分析（参考）
 REM ========================================
-echo [7/7] 季節変動分析（信頼度C）... | tee -a "%LOG_FILE%"
+echo [7/7] 季節変動分析（信頼度C）...
+echo [7/7] 季節変動分析（信頼度C）... >> "%LOG_FILE%"
 python scripts/analyze_seasonal_trends.py --confidence C >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
-    echo [エラー] タスク7でエラーが発生しましたが続行します | tee -a "%LOG_FILE%"
+    echo [エラー] タスク7でエラーが発生しましたが続行します
+    echo [エラー] タスク7でエラーが発生しましたが続行します >> "%LOG_FILE%"
 ) else (
-    echo [OK] タスク7完了 | tee -a "%LOG_FILE%"
+    echo [OK] タスク7完了
+    echo [OK] タスク7完了 >> "%LOG_FILE%"
 )
 echo. >> "%LOG_FILE%"
 
@@ -160,4 +183,3 @@ dir /b "%OUTPUT_DIR%\*.png" 2>nul
 dir /b "%OUTPUT_DIR%\*.md" 2>nul
 echo.
 
-pause

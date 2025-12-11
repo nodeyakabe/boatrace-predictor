@@ -498,16 +498,78 @@ def _render_ai_prediction(race_id, race_date_str, venue_code, race_number, racer
         score = pred.get('total_score', pred.get('score', 0))
         confidence_level = pred.get('confidence', 'C')
 
+        # パターン情報を取得
+        pattern_multiplier = pred.get('pattern_multiplier', 1.0)
+        matched_patterns = pred.get('matched_patterns', [])
+        has_negative = pred.get('has_negative_pattern', False)
+
+        # パターンボーナス表示
+        if pattern_multiplier > 1.0:
+            pattern_display = f"×{pattern_multiplier:.3f} 🔥"
+        elif has_negative:
+            pattern_display = "⚠️ 注意"
+        else:
+            pattern_display = "-"
+
         prediction_data.append({
             '順位': medal,
             '艇番': f"{pred['pit_number']}号艇",
             '選手名': pred.get('racer_name', '選手名不明'),
             'スコア': f"{score:.1f}",
+            'パターン': pattern_display,
             '信頼度': render_confidence_badge(confidence_level)
         })
 
     pred_df = pd.DataFrame(prediction_data)
     st.dataframe(pred_df, use_container_width=True, hide_index=True)
+
+    # パターンボーナス詳細（Phase 3: パターン情報表示）
+    with st.expander("🔥 BEFOREパターンボーナス詳細", expanded=False):
+        st.markdown("**BEFOREパターンシステム**: 展示タイム × STタイミング × 予測順位の組み合わせで有利パターンを検出")
+        st.markdown("")
+
+        pattern_details = []
+        for i, pred in enumerate(predictions, 1):
+            pit_number = pred['pit_number']
+            pattern_multiplier = pred.get('pattern_multiplier', 1.0)
+            matched_patterns = pred.get('matched_patterns', [])
+            has_negative = pred.get('has_negative_pattern', False)
+            negative_patterns = pred.get('negative_patterns', [])
+
+            # パターン情報を整形
+            if pattern_multiplier > 1.0:
+                # ポジティブパターン
+                pattern_str = f"🔥 {matched_patterns[0] if matched_patterns else 'unknown'}"
+                effect_str = f"+{(pattern_multiplier - 1.0) * 100:.1f}%"
+            elif has_negative:
+                # ネガティブパターン
+                pattern_str = f"⚠️ {', '.join(negative_patterns) if negative_patterns else '要注意'}"
+                effect_str = f"{(pattern_multiplier - 1.0) * 100:.1f}%"
+            else:
+                pattern_str = "-"
+                effect_str = "-"
+
+            pattern_details.append({
+                '艇番': pit_number,
+                '選手': pred.get('racer_name', '選手名不明')[:6],
+                'パターン': pattern_str,
+                '効果': effect_str,
+                '倍率': f"×{pattern_multiplier:.3f}" if pattern_multiplier != 1.0 else "-"
+            })
+
+        pattern_df = pd.DataFrame(pattern_details)
+        st.dataframe(pattern_df, use_container_width=True, hide_index=True)
+
+        # パターン適用状況のサマリー
+        positive_count = sum(1 for pred in predictions if pred.get('pattern_multiplier', 1.0) > 1.0)
+        negative_count = sum(1 for pred in predictions if pred.get('has_negative_pattern', False))
+
+        st.markdown(f"""
+        **適用状況**:
+        - ポジティブパターン検出: {positive_count}艇
+        - ネガティブパターン検出: {negative_count}艇
+        - パターン未適用: {len(predictions) - positive_count - negative_count}艇
+        """)
 
     # 展示データ詳細（DBから取得）
     with st.expander("📊 展示ST・展示タイム詳細", expanded=False):
