@@ -17,7 +17,7 @@ FEATURE_FLAGS = {
     'before_safe_st_exhibition': False,  # BEFORE_SAFEにST/展示タイム統合（Phase 5テスト結果: 悪化、無効化）
     'before_pattern_bonus': True,     # パターン方式（検証結果: 信頼度B +9.5pt, C +8.3pt, A -6.5pt）
     'apply_pattern_to_confidence_d': False,  # 信頼度Dへのパターン適用（効果限定的+3.9pt、慎重モード）
-    'negative_patterns': False,       # ネガティブパターン（Phase 2: 軽量実装、初期は無効）
+    'negative_patterns': True,        # ネガティブパターン（Phase 2: 軽量実装、テスト結果+2.0%改善で有効化 2025-12-11）
     'entry_prediction_model': True,   # 進入予測モデル
     'confidence_refinement': False,   # 信頼度細分化（未実装）
     'st_course_interaction': True,    # ST×course交互作用（実装完了・再訓練済み）
@@ -144,6 +144,13 @@ ROLLOUT_STAGES = {
 
 # 各機能のリスク評価
 FEATURE_RISKS = {
+    'negative_patterns': {
+        'risk_level': 'low',
+        'main_risks': ['過度なスコア減算による予測変更'],
+        'mitigation': '段階的導入、モニタリング、ロールバック可能',
+        'test_result': '+2.0%改善（50レーステスト 2025-12-11）',
+        'enabled_date': '2025-12-11'
+    },
     'dynamic_integration': {
         'risk_level': 'medium',
         'main_risks': ['過補正による精度低下'],
