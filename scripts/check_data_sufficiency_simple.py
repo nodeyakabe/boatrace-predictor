@@ -191,31 +191,20 @@ def check_data_sufficiency():
         results_coverage = (races_with_results / total_races * 100) if total_races > 0 else 0
         print(f"  結果あるレース: {races_with_results:,}レース / {total_races:,}レース ({results_coverage:.1f}%)")
 
-        # 6. 払戻情報（テーブル存在チェック）
+        # 6. 払戻情報（payouts）
         print(f"\n[6] 払戻情報")
         print("-" * 100)
 
         cursor.execute("""
-            SELECT name FROM sqlite_master
-            WHERE type='table' AND name='payouts'
-        """)
-        payouts_table_exists = cursor.fetchone() is not None
-
-        if payouts_table_exists:
-            cursor.execute("""
-                SELECT COUNT(DISTINCT p.race_id) as races_with_payout
-                FROM payouts p
-                JOIN races r ON p.race_id = r.id
-                WHERE r.race_date >= ? AND r.race_date <= ?
-                AND p.bet_type = '3連単'
-            """, (start_date, end_date))
-            races_with_payout = cursor.fetchone()[0]
-            payout_coverage = (races_with_payout / total_races * 100) if total_races > 0 else 0
-            print(f"  三連単払戻あるレース: {races_with_payout:,}レース / {total_races:,}レース ({payout_coverage:.1f}%)")
-        else:
-            print(f"  payoutsテーブルが存在しません")
-            payout_coverage = 0.0
-            races_with_payout = 0
+            SELECT COUNT(DISTINCT p.race_id) as races_with_payout
+            FROM payouts p
+            JOIN races r ON p.race_id = r.id
+            WHERE r.race_date >= ? AND r.race_date <= ?
+            AND p.bet_type = 'trifecta'
+        """, (start_date, end_date))
+        races_with_payout = cursor.fetchone()[0]
+        payout_coverage = (races_with_payout / total_races * 100) if total_races > 0 else 0
+        print(f"  三連単払戻あるレース: {races_with_payout:,}レース / {total_races:,}レース ({payout_coverage:.1f}%)")
 
         # 7. 気象情報
         print(f"\n[7] 気象情報")

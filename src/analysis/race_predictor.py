@@ -28,6 +28,7 @@ from .beforeinfo_flag_adjuster import BeforeInfoFlagAdjuster
 from .top3_scorer import Top3Scorer
 from .pattern_priority_optimizer import PatternPriorityOptimizer
 from .negative_pattern_checker import NegativePatternChecker
+from .venue_pattern_optimizer import VenuePatternOptimizer
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -264,6 +265,7 @@ class RacePredictor:
         self.top3_scorer = Top3Scorer(db_path)
         self.pattern_optimizer = PatternPriorityOptimizer()
         self.negative_pattern_checker = NegativePatternChecker()
+        self.venue_pattern_optimizer = VenuePatternOptimizer(db_path)
         self.race_data_cache = RaceDataCache()
 
         # 階層的確率モデル（条件付き確率ベースの三連単予測）
@@ -1707,6 +1709,13 @@ class RacePredictor:
         import sqlite3
         conn = get_connection(self.db_path)
 
+        # 会場コードを取得（会場別最適化用）
+        cursor = conn.cursor()
+        cursor.execute("SELECT venue_code FROM races WHERE id = ?", (race_id,))
+        venue_row = cursor.fetchone()
+        venue_code = int(venue_row[0]) if venue_row and venue_row[0] else None
+        cursor.close()
+
         # キャッシュから取得試行
         cached_before_info = self.race_data_cache.get_before_info(race_id)
 
@@ -1864,25 +1873,64 @@ class RacePredictor:
                     except Exception:
                         pass
 
-                # 複数パターンマッチ時は PatternPriorityOptimizer で最適化
+                # 複数パターンマッチ時の処理
                 if len(matched_patterns) > 1:
-                    best_pattern = self.pattern_optimizer.select_best_pattern(
-                        matched_patterns,
-                        top_confidence,
-                        venue_code
-                    )
-                    if best_pattern:
-                        final_multiplier = best_pattern['multiplier']
-                        # デバッグ用に選択されたパターンを記録
-                        pred['selected_pattern'] = best_pattern['name']
-                        logger.debug(
-                            f"Race {race_id} 艇{pit_number}: {len(matched_patterns)}個のパターンマッチ → "
-                            f"選択: {best_pattern['name']} (倍率{best_pattern['multiplier']:.3f})"
+                    # フィーチャーフラグで複合ボーナスを制御
+                    if is_feature_enabled('compound_pattern_bonus'):
+                        # 複合パターンボーナス: 複数パターンの相乗効果
+                        # トップ2パターンの倍率を掛け合わせ、過剰補正を防ぐため調整係数(0.95)を適用
+                        sorted_patterns = sorted(matched_patterns, key=lambda p: p['multiplier'], reverse=True)
+                        top_pattern = sorted_patterns[0]
+                        second_pattern = sorted_patterns[1] if len(sorted_patterns) > 1 else None
+
+                        if second_pattern:
+                            # 複合ボーナス計算: (倍率1 × 倍率2) × 0.95
+                            compound_multiplier = top_pattern['multiplier'] * second_pattern['multiplier'] * 0.95
+                            # 上限を1.5に設定（過剰補正防止）
+                            final_multiplier = min(compound_multiplier, 1.5)
+                            pred['selected_pattern'] = f"{top_pattern['name']}+{second_pattern['name']}"
+                            logger.debug(
+                                f"Race {race_id} 艇{pit_number}: 複合ボーナス適用 → "
+                                f"{top_pattern['name']}({top_pattern['multiplier']:.3f}) × "
+                                f"{second_pattern['name']}({second_pattern['multiplier']:.3f}) × 0.95 = "
+                                f"{final_multiplier:.3f}"
+                            )
+                        else:
+                            final_multiplier = top_pattern['multiplier']
+                            pred['selected_pattern'] = top_pattern['name']
+                    else:
+                        # 従来方式: PatternPriorityOptimizerで最優先パターンを選択
+                        best_pattern = self.pattern_optimizer.select_best_pattern(
+                            matched_patterns,
+                            top_confidence,
+                            venue_code
                         )
+                        if best_pattern:
+                            final_multiplier = best_pattern['multiplier']
+                            pred['selected_pattern'] = best_pattern['name']
+                            logger.debug(
+                                f"Race {race_id} 艇{pit_number}: {len(matched_patterns)}個のパターンマッチ → "
+                                f"選択: {best_pattern['name']} (倍率{best_pattern['multiplier']:.3f})"
+                            )
                 elif len(matched_patterns) == 1:
                     # 単一パターンの場合はそのまま使用
                     final_multiplier = matched_patterns[0]['multiplier']
                     pred['selected_pattern'] = matched_patterns[0]['name']
+
+                # 会場別最適化を適用（フィーチャーフラグで制御）
+                if is_feature_enabled('venue_pattern_optimization') and final_multiplier > 1.0:
+                    pattern_name = pred.get('selected_pattern', 'unknown')
+                    original_multiplier = final_multiplier
+                    final_multiplier = self.venue_pattern_optimizer.optimize_pattern_multiplier(
+                        final_multiplier,
+                        venue_code,
+                        pattern_name
+                    )
+                    if abs(final_multiplier - original_multiplier) > 0.001:
+                        logger.debug(
+                            f"Race {race_id} 艇{pit_number}: 会場別最適化適用 "
+                            f"{original_multiplier:.3f} → {final_multiplier:.3f} (会場{venue_code})"
+                        )
 
             # 最終スコア計算
             final_score = pre_score * final_multiplier
