@@ -165,10 +165,22 @@ def monitor_pattern_performance(days: int = 7):
 
             # パターン別統計
             if pattern_applied and matched_patterns:
-                top_pattern = matched_patterns[0] if isinstance(matched_patterns, list) else matched_patterns
-                stats['by_pattern'][top_pattern]['count'] += 1
+                # matched_patternsがリストの場合は最初の要素を取得
+                if isinstance(matched_patterns, list) and len(matched_patterns) > 0:
+                    top_pattern = matched_patterns[0]
+                    # dict型の場合はパターン名を抽出（'name'キーまたは'pattern_name'キー）
+                    if isinstance(top_pattern, dict):
+                        pattern_name = top_pattern.get('name', top_pattern.get('pattern_name', 'unknown'))
+                    else:
+                        pattern_name = str(top_pattern)
+                elif isinstance(matched_patterns, dict):
+                    pattern_name = matched_patterns.get('name', matched_patterns.get('pattern_name', 'unknown'))
+                else:
+                    pattern_name = str(matched_patterns)
+
+                stats['by_pattern'][pattern_name]['count'] += 1
                 if is_correct:
-                    stats['by_pattern'][top_pattern]['correct'] += 1
+                    stats['by_pattern'][pattern_name]['correct'] += 1
 
             # 倍率別統計
             if pattern_applied:
