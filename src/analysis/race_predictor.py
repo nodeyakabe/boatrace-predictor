@@ -37,6 +37,7 @@ from src.utils.scoring_config import ScoringConfig
 from src.utils.db_connection_pool import get_connection
 from src.prediction.rule_based_engine import RuleBasedEngine
 from config.feature_flags import is_feature_enabled
+from config.optimized_pattern_multipliers import get_optimized_multiplier
 # 階層的確率モデル（条件付き確率）
 try:
     from src.prediction.hierarchical_predictor import HierarchicalPredictor
@@ -1800,15 +1801,21 @@ class RacePredictor:
                 for pattern in BEFORE_PATTERNS_1ST:
                     try:
                         if pattern['condition'](pre_rank, ex_rank, st_rank):
+                            # 最適化倍率を適用（フィーチャーフラグで制御）
+                            if is_feature_enabled('optimized_pattern_multipliers'):
+                                multiplier = get_optimized_multiplier(pattern['name'], pattern['multiplier'])
+                            else:
+                                multiplier = pattern['multiplier']
+
                             matched_patterns.append({
                                 'name': pattern['name'],
                                 'description': pattern['description'],
-                                'multiplier': pattern['multiplier'],
+                                'multiplier': multiplier,
                                 'target_rank': pattern['target_rank']
                             })
                             # 最も高い倍率を使用
-                            if pattern['multiplier'] > final_multiplier:
-                                final_multiplier = pattern['multiplier']
+                            if multiplier > final_multiplier:
+                                final_multiplier = multiplier
                     except Exception:
                         pass
 
@@ -1860,16 +1867,22 @@ class RacePredictor:
                 for pattern in BEFORE_PATTERNS_TOP3:
                     try:
                         if pattern['condition'](pre_rank, ex_rank, st_rank):
+                            # 最適化倍率を適用（フィーチャーフラグで制御）
+                            if is_feature_enabled('optimized_pattern_multipliers'):
+                                multiplier = get_optimized_multiplier(pattern['name'], pattern['multiplier'])
+                            else:
+                                multiplier = pattern['multiplier']
+
                             matched_patterns.append({
                                 'name': pattern['name'],
                                 'description': pattern['description'],
-                                'multiplier': pattern['multiplier'],
+                                'multiplier': multiplier,
                                 'target_rank': pattern['target_rank']
                             })
                             # TOP3パターンは他より優先度低め（既に1着/2着/3着パターンがあれば使わない）
                             if len([p for p in matched_patterns if p['target_rank'] != 'top3']) == 0:
-                                if pattern['multiplier'] > final_multiplier:
-                                    final_multiplier = pattern['multiplier']
+                                if multiplier > final_multiplier:
+                                    final_multiplier = multiplier
                     except Exception:
                         pass
 

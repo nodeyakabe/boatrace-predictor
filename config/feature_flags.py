@@ -19,7 +19,8 @@ FEATURE_FLAGS = {
     'apply_pattern_to_confidence_d': False,  # 信頼度Dへのパターン適用（効果限定的+3.9pt、慎重モード）
     'negative_patterns': True,        # ネガティブパターン（Phase 2: 軽量実装、テスト結果+2.0%改善で有効化 2025-12-11）
     'venue_pattern_optimization': False,  # 会場別パターン最適化（Phase 3: テスト結果効果なし、無効維持）
-    'compound_pattern_bonus': False,  # 複合パターンボーナス（Phase 3: テスト中、効果検証後に有効化）
+    'compound_pattern_bonus': False,  # 複合パターンボーナス（Phase 3: テスト結果ROI+11%、的中率変化なし）
+    'optimized_pattern_multipliers': False,  # 最適化パターン倍率（Phase 3: テスト中、200レース実績ベース）
     'entry_prediction_model': True,   # 進入予測モデル
     'confidence_refinement': False,   # 信頼度細分化（未実装）
     'st_course_interaction': True,    # ST×course交互作用（実装完了・再訓練済み）
