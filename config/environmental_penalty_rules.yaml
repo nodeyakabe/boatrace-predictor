@@ -1,0 +1,338 @@
+# 環境要因減点ルール設定ファイル
+#
+# 基準: 2025年BEFORE予測 信頼度B データ (n=5,537)
+# 全体的中率: 66.81%
+# 減点計算式: 5%的中率低下 = 1pt減点
+#
+# 更新日: 2025-01-15
+
+# ============================================================================
+# 減点ルール一覧
+# ============================================================================
+
+rules:
+  # --------------------------------------------------------------------------
+  # 危険度：最高（減点7pt以上）
+  # --------------------------------------------------------------------------
+  - category: "会場×時間帯"
+    venue: "02"
+    time: "午前"
+    penalty: 7
+    description: "戸田×午前（n=41, 的中率29.27%）"
+    sample_size: 41
+    hit_rate: 29.27
+    enabled: true
+
+  - category: "会場×時間帯"
+    venue: "02"
+    time: "夕方"
+    penalty: 7
+    description: "戸田×夕方（n=17, 的中率29.41%）"
+    sample_size: 17
+    hit_rate: 29.41
+    enabled: true
+
+  - category: "会場×時間帯"
+    venue: "03"
+    time: "夕方"
+    penalty: 7
+    description: "江戸川×夕方（n=20, 的中率30.00%）"
+    sample_size: 20
+    hit_rate: 30.00
+    enabled: true
+
+  # --------------------------------------------------------------------------
+  # 危険度：高（減点4-6pt）
+  # --------------------------------------------------------------------------
+  - category: "会場"
+    venue: "02"
+    penalty: 4
+    description: "戸田（1C勝率45.2%, n=138, 的中率42.03%）"
+    sample_size: 138
+    hit_rate: 42.03
+    enabled: true
+
+  - category: "天候"
+    weather: "雨"
+    penalty: 6
+    description: "雨天（n=11, 的中率36.36%）"
+    sample_size: 11
+    hit_rate: 36.36
+    enabled: true
+
+  - category: "波高"
+    wave: "大波"
+    penalty: 4
+    description: "大波（波高10cm以上, n=35, 的中率42.86%）"
+    sample_size: 35
+    hit_rate: 42.86
+    enabled: true
+
+  # --------------------------------------------------------------------------
+  # 会場×風向×風速（潮位影響会場の特殊パターン）
+  # --------------------------------------------------------------------------
+  - category: "会場×風向×風速"
+    venue: "08"
+    wind_direction: "北北西"
+    wind_category: "微風"
+    penalty: 13
+    description: "常滑×北北西×微風（n=5, 的中率0%）"
+    sample_size: 5
+    hit_rate: 0.0
+    enabled: true
+
+  - category: "会場×風向×風速"
+    venue: "03"
+    wind_direction: "東"
+    wind_category: "暴風"
+    penalty: 5
+    description: "江戸川×東×暴風（n=15, 的中率40%）"
+    sample_size: 15
+    hit_rate: 40.0
+    enabled: true
+
+  - category: "会場×風向×風速"
+    venue: "14"
+    wind_direction: "南南西"
+    wind_category: "強風"
+    penalty: 6
+    description: "鳴門×南南西×強風（n=8, 的中率37.5%）"
+    sample_size: 8
+    hit_rate: 37.5
+    enabled: true
+
+  # --------------------------------------------------------------------------
+  # 危険度：中（減点2-3pt）
+  # --------------------------------------------------------------------------
+  - category: "会場"
+    venue: "03"
+    penalty: 2
+    description: "江戸川（1C勝率47.3%, n=127, 的中率55.12%）"
+    sample_size: 127
+    hit_rate: 55.12
+    enabled: true
+
+  - category: "会場"
+    venue: "04"
+    penalty: 3
+    description: "平和島（1C勝率48.8%, n=89, 的中率51.69%）"
+    sample_size: 89
+    hit_rate: 51.69
+    enabled: true
+
+  - category: "波高"
+    wave: "中波"
+    penalty: 2
+    description: "中波（波高5-10cm, n=156, 的中率56.41%）"
+    sample_size: 156
+    hit_rate: 56.41
+    enabled: true
+
+  # --------------------------------------------------------------------------
+  # 風向×風速要因
+  # --------------------------------------------------------------------------
+  - category: "風向×風速"
+    wind_direction: "東"
+    wind_category: "暴風"
+    penalty: 4
+    description: "東×暴風（n=18, 的中率44.44%）"
+    sample_size: 18
+    hit_rate: 44.44
+    enabled: true
+
+  - category: "風向×風速"
+    wind_direction: "北東"
+    wind_category: "強風"
+    penalty: 3
+    description: "北東×強風（n=45, 的中率51.11%）"
+    sample_size: 45
+    hit_rate: 51.11
+    enabled: true
+
+  - category: "風向×風速"
+    wind_direction: "南"
+    wind_category: "暴風"
+    penalty: 5
+    description: "南×暴風（n=12, 的中率41.67%）"
+    sample_size: 12
+    hit_rate: 41.67
+    enabled: true
+
+  # --------------------------------------------------------------------------
+  # 会場×風向×風速（追加パターン）
+  # --------------------------------------------------------------------------
+  - category: "会場×風向×風速"
+    venue: "04"
+    wind_direction: "北"
+    wind_category: "強風"
+    penalty: 4
+    description: "平和島×北×強風（n=10, 的中率40%）"
+    sample_size: 10
+    hit_rate: 40.0
+    enabled: true
+
+  - category: "会場×風向×風速"
+    venue: "02"
+    wind_direction: "南東"
+    wind_category: "微風"
+    penalty: 5
+    description: "戸田×南東×微風（n=8, 的中率37.5%）"
+    sample_size: 8
+    hit_rate: 37.5
+    enabled: true
+
+  # --------------------------------------------------------------------------
+  # 時間帯要因（全会場共通）
+  # --------------------------------------------------------------------------
+  - category: "時間帯"
+    time: "早朝"
+    penalty: 2
+    description: "早朝レース（10時前, n=78, 的中率56.41%）"
+    sample_size: 78
+    hit_rate: 56.41
+    enabled: true
+
+  - category: "時間帯"
+    time: "夕方"
+    penalty: 3
+    description: "夕方レース（16時以降, n=95, 的中率53.68%）"
+    sample_size: 95
+    hit_rate: 53.68
+    enabled: true
+
+  # --------------------------------------------------------------------------
+  # 複合要因（会場×時間×風）
+  # --------------------------------------------------------------------------
+  - category: "会場×時間×風向"
+    venue: "03"
+    time: "午後"
+    wind_direction: "東"
+    penalty: 4
+    description: "江戸川×午後×東風（n=12, 的中率41.67%）"
+    sample_size: 12
+    hit_rate: 41.67
+    enabled: true
+
+  - category: "会場×時間×風向"
+    venue: "02"
+    time: "午前"
+    wind_direction: "北"
+    penalty: 6
+    description: "戸田×午前×北風（n=15, 的中率33.33%）"
+    sample_size: 15
+    hit_rate: 33.33
+    enabled: true
+
+# ============================================================================
+# カテゴリ化の閾値設定
+# ============================================================================
+
+thresholds:
+  # 時間帯のカテゴリ化
+  time:
+    早朝:
+      start: "00:00"
+      end: "10:00"
+    午前:
+      start: "10:00"
+      end: "13:00"
+    午後:
+      start: "13:00"
+      end: "16:00"
+    夕方:
+      start: "16:00"
+      end: "23:59"
+
+  # 風速のカテゴリ化（m/s）
+  wind_speed:
+    無風:
+      min: 0
+      max: 2
+    微風:
+      min: 2
+      max: 4
+    強風:
+      min: 4
+      max: 6
+    暴風:
+      min: 6
+      max: 999
+
+  # 波高のカテゴリ化（cm）
+  wave_height:
+    穏やか:
+      min: 0
+      max: 2
+    小波:
+      min: 2
+      max: 5
+    中波:
+      min: 5
+      max: 10
+    大波:
+      min: 10
+      max: 999
+
+# ============================================================================
+# 信頼度調整の閾値
+# ============================================================================
+
+confidence_thresholds:
+  # 調整後スコアに基づく信頼度再判定
+  B:
+    min_score: 100
+    description: "信頼度B維持"
+  C:
+    min_score: 80
+    max_score: 99
+    description: "信頼度Cに降格"
+  D:
+    min_score: 0
+    max_score: 79
+    description: "信頼度Dに降格（投票対象外）"
+
+# ============================================================================
+# システム設定
+# ============================================================================
+
+system:
+  # 減点システムの有効/無効
+  enabled: true
+
+  # 最小サンプル数（この数以下のパターンは無視）
+  min_sample_size: 5
+
+  # 減点計算の基準（%的中率低下あたりの減点）
+  penalty_per_5percent: 1
+
+  # ベースライン的中率（2025年BEFORE信頼度B）
+  baseline_hit_rate: 66.81
+
+  # ログレベル
+  log_level: "INFO"
+
+  # ルール適用の優先順位
+  # 複数ルールがマッチする場合、すべて加算
+  rule_priority: "cumulative"  # cumulative | max | first
+
+# ============================================================================
+# 備考
+# ============================================================================
+
+notes: |
+  このファイルは環境要因減点システムの設定ファイルです。
+
+  【減点ルールの追加方法】
+  1. rules セクションに新しいルールを追加
+  2. category, penalty, description, enabled は必須
+  3. その他のフィールドは条件に応じて指定
+
+  【ルールの無効化】
+  enabled: false に設定することで、ルールを削除せずに無効化できます
+
+  【閾値の調整】
+  thresholds セクションで時間帯・風速・波高のカテゴリ化基準を変更可能
+
+  【データ更新時の注意】
+  - 新しいデータで検証後、sample_size と hit_rate を更新してください
+  - baseline_hit_rate も必要に応じて更新してください

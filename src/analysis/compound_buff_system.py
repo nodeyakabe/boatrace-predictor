@@ -29,6 +29,9 @@ class ConditionType(Enum):
     START_TIMING = "start_timing"      # スタートタイミング（早い/普通/遅い）
     RECENT_FORM = "recent_form"        # 直近調子（好調/不調）
     VENUE_EXPERIENCE = "venue_exp"     # 当地経験（得意/普通/苦手）
+    EXHIBITION_RANK = "exhibition_rank"      # 展示順位（1, 2, [1,2], [4,5,6]など）
+    EXHIBITION_GAP = "exhibition_gap"        # 1位との展示タイム差（秒）
+    EXHIBITION_TIME_DIFF = "exh_time_diff"   # 1位と2位のタイム差（秒）
 
 
 @dataclass
@@ -388,6 +391,14 @@ class CompoundBuffSystem:
             hit_rate=0.25
         ))
 
+        # ========================================
+        # 展示タイム条件別加点ルール
+        # ========================================
+        # 展示バフルールを読み込み
+        from .exhibition_buff_rules import get_exhibition_buff_rules
+        exhibition_rules = get_exhibition_buff_rules()
+        self.rules.extend(exhibition_rules)
+
     def build_race_context(
         self,
         venue_code: str,
@@ -398,7 +409,9 @@ class CompoundBuffSystem:
         wind_speed: Optional[float] = None,
         wind_direction: Optional[str] = None,
         wave_height: Optional[float] = None,
-        kimarite_result: Optional[Dict] = None
+        kimarite_result: Optional[Dict] = None,
+        race_id: Optional[int] = None,
+        pit_number: Optional[int] = None
     ) -> Dict:
         """
         レースコンテキストを構築
@@ -413,6 +426,8 @@ class CompoundBuffSystem:
             wind_direction: 風向
             wave_height: 波高（cm）
             kimarite_result: 決まり手分析結果
+            race_id: レースID（展示情報取得用）
+            pit_number: 艇番（展示情報取得用）
 
         Returns:
             レースコンテキスト辞書
@@ -507,6 +522,16 @@ class CompoundBuffSystem:
         else:
             context["start_timing"] = "普通"
 
+        # 展示タイム情報（race_idとpit_numberが指定されている場合）
+        if race_id is not None and pit_number is not None:
+            from .exhibition_context_builder import build_exhibition_context
+            try:
+                exhibition_context = build_exhibition_context(race_id, pit_number, self.db_path)
+                context.update(exhibition_context)
+            except Exception:
+                # 展示情報が取得できない場合はスキップ
+                pass
+
         return context
 
     def get_applicable_rules(self, race_context: Dict) -> List[Tuple[CompoundBuffRule, float]]:
@@ -542,7 +567,9 @@ class CompoundBuffSystem:
         wind_direction: Optional[str] = None,
         wave_height: Optional[float] = None,
         kimarite_result: Optional[Dict] = None,
-        max_total_buff: float = 15.0
+        max_total_buff: float = 15.0,
+        race_id: Optional[int] = None,
+        pit_number: Optional[int] = None
     ) -> Dict:
         """
         複合条件バフを計算
@@ -558,6 +585,8 @@ class CompoundBuffSystem:
             wave_height: 波高
             kimarite_result: 決まり手分析結果
             max_total_buff: 最大合計バフ値
+            race_id: レースID（展示情報取得用）
+            pit_number: 艇番（展示情報取得用）
 
         Returns:
             {
@@ -579,7 +608,9 @@ class CompoundBuffSystem:
             wind_speed=wind_speed,
             wind_direction=wind_direction,
             wave_height=wave_height,
-            kimarite_result=kimarite_result
+            kimarite_result=kimarite_result,
+            race_id=race_id,
+            pit_number=pit_number
         )
 
         # 適用可能なルールを取得

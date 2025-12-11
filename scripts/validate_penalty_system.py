@@ -152,8 +152,8 @@ class PenaltySystem:
         return total_penalty, applied
 
 
-def load_2025_data():
-    """2025年BEFORE予測信頼度Bデータをロード"""
+def load_data(year='2025', prediction_type='before'):
+    """指定年・予測タイプのデータをロード"""
     conn = sqlite3.connect(str(DB_PATH))
 
     query = """
@@ -175,27 +175,37 @@ def load_2025_data():
     JOIN races r ON p.race_id = r.id
     LEFT JOIN race_conditions rc ON p.race_id = rc.race_id
     LEFT JOIN results res ON p.race_id = res.race_id AND p.pit_number = res.pit_number
-    WHERE p.prediction_type = 'before'
+    WHERE p.prediction_type = ?
       AND p.confidence = 'B'
-      AND r.race_date LIKE '2025%'
+      AND r.race_date LIKE ?
       AND res.rank IS NOT NULL
       AND res.is_invalid = 0
     ORDER BY p.race_id, p.rank_prediction
     """
 
-    df = pd.read_sql_query(query, conn)
+    df = pd.read_sql_query(query, conn, params=(prediction_type, f'{year}%'))
     conn.close()
 
     return df
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description='減点システム効果検証')
+    parser.add_argument('--year', type=str, default='2025', help='検証年（2024 or 2025）')
+    parser.add_argument('--type', type=str, default='before', choices=['advance', 'before'], help='予測タイプ')
+    args = parser.parse_args()
+
     print("=" * 100)
-    print("減点システム効果検証")
+    print(f"減点システム効果検証（{args.year}年・{args.type}予測）")
     print("=" * 100)
 
     # データロード
-    df = load_2025_data()
+    df = load_data(year=args.year, prediction_type=args.type)
+
+    if len(df) == 0:
+        print(f"\n[エラー] {args.year}年の{args.type}予測データが見つかりません")
+        return
 
     # 1着予想のみ
     pred_1st = df[df['rank_prediction'] == 1].copy()

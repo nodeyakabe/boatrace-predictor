@@ -18,9 +18,9 @@ FEATURE_FLAGS = {
     'before_pattern_bonus': True,     # パターン方式（検証結果: 信頼度B +9.5pt, C +8.3pt, A -6.5pt）
     'apply_pattern_to_confidence_d': False,  # 信頼度Dへのパターン適用（効果限定的+3.9pt、慎重モード）
     'negative_patterns': True,        # ネガティブパターン（Phase 2: 軽量実装、テスト結果+2.0%改善で有効化 2025-12-11）
-    'venue_pattern_optimization': False,  # 会場別パターン最適化（Phase 3: テスト結果効果なし、無効維持）
-    'compound_pattern_bonus': False,  # 複合パターンボーナス（Phase 3: テスト結果ROI+11%、的中率変化なし）
-    'optimized_pattern_multipliers': False,  # 最適化パターン倍率（Phase 3: テスト中、200レース実績ベース）
+    'venue_pattern_optimization': False,  # 会場別パターン最適化（Phase 3完了: 的中率±0.00pt効果なし、無効維持 2025-12-11）
+    'compound_pattern_bonus': False,  # 複合パターンボーナス（Phase 3完了: 的中率±0.00pt、ROI+11%のみ、無効維持 2025-12-11）
+    'optimized_pattern_multipliers': False,  # 最適化パターン倍率（Phase 3完了: 的中率±0.00pt効果なし、無効維持 2025-12-11）
     'entry_prediction_model': True,   # 進入予測モデル
     'confidence_refinement': False,   # 信頼度細分化（未実装）
     'st_course_interaction': True,    # ST×course交互作用（実装完了・再訓練済み）

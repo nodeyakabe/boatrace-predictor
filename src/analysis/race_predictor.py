@@ -919,7 +919,9 @@ class RacePredictor:
                 wind_direction=wind_direction,
                 wave_height=wave_height,
                 kimarite_result=kimarite_result,
-                max_total_buff=15.0  # 最大15点のバフ/デバフ
+                max_total_buff=15.0,  # 最大15点のバフ/デバフ
+                race_id=race_id,
+                pit_number=pit_number
             )
             compound_buff = compound_buff_result['total_buff']
 

@@ -918,6 +918,69 @@ class DataManager:
             if conn:
                 conn.close()
 
+    def _get_race_environment(self, race_id: int) -> Dict:
+        """
+        レースの環境情報を取得
+
+        Args:
+            race_id: レースID
+
+        Returns:
+            環境情報の辞書
+        """
+        conn = None
+        try:
+            conn = self.db.connect()
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT
+                    r.venue_code,
+                    r.race_time,
+                    rc.wind_direction,
+                    rc.wind_speed,
+                    rc.wave_height,
+                    rc.weather
+                FROM races r
+                LEFT JOIN race_conditions rc ON r.id = rc.race_id
+                WHERE r.id = ?
+            """, (race_id,))
+
+            row = cursor.fetchone()
+            if row:
+                return {
+                    'venue_code': row[0],
+                    'race_time': row[1],
+                    'wind_direction': row[2],
+                    'wind_speed': row[3],
+                    'wave_height': row[4],
+                    'weather': row[5]
+                }
+            else:
+                return {
+                    'venue_code': None,
+                    'race_time': None,
+                    'wind_direction': None,
+                    'wind_speed': None,
+                    'wave_height': None,
+                    'weather': None
+                }
+
+        except Exception as e:
+            logger.error(f"環境情報取得エラー: {e}", exc_info=True)
+            return {
+                'venue_code': None,
+                'race_time': None,
+                'wind_direction': None,
+                'wind_speed': None,
+                'wave_height': None,
+                'weather': None
+            }
+
+        finally:
+            if conn:
+                conn.close()
+
     def save_race_predictions(self, race_id: int, predictions: List[Dict], prediction_type: str = 'advance') -> bool:
         """
         レースの予想結果をデータベースに保存
@@ -953,11 +1016,58 @@ class DataManager:
                 (race_id, prediction_type)
             )
 
+            # BEFORE予想の場合、環境要因減点システムを適用
+            env_info = None
+            penalty_system = None
+            if prediction_type == 'before':
+                try:
+                    from ..analysis.environmental_penalty import EnvironmentalPenaltySystem
+                    env_info = self._get_race_environment(race_id)
+                    penalty_system = EnvironmentalPenaltySystem()
+                    logger.info(f"環境要因減点システム準備完了: race_id={race_id}")
+                except Exception as e:
+                    logger.warning(f"環境要因減点システム初期化エラー（スキップ）: {e}")
+
             # 予想データを保存
             from datetime import datetime
             generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
             for pred in predictions:
+                # 信頼度Bの予想に環境要因減点を適用（BEFORE予想のみ）
+                original_confidence = pred.get('confidence')
+                if (prediction_type == 'before' and
+                    original_confidence == 'B' and
+                    penalty_system is not None and
+                    env_info.get('venue_code') is not None):
+
+                    try:
+                        # 環境要因減点を計算
+                        result = penalty_system.should_accept_bet(
+                            venue_code=env_info['venue_code'],
+                            race_time=env_info['race_time'] or '12:00',
+                            wind_direction=env_info['wind_direction'],
+                            wind_speed=env_info['wind_speed'],
+                            wave_height=env_info['wave_height'],
+                            weather=env_info['weather'],
+                            original_score=pred.get('total_score', 100),
+                            min_threshold=0  # 閾値チェックはしない（信頼度のみ調整）
+                        )
+
+                        # 調整後の信頼度を適用
+                        adjusted_confidence = result['adjusted_confidence']
+                        if adjusted_confidence != original_confidence:
+                            pred['confidence'] = adjusted_confidence
+                            logger.info(
+                                f"環境要因減点適用: race_id={race_id}, "
+                                f"pit={pred.get('pit_number')}, "
+                                f"元信頼度=B, 調整後={adjusted_confidence}, "
+                                f"減点={result['penalty']}pt, "
+                                f"元スコア={pred.get('total_score', 100):.1f}, "
+                                f"調整後スコア={result['adjusted_score']:.1f}"
+                            )
+                    except Exception as e:
+                        logger.warning(f"環境要因減点適用エラー（スキップ）: {e}")
+
                 cursor.execute("""
                     INSERT INTO race_predictions (
                         race_id, pit_number, rank_prediction, total_score,

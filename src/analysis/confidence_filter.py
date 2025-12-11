@@ -188,6 +188,10 @@ class ConfidenceBFilter:
     - 除外会場: 江戸川(2.69%)、戸田(2.75%)、平和島(3.64%)
     - 低調期間: 1-4月（的中率5-6%台）
     - 推奨期間: 5-12月（的中率8-10%台）
+
+    【重要】2025年データ分析により、環境要因減点システムを統合:
+    - 会場×時間帯×風向×風速による減点
+    - 調整後スコアにより信頼度を再判定（B→C→Dの格下げ）
     """
 
     # 会場別的中率データ（分析結果より）
@@ -239,7 +243,8 @@ class ConfidenceBFilter:
         exclude_low_venues: bool = True,
         venue_threshold: float = 5.0,
         seasonal_adjustment: bool = True,
-        low_season_score_boost: float = 2.0
+        low_season_score_boost: float = 2.0,
+        use_environmental_penalty: bool = True
     ):
         """
         Args:
@@ -247,11 +252,13 @@ class ConfidenceBFilter:
             venue_threshold: 会場除外の的中率閾値（%）
             seasonal_adjustment: 季節調整を行うか
             low_season_score_boost: 低調期間の信頼度スコア加算値（1-4月に適用）
+            use_environmental_penalty: 環境要因減点システムを使用するか
         """
         self.exclude_low_venues = exclude_low_venues
         self.venue_threshold = venue_threshold
         self.seasonal_adjustment = seasonal_adjustment
         self.low_season_score_boost = low_season_score_boost
+        self.use_environmental_penalty = use_environmental_penalty
 
         # 除外会場リスト
         self.excluded_venues = [
@@ -259,11 +266,23 @@ class ConfidenceBFilter:
             if stats['hit_rate'] < venue_threshold
         ]
 
+        # 環境要因減点システム
+        if self.use_environmental_penalty:
+            from .environmental_penalty import EnvironmentalPenaltySystem
+            self.env_penalty = EnvironmentalPenaltySystem()
+        else:
+            self.env_penalty = None
+
     def should_accept_bet(
         self,
         venue_code: int,
         race_date: str,
-        confidence_score: float = None
+        confidence_score: float = None,
+        race_time: str = None,
+        wind_direction: str = None,
+        wind_speed: float = None,
+        wave_height: float = None,
+        weather: str = None
     ) -> Dict[str, any]:
         """
         信頼度Bの買い目を受け入れるべきか判定
@@ -272,6 +291,11 @@ class ConfidenceBFilter:
             venue_code: 会場コード
             race_date: レース日（YYYY-MM-DD形式）
             confidence_score: 信頼度スコア（オプション）
+            race_time: レース時刻（HH:MM形式）- 環境要因減点に使用
+            wind_direction: 風向 - 環境要因減点に使用
+            wind_speed: 風速（m/s）- 環境要因減点に使用
+            wave_height: 波高（cm）- 環境要因減点に使用
+            weather: 天候 - 環境要因減点に使用
 
         Returns:
             {
@@ -279,7 +303,10 @@ class ConfidenceBFilter:
                 'reason': str,  # 判定理由
                 'expected_hit_rate': float,  # 期待的中率（%）
                 'venue_name': str,  # 会場名
-                'adjustment': str  # 調整内容
+                'adjustment': str,  # 調整内容
+                'environmental_penalty': int,  # 環境要因減点（0以上）
+                'adjusted_score': float,  # 調整後スコア
+                'adjusted_confidence': str  # 調整後信頼度
             }
         """
         venue_stats = self.VENUE_STATS.get(venue_code, {'name': '不明', 'hit_rate': 0.0})
@@ -295,6 +322,33 @@ class ConfidenceBFilter:
 
         monthly_hit_rate = self.MONTHLY_STATS.get(month, 8.29)
 
+        # 環境要因減点システムの適用
+        environmental_penalty = 0
+        adjusted_score = confidence_score if confidence_score is not None else 100.0
+        adjusted_confidence = 'B'
+        applied_env_rules = []
+
+        if self.use_environmental_penalty and self.env_penalty and confidence_score is not None:
+            # 会場コードをstrに変換（EnvironmentalPenaltySystemは'01'-'24'形式を想定）
+            venue_code_str = f"{venue_code:02d}"
+
+            # 減点計算
+            env_result = self.env_penalty.should_accept_bet(
+                venue_code=venue_code_str,
+                race_time=race_time or '12:00',
+                wind_direction=wind_direction,
+                wind_speed=wind_speed,
+                wave_height=wave_height,
+                weather=weather,
+                original_score=confidence_score,
+                min_threshold=80.0  # 調整後スコア80未満は投票対象外
+            )
+
+            environmental_penalty = env_result['penalty']
+            adjusted_score = env_result['adjusted_score']
+            adjusted_confidence = env_result['adjusted_confidence']
+            applied_env_rules = env_result['applied_rules']
+
         # 会場フィルター
         if self.exclude_low_venues and venue_code in self.excluded_venues:
             return {
@@ -302,7 +356,11 @@ class ConfidenceBFilter:
                 'reason': f'低的中率会場（{venue_name}: {venue_hit_rate:.2f}%）',
                 'expected_hit_rate': venue_hit_rate,
                 'venue_name': venue_name,
-                'adjustment': 'EXCLUDED_VENUE'
+                'adjustment': 'EXCLUDED_VENUE',
+                'environmental_penalty': environmental_penalty,
+                'adjusted_score': adjusted_score,
+                'adjusted_confidence': adjusted_confidence,
+                'applied_env_rules': applied_env_rules
             }
 
         # 季節調整
@@ -313,22 +371,32 @@ class ConfidenceBFilter:
         if self.seasonal_adjustment:
             # 低調期間（1-4月）
             if month in [1, 2, 3, 4]:
-                # スコアが高い場合のみ受け入れ
-                if confidence_score is not None:
+                # 調整後スコアで判定（環境要因減点適用後）
+                if adjusted_score is not None:
                     required_score = 70 + self.low_season_score_boost
-                    if confidence_score < required_score:
+                    if adjusted_score < required_score:
                         accept = False
-                        reason = f'低調期間（{month}月: {monthly_hit_rate:.2f}%）かつスコア不足'
+                        reason = f'低調期間（{month}月: {monthly_hit_rate:.2f}%）かつスコア不足（調整後{adjusted_score:.1f}）'
                         adjustment = 'LOW_SEASON_REJECTED'
                     else:
                         accept = True
-                        reason = f'低調期間だがスコア高（{confidence_score:.1f}点）で受け入れ'
+                        reason = f'低調期間だがスコア高（調整後{adjusted_score:.1f}点）で受け入れ'
                         adjustment = 'LOW_SEASON_ACCEPTED'
                 else:
                     # スコア情報がない場合は慎重に
                     accept = True
                     reason = f'低調期間（{month}月）- 慎重推奨'
                     adjustment = 'LOW_SEASON_CAUTION'
+
+        # 環境要因による追加チェック（調整後スコアが80未満は投票対象外）
+        if self.use_environmental_penalty and adjusted_score < 80.0:
+            accept = False
+            reason = f'環境要因減点により投票対象外（調整後スコア{adjusted_score:.1f} < 80）'
+            adjustment = 'ENVIRONMENTAL_REJECTED'
+
+        # 環境要因減点がある場合、理由に追記
+        if environmental_penalty > 0 and accept:
+            reason = f'{reason} [環境減点{environmental_penalty}pt適用、{adjusted_confidence}]'
 
         # 期待的中率（会場と月の平均）
         expected_hit_rate = (venue_hit_rate + monthly_hit_rate) / 2
@@ -340,7 +408,11 @@ class ConfidenceBFilter:
             'venue_name': venue_name,
             'adjustment': adjustment,
             'venue_hit_rate': venue_hit_rate,
-            'monthly_hit_rate': monthly_hit_rate
+            'monthly_hit_rate': monthly_hit_rate,
+            'environmental_penalty': environmental_penalty,
+            'adjusted_score': adjusted_score,
+            'adjusted_confidence': adjusted_confidence,
+            'applied_env_rules': applied_env_rules
         }
 
     def filter_race_list(
