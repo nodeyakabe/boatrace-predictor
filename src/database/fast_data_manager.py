@@ -254,31 +254,26 @@ class FastDataManager:
             race_id = race_row[0]
 
             # 既存結果を削除
-            self.cursor.execute("DELETE FROM race_results WHERE race_id = ?", (race_id,))
+            self.cursor.execute("DELETE FROM results WHERE race_id = ?", (race_id,))
 
             # 結果を一括INSERT
             if not is_invalid and result_data.get('results'):
                 values_list = []
                 for result in result_data['results']:
+                    # finish_position または rank キーに対応
+                    rank = result.get('finish_position') or result.get('rank')
                     values = (
                         race_id,
-                        result.get('finish_position'),
                         result.get('pit_number'),
-                        result.get('racer_number')
+                        rank,
+                        is_invalid
                     )
                     values_list.append(values)
 
                 self.cursor.executemany("""
-                    INSERT INTO race_results (race_id, finish_position, pit_number, racer_number)
+                    INSERT INTO results (race_id, pit_number, rank, is_invalid)
                     VALUES (?, ?, ?, ?)
                 """, values_list)
-
-            # is_invalidフラグを更新
-            self.cursor.execute("""
-                UPDATE races
-                SET is_invalid = ?
-                WHERE id = ?
-            """, (1 if is_invalid else 0, race_id))
 
             return True
 

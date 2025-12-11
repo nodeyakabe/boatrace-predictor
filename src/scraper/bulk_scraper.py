@@ -61,10 +61,14 @@ class BulkScraper:
         error_count = 0
         skipped_count = 0
 
-        # 日付形式を正規化（YYYY-MM-DD形式に統一）
+        # 日付形式を正規化
+        # race_date_normalized: YYYY-MM-DD形式（DB保存用）
+        # race_date_yyyymmdd: YYYYMMDD形式（スクレイパーAPI用）
         race_date_normalized = race_date
+        race_date_yyyymmdd = race_date.replace('-', '')
         if len(race_date) == 8 and '-' not in race_date:
             race_date_normalized = f"{race_date[:4]}-{race_date[4:6]}-{race_date[6:8]}"
+            race_date_yyyymmdd = race_date
 
         print(f"\n{'='*60}")
         print(f"全レース取得開始")
@@ -93,7 +97,7 @@ class BulkScraper:
         def fetch_single_race(race_number):
             """1レース分のデータを取得"""
             try:
-                race_data = self.scraper.get_race_card(venue_code, race_date, race_number)
+                race_data = self.scraper.get_race_card(venue_code, race_date_yyyymmdd, race_number)
 
                 if race_data and race_data.get('entries'):
                     return {
