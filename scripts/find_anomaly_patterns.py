@@ -40,6 +40,7 @@ def find_low_hit_patterns(min_sample=10, max_hit_rate=50.0):
     cur = conn.cursor()
 
     # 全データ取得（天候・グレード・時間帯も含む）
+    # まず予測データと実際の1着を別々に取得
     cur.execute("""
         SELECT
             r.id as race_id,
@@ -54,16 +55,7 @@ def find_low_hit_patterns(min_sample=10, max_hit_rate=50.0):
             rc.wave_height,
             rc.weather,
             rc.wind_direction,
-            (SELECT COUNT(*) FROM results res
-             WHERE res.race_id = r.id
-               AND res.pit_number = (
-                   SELECT pit_number FROM race_predictions
-                   WHERE race_id = r.id
-                     AND prediction_type = 'before'
-                     AND rank_prediction = 1
-                   LIMIT 1
-               )
-               AND res.rank = 1) as is_hit
+            rp.pit_number as predicted_pit
         FROM races r
         INNER JOIN race_predictions rp ON r.id = rp.race_id
         LEFT JOIN race_conditions rc ON r.id = rc.race_id
@@ -74,7 +66,22 @@ def find_low_hit_patterns(min_sample=10, max_hit_rate=50.0):
             AND r.race_date <= '2025-12-31'
     """)
 
-    data = cur.fetchall()
+    temp_data = cur.fetchall()
+
+    # 実際の1着を確認
+    data = []
+    for row in temp_data:
+        race_id = row[0]
+        predicted_pit = row[12]
+
+        # 実際の1着を取得
+        cur.execute("""
+            SELECT COUNT(*) FROM results
+            WHERE race_id = ? AND pit_number = ? AND rank = 1
+        """, (race_id, predicted_pit))
+
+        is_hit = cur.fetchone()[0]
+        data.append(row[:12] + (is_hit,))
     conn.close()
 
     print("=" * 100)
@@ -128,7 +135,7 @@ def find_low_hit_patterns(min_sample=10, max_hit_rate=50.0):
     for row in data:
         venue_code, score, month = row[1], row[6], row[7]
         score_range = get_score_range(score)
-        is_hit = int(row[11]) if row[11] else 0
+        is_hit = row[12]  # 既に整数
 
         key = (venue_code, score_range, month)
         pattern1[key]['total'] += 1
@@ -169,7 +176,7 @@ def find_low_hit_patterns(min_sample=10, max_hit_rate=50.0):
         venue_code, score, weather = row[1], row[6], row[10]
         score_range = get_score_range(score)
         weather_cat = get_weather_category(weather)
-        is_hit = row[11]
+        is_hit = row[12]
 
         key = (venue_code, weather_cat, score_range)
         pattern2[key]['total'] += 1
@@ -210,7 +217,7 @@ def find_low_hit_patterns(min_sample=10, max_hit_rate=50.0):
         venue_code, score, grade = row[1], row[6], row[4]
         score_range = get_score_range(score)
         grade = grade if grade else "一般"
-        is_hit = row[11]
+        is_hit = row[12]
 
         key = (venue_code, grade, score_range)
         pattern3[key]['total'] += 1
@@ -251,7 +258,7 @@ def find_low_hit_patterns(min_sample=10, max_hit_rate=50.0):
         venue_code, score, race_time = row[1], row[6], row[5]
         score_range = get_score_range(score)
         time_slot = get_time_slot(race_time)
-        is_hit = row[11]
+        is_hit = row[12]
 
         key = (venue_code, time_slot, score_range)
         pattern4[key]['total'] += 1
@@ -306,7 +313,7 @@ def find_low_hit_patterns(min_sample=10, max_hit_rate=50.0):
         venue_code, score, wind_speed = row[1], row[6], row[8]
         score_range = get_score_range(score)
         wind_cat = get_wind_category(wind_speed)
-        is_hit = row[11]
+        is_hit = row[12]
 
         key = (venue_code, wind_cat, score_range)
         pattern5[key]['total'] += 1
@@ -410,4 +417,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    find_low_hit_patterns(args.min_samp
+    find_low_hit_patterns(args.min_sample, args.max_hit_rate)

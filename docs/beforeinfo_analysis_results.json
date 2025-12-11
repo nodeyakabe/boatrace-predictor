@@ -1,0 +1,630 @@
+{
+  "analysis_date": "2025-12-11 12:04:06",
+  "period": {
+    "start": "2025-01-01",
+    "end": "2025-12-31"
+  },
+  "results": {
+    "exhibition": {
+      "exhibition_rank": {
+        "1": {
+          "total": 15699,
+          "first_rate": 30.148417096630357,
+          "second_rate": 19.001210268169945,
+          "third_rate": 15.083763297025287,
+          "top2_rate": 49.14962736480031,
+          "top3_rate": 64.2333906618256
+        },
+        "2": {
+          "total": 15696,
+          "first_rate": 21.279306829765545,
+          "second_rate": 19.043068297655456,
+          "third_rate": 16.59021406727829,
+          "top2_rate": 40.322375127421,
+          "top3_rate": 56.91258919469928
+        },
+        "3": {
+          "total": 15712,
+          "first_rate": 16.796079429735233,
+          "second_rate": 18.228105906313647,
+          "third_rate": 17.948065173116092,
+          "top2_rate": 35.02418533604888,
+          "top3_rate": 52.972250509164965
+        },
+        "4": {
+          "total": 15699,
+          "first_rate": 13.548633670934453,
+          "second_rate": 16.72718007516402,
+          "third_rate": 17.861010255430283,
+          "top2_rate": 30.27581374609848,
+          "top3_rate": 48.13682400152876
+        },
+        "5": {
+          "total": 15679,
+          "first_rate": 10.976465335799478,
+          "second_rate": 15.492059442566491,
+          "third_rate": 17.724344664838316,
+          "top2_rate": 26.468524778365964,
+          "top3_rate": 44.19286944320429
+        },
+        "6": {
+          "total": 15592,
+          "first_rate": 8.67111339148281,
+          "second_rate": 12.961775269368909,
+          "third_rate": 16.25833760903027,
+          "top2_rate": 21.63288866085172,
+          "top3_rate": 37.89122626988199
+        }
+      },
+      "venue_exhibition": {
+        "18": {
+          "total": 635,
+          "first_rate": 38.74015748031496,
+          "category": "high_trust"
+        },
+        "23": {
+          "total": 628,
+          "first_rate": 35.19108280254777,
+          "category": "high_trust"
+        },
+        "07": {
+          "total": 674,
+          "first_rate": 33.38278931750742,
+          "category": "high_trust"
+        },
+        "19": {
+          "total": 620,
+          "first_rate": 32.58064516129032,
+          "category": "high_trust"
+        },
+        "05": {
+          "total": 629,
+          "first_rate": 32.273449920508746,
+          "category": "high_trust"
+        },
+        "12": {
+          "total": 783,
+          "first_rate": 31.928480204342275,
+          "category": "high_trust"
+        },
+        "24": {
+          "total": 704,
+          "first_rate": 31.392045454545453,
+          "category": "high_trust"
+        },
+        "04": {
+          "total": 583,
+          "first_rate": 30.874785591766724,
+          "category": "high_trust"
+        },
+        "13": {
+          "total": 525,
+          "first_rate": 30.476190476190478,
+          "category": "high_trust"
+        },
+        "02": {
+          "total": 728,
+          "first_rate": 30.357142857142854,
+          "category": "high_trust"
+        },
+        "11": {
+          "total": 703,
+          "first_rate": 29.01849217638691,
+          "category": "low_trust"
+        },
+        "03": {
+          "total": 621,
+          "first_rate": 28.824476650563607,
+          "category": "low_trust"
+        },
+        "17": {
+          "total": 574,
+          "first_rate": 28.397212543554005,
+          "category": "low_trust"
+        },
+        "01": {
+          "total": 669,
+          "first_rate": 28.251121076233183,
+          "category": "low_trust"
+        },
+        "08": {
+          "total": 689,
+          "first_rate": 28.156748911465897,
+          "category": "low_trust"
+        },
+        "20": {
+          "total": 571,
+          "first_rate": 28.021015761821367,
+          "category": "low_trust"
+        },
+        "15": {
+          "total": 650,
+          "first_rate": 28.000000000000004,
+          "category": "low_trust"
+        },
+        "09": {
+          "total": 772,
+          "first_rate": 27.590673575129532,
+          "category": "low_trust"
+        },
+        "22": {
+          "total": 652,
+          "first_rate": 27.453987730061353,
+          "category": "low_trust"
+        },
+        "16": {
+          "total": 544,
+          "first_rate": 23.897058823529413,
+          "category": "low_trust"
+        }
+      },
+      "tide_exhibition": {
+        "high": {
+          "total": 859,
+          "first_rate": 32.246798603026775
+        },
+        "low": {
+          "total": 166,
+          "first_rate": 27.710843373493976
+        },
+        "mid": {
+          "total": 2301,
+          "first_rate": 29.161234245980012
+        }
+      }
+    },
+    "st": {
+      "st_range": {
+        "0.10以下": {
+          "total": 16457,
+          "first_rate": 16.716290940025523,
+          "second_rate": 21.71112596463511,
+          "third_rate": 18.557452755666283,
+          "top2_rate": 38.42741690466063
+        },
+        "0.11-0.15": {
+          "total": 24322,
+          "first_rate": 12.741550859304335,
+          "second_rate": 20.34783323739824,
+          "third_rate": 18.921141353507114,
+          "top2_rate": 33.089384096702574
+        },
+        "0.16-0.20": {
+          "total": 22326,
+          "first_rate": 9.44638538027412,
+          "second_rate": 18.368718086535875,
+          "third_rate": 18.700170205141987,
+          "top2_rate": 27.815103466809997
+        },
+        "0.20超": {
+          "total": 25433,
+          "first_rate": 6.629182558093816,
+          "second_rate": 13.521802382731096,
+          "third_rate": 16.620139189242323,
+          "top2_rate": 20.150984940824912
+        }
+      },
+      "st_status": {
+        "フライング": {
+          "total": 854,
+          "first_rate": 20.140515222482435,
+          "top3_rate": 55.0351288056206
+        },
+        "出遅れ": {
+          "total": 2885,
+          "first_rate": 19.029462738301557,
+          "top3_rate": 53.31022530329289
+        },
+        "正常": {
+          "total": 84799,
+          "first_rate": 10.523709006002429,
+          "top3_rate": 46.88380759207066
+        }
+      },
+      "prev_st": {
+        "前走ST不良": {
+          "total": 1628,
+          "first_rate": 15.724815724815725
+        },
+        "前走データなし": {
+          "total": 86910,
+          "first_rate": 10.803129674375791
+        }
+      }
+    },
+    "course": {
+      "course_change": {
+        "枠なり": {
+          "total": 84292,
+          "first_rate": 17.552080861766242,
+          "top3_rate": 51.539885161106625
+        },
+        "枠番変更": {
+          "total": 8229,
+          "first_rate": 10.074128083606757,
+          "top3_rate": 41.633248268319356
+        }
+      },
+      "venue_course_change": {
+        "01": {
+          "total": 4080,
+          "change_rate": 14.215686274509803,
+          "category": "high_change"
+        },
+        "06": {
+          "total": 4170,
+          "change_rate": 12.661870503597122,
+          "category": "high_change"
+        },
+        "12": {
+          "total": 4830,
+          "change_rate": 11.884057971014492,
+          "category": "high_change"
+        },
+        "07": {
+          "total": 4158,
+          "change_rate": 11.88071188071188,
+          "category": "high_change"
+        },
+        "23": {
+          "total": 3756,
+          "change_rate": 11.767838125665602,
+          "category": "high_change"
+        },
+        "08": {
+          "total": 4038,
+          "change_rate": 11.763249133234273,
+          "category": "high_change"
+        },
+        "20": {
+          "total": 3516,
+          "change_rate": 10.978384527872583,
+          "category": "high_change"
+        },
+        "19": {
+          "total": 3702,
+          "change_rate": 10.507833603457591,
+          "category": "high_change"
+        },
+        "10": {
+          "total": 4590,
+          "change_rate": 10.021786492374728,
+          "category": "high_change"
+        },
+        "18": {
+          "total": 3672,
+          "change_rate": 9.83115468409586,
+          "category": "high_change"
+        },
+        "21": {
+          "total": 3942,
+          "change_rate": 8.168442415017758,
+          "category": "low_change"
+        },
+        "09": {
+          "total": 4620,
+          "change_rate": 7.8354978354978355,
+          "category": "low_change"
+        },
+        "15": {
+          "total": 3966,
+          "change_rate": 7.639939485627837,
+          "category": "low_change"
+        },
+        "13": {
+          "total": 2976,
+          "change_rate": 7.526881720430108,
+          "category": "low_change"
+        },
+        "05": {
+          "total": 3804,
+          "change_rate": 7.49211356466877,
+          "category": "low_change"
+        },
+        "04": {
+          "total": 3516,
+          "change_rate": 6.911262798634812,
+          "category": "low_change"
+        },
+        "02": {
+          "total": 4272,
+          "change_rate": 6.577715355805243,
+          "category": "low_change"
+        },
+        "24": {
+          "total": 4368,
+          "change_rate": 6.364468864468864,
+          "category": "low_change"
+        },
+        "11": {
+          "total": 3996,
+          "change_rate": 4.129129129129129,
+          "category": "low_change"
+        },
+        "03": {
+          "total": 3654,
+          "change_rate": 0.05473453749315819,
+          "category": "low_change"
+        }
+      },
+      "inner_course_take": {
+        "2→1": {
+          "total": 97,
+          "first_rate": 46.391752577319586
+        },
+        "3→1": {
+          "total": 26,
+          "first_rate": 53.84615384615385
+        },
+        "3→2": {
+          "total": 235,
+          "first_rate": 14.468085106382977
+        },
+        "4→1": {
+          "total": 17,
+          "first_rate": 64.70588235294117
+        },
+        "4→2": {
+          "total": 136,
+          "first_rate": 16.176470588235293
+        },
+        "5→1": {
+          "total": 13,
+          "first_rate": 38.46153846153847
+        },
+        "5→2": {
+          "total": 175,
+          "first_rate": 16.57142857142857
+        },
+        "6→1": {
+          "total": 12,
+          "first_rate": 33.33333333333333
+        },
+        "6→2": {
+          "total": 179,
+          "first_rate": 14.52513966480447
+        }
+      }
+    },
+    "tilt_wind": {
+      "tilt_angle": {
+        "-0.5": {
+          "total": 50811,
+          "first_rate": 16.754246127806972,
+          "top3_rate": 50.4949715612761
+        },
+        "0.0": {
+          "total": 38218,
+          "first_rate": 17.21701815898268,
+          "top3_rate": 51.25071955623005
+        },
+        "0.5": {
+          "total": 3870,
+          "first_rate": 15.891472868217054,
+          "top3_rate": 49.81912144702842
+        },
+        "1.0": {
+          "total": 609,
+          "first_rate": 17.077175697865353,
+          "top3_rate": 51.06732348111659
+        },
+        "1.5": {
+          "total": 168,
+          "first_rate": 10.119047619047619,
+          "top3_rate": 36.904761904761905
+        },
+        "2.0": {
+          "total": 161,
+          "first_rate": 19.25465838509317,
+          "top3_rate": 48.4472049689441
+        },
+        "3.0": {
+          "total": 259,
+          "first_rate": 21.62162162162162,
+          "top3_rate": 47.10424710424711
+        }
+      },
+      "wind_speed": {
+        "中風(3-6m)": {
+          "total": 38826,
+          "first_rate": 16.91134806572915
+        },
+        "弱風(3m未満)": {
+          "total": 46151,
+          "first_rate": 16.90754263179563
+        },
+        "強風(6m以上)": {
+          "total": 7352,
+          "first_rate": 16.988574537540803
+        }
+      },
+      "course_wind": {
+        "1_弱風": {
+          "total": 13873,
+          "first_rate": 57.36322352771571
+        },
+        "1_強風": {
+          "total": 1187,
+          "first_rate": 50.71609098567818
+        },
+        "2_弱風": {
+          "total": 13861,
+          "first_rate": 12.675853113051005
+        },
+        "2_強風": {
+          "total": 1186,
+          "first_rate": 15.682967959527824
+        },
+        "3_弱風": {
+          "total": 13835,
+          "first_rate": 12.902059992771955
+        },
+        "3_強風": {
+          "total": 1188,
+          "first_rate": 14.47811447811448
+        },
+        "4_弱風": {
+          "total": 13837,
+          "first_rate": 9.98048709980487
+        },
+        "4_強風": {
+          "total": 1187,
+          "first_rate": 11.794439764111205
+        },
+        "5_弱風": {
+          "total": 13828,
+          "first_rate": 6.190338443737344
+        },
+        "5_強風": {
+          "total": 1184,
+          "first_rate": 6.672297297297297
+        },
+        "6_弱風": {
+          "total": 13802,
+          "first_rate": 2.0431821475148526
+        },
+        "6_強風": {
+          "total": 1188,
+          "first_rate": 2.272727272727273
+        }
+      }
+    },
+    "compound": {
+      "exhibition_st": {
+        "展示1位_ST普通": {
+          "total": 8198,
+          "first_rate": 14.17418882654306
+        },
+        "展示1位_ST良好": {
+          "total": 7701,
+          "first_rate": 22.828204129333855
+        },
+        "展示2位以下_ST普通": {
+          "total": 39115,
+          "first_rate": 6.72631982615365
+        },
+        "展示2位以下_ST良好": {
+          "total": 32722,
+          "first_rate": 12.502292035939124
+        }
+      },
+      "course_wind_compound": {
+        "1_中風": {
+          "total": 6298,
+          "first_rate": 56.65290568434423
+        },
+        "1_弱風": {
+          "total": 7575,
+          "first_rate": 57.95379537953795
+        },
+        "1_強風": {
+          "total": 1187,
+          "first_rate": 50.71609098567818
+        },
+        "2_中風": {
+          "total": 6279,
+          "first_rate": 12.740882306099696
+        },
+        "2_弱風": {
+          "total": 7582,
+          "first_rate": 12.621999472434714
+        },
+        "2_強風": {
+          "total": 1186,
+          "first_rate": 15.682967959527824
+        },
+        "3_中風": {
+          "total": 6280,
+          "first_rate": 13.05732484076433
+        },
+        "3_弱風": {
+          "total": 7555,
+          "first_rate": 12.772998014559894
+        },
+        "3_強風": {
+          "total": 1188,
+          "first_rate": 14.47811447811448
+        },
+        "4_中風": {
+          "total": 6270,
+          "first_rate": 10.223285486443382
+        },
+        "4_弱風": {
+          "total": 7567,
+          "first_rate": 9.77930487643716
+        },
+        "4_強風": {
+          "total": 1187,
+          "first_rate": 11.794439764111205
+        },
+        "5_中風": {
+          "total": 6278,
+          "first_rate": 6.498884995221409
+        },
+        "5_弱風": {
+          "total": 7550,
+          "first_rate": 5.933774834437086
+        },
+        "5_強風": {
+          "total": 1184,
+          "first_rate": 6.672297297297297
+        },
+        "6_中風": {
+          "total": 6255,
+          "first_rate": 1.9504396482813748
+        },
+        "6_弱風": {
+          "total": 7547,
+          "first_rate": 2.120047701073274
+        },
+        "6_強風": {
+          "total": 1188,
+          "first_rate": 2.272727272727273
+        }
+      },
+      "tilt_course": {
+        "アウト_チルト中": {
+          "total": 3239,
+          "first_rate": 9.385612843470206
+        },
+        "アウト_チルト低": {
+          "total": 57188,
+          "first_rate": 7.718402462054977
+        },
+        "アウト_チルト高": {
+          "total": 560,
+          "first_rate": 15.714285714285714
+        },
+        "イン_チルト中": {
+          "total": 1128,
+          "first_rate": 34.840425531914896
+        },
+        "イン_チルト低": {
+          "total": 29418,
+          "first_rate": 34.83921408661364
+        },
+        "イン_チルト高": {
+          "total": 26,
+          "first_rate": 50.0
+        }
+      }
+    }
+  },
+  "suggestions": [
+    {
+      "category": "展示タイム",
+      "finding": "展示1位の1着率は30.1%と高い",
+      "suggestion": "展示タイムのスコアウェイトを現在の25点から30点に引き上げ"
+    },
+    {
+      "category": "ST",
+      "finding": "ST0.10以下は16.7%、0.20超は6.6%と大きな差",
+      "suggestion": "STのスコア配点を段階的に強化（良好+30点、不良-10点）"
+    },
+    {
+      "category": "進入コース",
+      "finding": "枠なり17.6% vs 枠番変更10.1%（差7.5%）",
+      "suggestion": "会場別の進入変動傾向をスコアに反映（大村/下関は進入予測重視）"
+    }
+  ]
+}
