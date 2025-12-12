@@ -1,7 +1,23 @@
 # ボートレース予想システム データベース仕様書
 
 **生成日時**: 2025-12-08 13:41:52
+**最終更新**: 2025-12-12 15:03:00 (Phase 1 DB最適化完了)
 **データベース**: data/boatrace.db
+
+## 🔄 最新の変更履歴
+
+### 2025-12-12: Phase 1 DB最適化完了
+
+**削除されたカラム:**
+- ❌ `races.grade` → `race_grade` に統一
+- ❌ `results.winning_technique` → `kimarite` (TEXT)に統一
+
+**影響:**
+- races: 133,755件（gradeカラム削除、race_gradeに統一）
+- results: 781,989件（winning_techniqueカラム削除）
+- VIEW: `race_details_extended` を更新（r.grade → r.race_grade）
+
+**詳細:** [docs/DATABASE_OPTIMIZATION_REPORT.md](DATABASE_OPTIMIZATION_REPORT.md)
 
 ## 目次
 

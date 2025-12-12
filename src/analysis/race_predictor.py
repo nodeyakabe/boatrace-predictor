@@ -730,14 +730,18 @@ class RacePredictor:
             entry_data[row['pit_number']] = entry_dict
             race_entries_for_matchup.append(entry_dict)
 
-        # 天候データを取得（race_conditions または weather テーブルから）
+        # 天候データを取得（race_conditions優先、fallbackでweather）
         wind_speed = None
         wave_height = None
         wind_direction = None
+        temperature = None
+        water_temperature = None
+        weather_condition = None
 
-        # まず race_conditions から取得を試みる（風向データを含む）
+        # まず race_conditions から取得を試みる（直前情報ページの最新データ）
         cursor.execute("""
-            SELECT wind_speed, wave_height, wind_direction FROM race_conditions WHERE race_id = ?
+            SELECT wind_speed, wave_height, wind_direction, temperature, water_temperature, weather
+            FROM race_conditions WHERE race_id = ?
         """, (race_id,))
         weather_row = cursor.fetchone()
 
@@ -745,16 +749,24 @@ class RacePredictor:
             wind_speed = weather_row['wind_speed']
             wave_height = weather_row['wave_height']
             wind_direction = weather_row['wind_direction']
+            temperature = weather_row['temperature']
+            water_temperature = weather_row['water_temperature']
+            weather_condition = weather_row['weather']
         else:
-            # weather テーブルから取得（wind_directionは未対応の場合あり）
+            # fallback: weather テーブルから取得
             cursor.execute("""
-                SELECT wind_speed, wave_height FROM weather
+                SELECT wind_speed, wave_height, wind_direction, temperature, water_temperature, weather_condition
+                FROM weather
                 WHERE venue_code = ? AND weather_date = ?
             """, (venue_code, race_date))
             weather_row = cursor.fetchone()
             if weather_row:
                 wind_speed = weather_row['wind_speed']
                 wave_height = weather_row['wave_height']
+                wind_direction = weather_row['wind_direction']
+                temperature = weather_row['temperature']
+                water_temperature = weather_row['water_temperature']
+                weather_condition = weather_row['weather_condition']
 
         cursor.close()
 
@@ -1534,13 +1546,14 @@ class RacePredictor:
             pit_number = pred['pit_number']
             original_score = pred['total_score']
 
-            # 天候補正を計算（風向も含む）
+            # 天候補正を計算（風向・天候条件も含む）
             adj_result = self.weather_adjuster.calculate_adjustment(
                 venue_code,
                 pit_number,  # pit_number = コース番号として使用
                 wind_speed,
                 wave_height,
-                wind_direction
+                wind_direction,
+                weather_condition  # NEW: 天候条件（晴/曇/雨など）
             )
 
             # 補正値を取得（パーセント → スコア補正値に変換）

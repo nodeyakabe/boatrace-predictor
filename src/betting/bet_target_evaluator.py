@@ -58,110 +58,68 @@ class BetTargetEvaluator:
     HIGH_IN_VENUES = [24, 19, 18]  # 大村、下関、徳山
 
     # ============================================================
-    # 購入条件定義（2025年12月8日更新 - 戦略A）
+    # 購入条件定義（2025年12月12日更新 - 戦略A再定義版）
     # ============================================================
-    # 正しい払戻金データによる包括的検証結果に基づく最適条件
-    # - 戦略A（バランス型）: 年間ROI 304.6%, 収支 +383,670円
-    # - 3層構造: Tier1(超高配当) + Tier2(中高配当) + Tier3(堅実)
-    # - 検証期間: 2025年全期間（625レース購入、52回的中）
+    # 3連単完全一致方式によるバックテスト結果に基づく実運用可能な条件
+    # - 戦略A（バランス型）: 年間ROI 159.9%, 収支 +53,190円
+    # - 3層構造: Tier1(高配当主力) + Tier2(中配当補助) + Tier3(穴条件)
+    # - 検証期間: 2025年全期間（296レース購入、12回的中、的中率4.1%）
+    # - 注意: 収支が少ないため、今後の改善が必要
     # ============================================================
     BET_CONDITIONS = {
-        # 信頼度C: 超高配当のみ（Tier 1）
+        # 信頼度C: 中配当補助（Tier2）
         'C': [
-            # C × B1 × 150-200倍: ROI 369.2%, 収支 +42,810円
-            # → Tier 1: 超高配当狙い
+            # C × B1 × 40-60倍: ROI 188.3%, 収支 +7,950円
+            # → Tier2: 中配当補助A
             {
                 'method': '両方式',
-                'odds_min': 150, 'odds_max': 200,
+                'odds_min': 40, 'odds_max': 60,
                 'c1_rank': ['B1'],
-                'expected_roi': 376.3,
+                'expected_roi': 188.3,
                 'bet_amount': 300,
                 'priority': 1,
-                'description': 'Tier1: C×B1級超高配当',
+                'description': 'Tier2: C×B1級中配当A',
             },
-        ],
-        # 信頼度D: 3層すべて
-        'D': [
-            # ===== Tier 1: 超高配当狙い（ROI 486.5%） =====
-
-            # D × B1 × 200-300倍: ROI 758.6%, 収支 +124,470円
-            # → 最強条件（月1-2回の大型的中）
+            # C × B1 × 80-120倍: ROI 122.5%, 収支 +6,270円
+            # → Tier2: 中配当補助B
             {
                 'method': '両方式',
-                'odds_min': 200, 'odds_max': 300,
+                'odds_min': 80, 'odds_max': 120,
                 'c1_rank': ['B1'],
-                'expected_roi': 838.4,
-                'bet_amount': 300,
-                'priority': 1,
-                'description': 'Tier1: D×B1級超高配当（最強）',
-            },
-            # D × A1 × 100-150倍: ROI 396.6%, 収支 +52,500円
-            {
-                'method': '両方式',
-                'odds_min': 100, 'odds_max': 150,
-                'c1_rank': ['A1'],
-                'expected_roi': 425.5,
+                'expected_roi': 122.5,
                 'bet_amount': 300,
                 'priority': 2,
-                'description': 'Tier1: D×A1級超高配当',
+                'description': 'Tier2: C×B1級中配当B',
             },
-            # D × A1 × 200-300倍: ROI 391.2%, 収支 +51,540円
-            {
-                'method': '両方式',
-                'odds_min': 200, 'odds_max': 300,
-                'c1_rank': ['A1'],
-                'expected_roi': 397.9,
-                'bet_amount': 300,
-                'priority': 3,
-                'description': 'Tier1: D×A1級超高配当',
-            },
+        ],
+        # 信頼度D: 高配当主力（Tier1）+ 穴条件（Tier3）
+        'D': [
+            # ===== Tier 1: 高配当主力（ROI 192.8%） =====
 
-            # ===== Tier 2: 中高配当狙い（ROI 325.0%） =====
-
-            # D × A2 × 30-40倍: ROI 254.9%, 収支 +33,450円
-            # → A2級が穴場（月2-3回の中型的中）
+            # D × B1 × 60-100倍: ROI 192.8%, 収支 +37,020円
+            # → 最も収益貢献が大きい主力条件
             {
                 'method': '両方式',
-                'odds_min': 30, 'odds_max': 40,
-                'c1_rank': ['A2'],
-                'expected_roi': 273.9,
-                'bet_amount': 300,
-                'priority': 4,
-                'description': 'Tier2: D×A2級中高配当',
-            },
-            # D × A1 × 40-50倍: ROI 500.2%, 収支 +51,630円
-            {
-                'method': '両方式',
-                'odds_min': 40, 'odds_max': 50,
-                'c1_rank': ['A1'],
-                'expected_roi': 537.8,
-                'bet_amount': 300,
-                'priority': 5,
-                'description': 'Tier2: D×A1級中高配当',
-            },
-            # D × A1 × 20-25倍: ROI 264.4%, 収支 +20,220円
-            {
-                'method': '両方式',
-                'odds_min': 20, 'odds_max': 25,
-                'c1_rank': ['A1'],
-                'expected_roi': 277.9,
-                'bet_amount': 300,
-                'priority': 6,
-                'description': 'Tier2: D×A1級中配当',
-            },
-
-            # ===== Tier 3: 堅実狙い（ROI 110.0%） =====
-
-            # D × B1 × 5-10倍: ROI 110.0%, 収支 +7,050円
-            # → 高頻度的中（月3-5回、的中率14.9%）
-            {
-                'method': '両方式',
-                'odds_min': 5, 'odds_max': 10,
+                'odds_min': 60, 'odds_max': 100,
                 'c1_rank': ['B1'],
-                'expected_roi': 111.1,
+                'expected_roi': 192.8,
                 'bet_amount': 300,
-                'priority': 7,
-                'description': 'Tier3: D×B1級堅実',
+                'priority': 1,
+                'description': 'Tier1: D×B1級高配当主力',
+            },
+
+            # ===== Tier 3: 穴条件（ROI 116.3%） =====
+
+            # D × A2 × 30-100倍: ROI 116.3%, 収支 +1,950円
+            # → 的中率7.5%で的中頻度向上に寄与
+            {
+                'method': '両方式',
+                'odds_min': 30, 'odds_max': 100,
+                'c1_rank': ['A2'],
+                'expected_roi': 116.3,
+                'bet_amount': 300,
+                'priority': 2,
+                'description': 'Tier3: D×A2級穴条件',
             },
         ],
     }

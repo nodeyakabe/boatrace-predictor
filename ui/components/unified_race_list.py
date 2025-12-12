@@ -1566,9 +1566,11 @@ def _render_beforeinfo_dialog():
 
 
 def _fetch_and_update_beforeinfo(target_races: List[Dict]):
-    """直前情報を取得して予想を更新（賢いスキップロジック）"""
+    """直前情報とオッズを取得して予想を更新（最適化版：未確定レースのみ更新）"""
     from datetime import datetime, timedelta
     from config.settings import VENUES
+    import concurrent.futures
+    import threading
 
     try:
         today_ymd = datetime.now().strftime('%Y%m%d')
@@ -1743,15 +1745,94 @@ def _fetch_and_update_beforeinfo(target_races: List[Dict]):
         progress_bar.empty()
         status_text.empty()
 
-        # 結果をまとめて表示（中間メッセージを消す）
-        if success_count > 0:
+        # === オッズ取得処理（未確定レースのみ、並列実行） ===
+        odds_status_text = st.empty()
+        odds_progress_bar = st.progress(0)
+        odds_status_text.text("オッズデータ取得中...")
+
+        # 未確定レースのみ抽出（レース開始前）
+        unfinished_races = []
+        for race in target_races:
+            race_time = race.get('race_time')
+            if race_time:
+                try:
+                    race_time_dt = datetime.strptime(f"{now.strftime('%Y-%m-%d')} {race_time}", "%Y-%m-%d %H:%M:%S")
+                    is_unfinished = now < race_time_dt  # レース開始前
+                    if is_unfinished:
+                        unfinished_races.append(race)
+                except:
+                    pass
+
+        odds_success_count = 0
+        odds_skip_count = 0
+
+        if unfinished_races:
+            from src.scraper.odds_scraper import OddsScraper
+            import sqlite3
+            from config.settings import DATABASE_PATH
+
+            def fetch_single_odds_optimized(race_info):
+                """オッズを取得してDBに保存"""
+                try:
+                    scraper = OddsScraper(delay=0.1, max_retries=1)
+                    odds = scraper.get_trifecta_odds(
+                        race_info['venue_code'],
+                        today_ymd,
+                        race_info['race_number']
+                    )
+                    scraper.close()
+
+                    if odds and len(odds) > 50:
+                        conn = sqlite3.connect(DATABASE_PATH)
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "DELETE FROM trifecta_odds WHERE race_id = ?",
+                            (race_info['race_id'],)
+                        )
+                        for combo, odds_val in odds.items():
+                            cursor.execute(
+                                "INSERT INTO trifecta_odds (race_id, combination, odds) VALUES (?, ?, ?)",
+                                (race_info['race_id'], combo, odds_val)
+                            )
+                        conn.commit()
+                        conn.close()
+                        return True
+                    return False
+                except Exception:
+                    return False
+
+            # 並列実行（最大8スレッド）
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                futures = {executor.submit(fetch_single_odds_optimized, race): race for race in unfinished_races}
+
+                for idx, future in enumerate(concurrent.futures.as_completed(futures), 1):
+                    if future.result():
+                        odds_success_count += 1
+                    else:
+                        odds_skip_count += 1
+                    odds_progress_bar.progress(idx / len(unfinished_races))
+
+        odds_progress_bar.empty()
+        odds_status_text.empty()
+
+        # === 結果をまとめて表示 ===
+        if success_count > 0 or odds_success_count > 0:
             # DBに保存（メッセージなしで実行）
-            saved_count = _save_beforeinfo_to_db(fetched_data)
+            if success_count > 0:
+                saved_count = _save_beforeinfo_to_db(fetched_data)
 
             # 最終結果のみ表示
-            result_msg = f"✅ 直前情報取得完了: {success_count}件取得"
+            result_parts = []
+            if success_count > 0:
+                result_parts.append(f"直前情報: {success_count}件")
+            if odds_success_count > 0:
+                result_parts.append(f"オッズ: {odds_success_count}件")
+
+            result_msg = f"✅ 取得完了: {', '.join(result_parts)}"
             if no_data_count > 0:
-                result_msg += f" (未公開: {no_data_count}件)"
+                result_msg += f" (直前情報未公開: {no_data_count}件)"
+            if odds_skip_count > 0:
+                result_msg += f" (オッズ未公開: {odds_skip_count}件)"
             st.success(result_msg)
 
             # 取得データのサマリーを表示

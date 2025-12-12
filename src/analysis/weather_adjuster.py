@@ -118,7 +118,8 @@ class WeatherAdjuster:
         course: int,
         wind_speed: Optional[float] = None,
         wave_height: Optional[float] = None,
-        wind_direction: Optional[str] = None
+        wind_direction: Optional[str] = None,
+        weather_condition: Optional[str] = None  # NEW: 天候（晴/曇/雨）
     ) -> Dict:
         """
         天候に基づくスコア補正を計算
@@ -129,6 +130,7 @@ class WeatherAdjuster:
             wind_speed: 風速（m/s）
             wave_height: 波高（cm）
             wind_direction: 風向（16方位）
+            weather_condition: 天候（晴/曇/雨/雪/霧/台風）
 
         Returns:
             {
@@ -136,7 +138,8 @@ class WeatherAdjuster:
                 'reason': 補正理由,
                 'wind_category': 風速カテゴリ,
                 'wave_category': 波高カテゴリ,
-                'wind_direction_category': 風向カテゴリ
+                'wind_direction_category': 風向カテゴリ,
+                'weather_condition': 天候
             }
         """
         result = {
@@ -144,7 +147,8 @@ class WeatherAdjuster:
             'reason': '',
             'wind_category': 'unknown',
             'wave_category': 'unknown',
-            'wind_direction_category': 'unknown'
+            'wind_direction_category': 'unknown',
+            'weather_condition': weather_condition or 'unknown'  # NEW
         }
 
         if not self.rules:
@@ -221,6 +225,54 @@ class WeatherAdjuster:
                     penalty = min(-diff * 0.5, -0.05)
                     adjustment += penalty
                     reasons.append(f'高波時1コースペナルティ({penalty:+.0%})')
+
+        # === 天候条件による補正（NEW） ===
+        if weather_condition:
+            if '雨' in weather_condition:
+                # 雨天: 視界不良、スタート難化
+                # → 経験豊富な選手有利、インコースやや有利
+                if course == 1:
+                    bonus = 0.02  # +2%
+                    adjustment += bonus
+                    reasons.append(f'雨天1コースボーナス({bonus:+.0%})')
+                elif course in [5, 6]:
+                    penalty = -0.03  # -3%
+                    adjustment += penalty
+                    reasons.append(f'雨天外コースペナルティ({penalty:+.0%})')
+
+            elif '雪' in weather_condition:
+                # 雪天: 視界不良、スタート難化（雨天より影響大）
+                if course == 1:
+                    bonus = 0.03  # +3%
+                    adjustment += bonus
+                    reasons.append(f'雪天1コースボーナス({bonus:+.0%})')
+                elif course >= 4:
+                    penalty = -0.05  # -5%
+                    adjustment += penalty
+                    reasons.append(f'雪天外コースペナルティ({penalty:+.0%})')
+
+            elif '霧' in weather_condition:
+                # 霧: 視界不良（雪天と同等）
+                if course == 1:
+                    bonus = 0.03  # +3%
+                    adjustment += bonus
+                    reasons.append(f'霧1コースボーナス({bonus:+.0%})')
+                elif course >= 4:
+                    penalty = -0.04  # -4%
+                    adjustment += penalty
+                    reasons.append(f'霧外コースペナルティ({penalty:+.0%})')
+
+            elif '台風' in weather_condition:
+                # 台風: 極端な天候、レース自体が中止される可能性
+                # → 開催されている場合、インコース大幅有利
+                if course == 1:
+                    bonus = 0.05  # +5%
+                    adjustment += bonus
+                    reasons.append(f'台風1コースボーナス({bonus:+.0%})')
+                else:
+                    penalty = -0.10  # -10%
+                    adjustment += penalty
+                    reasons.append(f'台風外コースペナルティ({penalty:+.0%})')
 
         result['adjustment'] = adjustment
         result['reason'] = ', '.join(reasons) if reasons else '補正なし'

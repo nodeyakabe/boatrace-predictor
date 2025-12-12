@@ -758,17 +758,17 @@ class BatchDataLoader:
                 SELECT
                     e.racer_number,
                     e.pit_number as course,
-                    r.winning_technique,
+                    r.kimarite,
                     COUNT(*) as count
                 FROM results r
                 JOIN races ra ON r.race_id = ra.id
                 JOIN entries e ON r.race_id = e.race_id AND r.pit_number = e.pit_number
                 WHERE e.racer_number IN ({placeholders})
                   AND r.rank = 1
-                  AND r.winning_technique IS NOT NULL
+                  AND r.kimarite IS NOT NULL
                   AND ra.race_date >= ?
                   AND ra.race_date < ?
-                GROUP BY e.racer_number, e.pit_number, r.winning_technique
+                GROUP BY e.racer_number, e.pit_number, r.kimarite
             """
 
             cursor.execute(query_racer, racer_numbers + [start_date, target_date])
@@ -777,7 +777,7 @@ class BatchDataLoader:
             for row in cursor.fetchall():
                 racer_num = row['racer_number']
                 course = row['course']
-                technique = row['winning_technique']
+                technique = row['kimarite']
                 count = row['count']
                 racer_kimarite[racer_num][course][technique] = count
 
@@ -800,16 +800,16 @@ class BatchDataLoader:
                 SELECT
                     ra.venue_code,
                     r.pit_number as course,
-                    r.winning_technique,
+                    r.kimarite,
                     COUNT(*) as count
                 FROM results r
                 JOIN races ra ON r.race_id = ra.id
                 WHERE ra.venue_code IN ({placeholders})
                   AND r.rank = 1
-                  AND r.winning_technique IS NOT NULL
+                  AND r.kimarite IS NOT NULL
                   AND ra.race_date >= ?
                   AND ra.race_date < ?
-                GROUP BY ra.venue_code, r.pit_number, r.winning_technique
+                GROUP BY ra.venue_code, r.pit_number, r.kimarite
             """
 
             cursor.execute(query_venue, venue_codes + [start_date, target_date])
@@ -818,7 +818,7 @@ class BatchDataLoader:
             for row in cursor.fetchall():
                 venue = row['venue_code']
                 course = row['course']
-                technique = row['winning_technique']
+                technique = row['kimarite']
                 count = row['count']
                 venue_kimarite[venue][course][technique] = count
 

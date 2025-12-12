@@ -2,15 +2,18 @@
 直前情報スコアリングモジュール
 
 統合ガイド（改善点/直前情報の予想モデルへの統合ガイド_20251202.md）に基づき、
-直前情報を100点満点でスコアリングし、事前スコアと統合する。
+直前情報を115点満点でスコアリングし、事前スコアと統合する。
 
-スコア構成（100点満点）:
-- 展示タイム: 25%
-- ST（スタート）: 25%
-- 進入隊形: 20%
-- 前走成績: 15%
-- チルト・風: 10%
-- 調整重量/部品交換: 5%
+スコア構成（115点満点）:
+- 展示タイム: 25点
+- ST（スタート）: 25点
+- 進入隊形: 20点
+- 前走成績: 15点
+- チルト・風: 10点
+- 調整重量/部品交換: 5点
+- 気象条件: 5点（会場×風向×風速[全コース78パターン]、波高補正）
+- モーター成績: 5点（モーター2連率による補正）
+- 選手×コース別得意・不得意: 5点（過去3年808選手1,187パターン）
 
 最終統合: FINAL_SCORE = PRE_SCORE * 0.6 + BEFORE_SCORE * 0.4
 """
@@ -19,6 +22,11 @@ from typing import Dict, List, Optional, Tuple
 import sqlite3
 from pathlib import Path
 from src.utils.db_connection_pool import get_connection
+from src.analysis.weather_venue_wind_adjuster_v2 import calculate_venue_wind_adjustment as calculate_venue_wind_adjustment_storm
+from src.analysis.wind_venue_adjuster_all_courses import calculate_wind_venue_adjustment
+from src.analysis.wave_height_adjuster import calculate_wave_height_adjustment
+from src.analysis.motor_performance_adjuster import calculate_motor_performance_adjustment
+from src.analysis.racer_course_skill_adjuster import calculate_racer_course_skill_adjustment
 
 
 class BeforeInfoScorer:
@@ -33,13 +41,16 @@ class BeforeInfoScorer:
         """
         self.db_path = db_path
 
-        # スコア配分（100点満点）
+        # スコア配分（100点満点 → 115点満点に拡張）
         self.EXHIBITION_TIME_WEIGHT = 25.0  # 展示タイム
         self.ST_WEIGHT = 25.0               # スタートタイミング
         self.ENTRY_WEIGHT = 20.0            # 進入隊形
         self.PREV_RACE_WEIGHT = 15.0        # 前走成績
-        self.TILT_WIND_WEIGHT = 10.0        # チルト・風
+        self.TILT_WIND_WEIGHT = 10.0        # チルト・風（基本評価）
         self.PARTS_WEIGHT_WEIGHT = 5.0      # 部品交換・調整重量
+        self.WEATHER_SCORE_WEIGHT = 5.0     # 気象条件スコア（補助的要因、10点→5点に半減）
+        self.MOTOR_PERFORMANCE_WEIGHT = 5.0 # モーター成績スコア
+        self.RACER_COURSE_SKILL_WEIGHT = 5.0 # 選手×コース別得意・不得意スコア（NEW）
 
     def calculate_beforeinfo_score(
         self,
@@ -104,6 +115,22 @@ class BeforeInfoScorer:
             beforeinfo_data.get('adjusted_weights', {}),
             beforeinfo_data.get('exhibition_courses', {})
         )
+        weather_score = self._calc_weather_score(
+            race_id,
+            pit_number,
+            beforeinfo_data.get('weather', {}),
+            beforeinfo_data.get('exhibition_courses', {})
+        )
+        motor_score = self._calc_motor_performance_score(
+            race_id,
+            pit_number,
+            beforeinfo_data.get('exhibition_courses', {})
+        )
+        racer_skill_score = self._calc_racer_course_skill_score(
+            race_id,
+            pit_number,
+            beforeinfo_data.get('exhibition_courses', {})
+        )
 
         # 総合スコア
         total_score = (
@@ -112,7 +139,10 @@ class BeforeInfoScorer:
             entry_score +
             prev_race_score +
             tilt_wind_score +
-            parts_weight_score
+            parts_weight_score +
+            weather_score +
+            motor_score +
+            racer_skill_score
         )
 
         # データ充実度
@@ -129,6 +159,9 @@ class BeforeInfoScorer:
             'prev_race_score': prev_race_score,
             'tilt_wind_score': tilt_wind_score,
             'parts_weight_score': parts_weight_score,
+            'weather_score': weather_score,  # 気象条件スコア
+            'motor_score': motor_score,      # モーター成績スコア
+            'racer_skill_score': racer_skill_score,  # NEW: 選手×コース別得意・不得意スコア
             'confidence': confidence,
             'data_completeness': data_completeness
         }
@@ -383,6 +416,284 @@ class BeforeInfoScorer:
         # 5点満点に正規化
         return min(max(score, -5.0), 5.0)
 
+    def _calc_weather_score(
+        self,
+        race_id: int,
+        pit_number: int,
+        weather: Dict,
+        exhibition_courses: Dict[int, int]
+    ) -> float:
+        """
+        気象条件スコア計算（会場×風向×風速＋波高の補正を含む）
+
+        2025年通年データに基づく実データドリブン補正:
+        - 会場×風向×風速(3m+): 最大±10点の補正（全コース対応、78パターン）
+        - 波高(10cm+): 最大±10点の補正（1-2コースのみ）
+        - 気温・水温差: モーター性能への影響評価（従来ロジック維持）
+
+        Args:
+            race_id: レースID（会場コード取得用）
+            pit_number: 艇番（1-6）
+            weather: 気象データ（temperature, water_temp, weather_condition, wind_speed, wind_direction, wave_height）
+            exhibition_courses: 進入コース（コース依存評価用）
+
+        Returns:
+            気象スコア（-30.0 ～ +20.0点、5点満点換算で-15.0～+10.0点）
+        """
+        if not weather:
+            return 0.0
+
+        course = exhibition_courses.get(pit_number, pit_number)
+        score = 0.0
+
+        # === 1. 会場×風向×風速の補正（全コース対応、風速3m以上） ===
+        wind_speed = weather.get('wind_speed')
+        wind_direction = weather.get('wind_direction')
+
+        if wind_speed is not None and wind_speed >= 3.0:
+            # 会場コードを取得
+            venue_code = self._get_venue_code(race_id)
+
+            if venue_code:
+                # 会場×風向の補正を適用（全コース対応版）
+                venue_wind_adj = calculate_wind_venue_adjustment(
+                    course=course,
+                    venue_code=venue_code,
+                    wind_speed=wind_speed,
+                    wind_direction=wind_direction
+                )
+                score += venue_wind_adj
+
+        # === 2. 波高の補正（高波時のみ） ===
+        wave_height = weather.get('wave_height')
+
+        if wave_height is not None:
+            # 波高補正を適用（10cm以上で効果発動）
+            wave_adj = calculate_wave_height_adjustment(
+                course=course,
+                wave_height=wave_height
+            )
+            score += wave_adj
+
+        # === 3. 気温・水温の基本評価（従来ロジック、補助的） ===
+        # 暴風時・高波時は風速・波高の影響が支配的なので、基本評価は小さく抑える
+        temperature = weather.get('temperature')
+        water_temp = weather.get('water_temp')
+
+        if temperature is not None and water_temp is not None:
+            temp_diff = abs(temperature - water_temp)
+
+            # 気温・水温差が大きい（5℃以上）→ 機力差が出やすい
+            if temp_diff >= 5.0:
+                if course <= 2:
+                    score += 1.5  # インコース有利（従来3.0点→1.5点に減少）
+                else:
+                    score -= 0.5  # 外コース不利
+
+            # 水温が低い（15℃未満）→ 出足が悪くなる → インコース不利
+            if water_temp < 15.0:
+                if course <= 2:
+                    score -= 1.5  # インコース不利（従来3.0点→1.5点に減少）
+                elif course >= 4:
+                    score += 1.0  # 外コース（まくり型）有利
+
+            # 気温が高い（30℃以上）→ モーター冷却性能が重要
+            if temperature >= 30.0:
+                if course <= 2:
+                    score += 1.0  # インコース有利（従来2.0点→1.0点に減少）
+                else:
+                    score -= 0.5  # 外コース不利
+
+        # === 4. 天候条件の評価（補助的） ===
+        weather_condition = weather.get('weather_condition', '')
+        if weather_condition:
+            # 雨天 → 視界不良、スタート難化
+            if '雨' in weather_condition:
+                if course <= 2:
+                    score += 1.0  # インコース有利（従来2.0点→1.0点に減少）
+                else:
+                    score -= 0.5
+
+        # 5点満点に正規化（-30点～+20点 → -15点～+10点）
+        # WEATHER_SCORE_WEIGHT = 5.0点なので、最大-15点～+10点の範囲
+        score = score * 0.5
+        return min(max(score, -15.0), 10.0)
+
+    def _calc_motor_performance_score(
+        self,
+        race_id: int,
+        pit_number: int,
+        exhibition_courses: Dict[int, int]
+    ) -> float:
+        """
+        モーター成績スコア計算（5点満点）
+
+        2025年通年データ（802,344エントリー）に基づくモーター2連率の影響:
+        - 1コース: 良いモーター(40%+) 60.6% vs 悪いモーター(0-30%) 53.9% = +6.8pt
+        - 2コース: 良いモーター 16.3% vs 悪いモーター 11.7% = +4.6pt
+        - 3コース: 良いモーター 14.5% vs 悪いモーター 11.2% = +3.2pt
+        - 4コース: 良いモーター 12.0% vs 悪いモーター 8.7% = +3.3pt
+        - 5-6コース: 影響は小さいが存在する (+1.1pt ~ +1.9pt)
+
+        Args:
+            race_id: レースID
+            pit_number: 艇番（1-6）
+            exhibition_courses: 進入コース（コース依存評価用）
+
+        Returns:
+            モーター成績スコア（-5.0 ~ +5.0点）
+        """
+        course = exhibition_courses.get(pit_number, pit_number)
+
+        # モーター2連率を取得
+        motor_second_rate = self._get_motor_second_rate(race_id, pit_number)
+
+        if motor_second_rate is None:
+            return 0.0
+
+        # モーター成績補正を適用
+        motor_adj = calculate_motor_performance_adjustment(
+            course=course,
+            motor_second_rate=motor_second_rate
+        )
+
+        return motor_adj
+
+    def _get_motor_second_rate(self, race_id: int, pit_number: int) -> Optional[float]:
+        """
+        レースID・艇番からモーター2連率を取得
+
+        Args:
+            race_id: レースID
+            pit_number: 艇番（1-6）
+
+        Returns:
+            モーター2連率（%）またはNone
+        """
+        try:
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT motor_second_rate
+                FROM entries
+                WHERE race_id = ? AND pit_number = ?
+            """, (race_id, pit_number))
+
+            row = cursor.fetchone()
+            conn.close()
+
+            if row and row[0] is not None:
+                return float(row[0])
+
+            return None
+
+        except Exception:
+            return None
+
+    def _calc_racer_course_skill_score(
+        self,
+        race_id: int,
+        pit_number: int,
+        exhibition_courses: Dict[int, int]
+    ) -> float:
+        """
+        選手×コース別得意・不得意スコア計算（5点満点）
+
+        過去3年分のデータ（2023-2025、808選手、1,187パターン）に基づく:
+        - サンプル数20レース以上
+        - 差分±10pt以上のケースのみテーブル化
+        - 差分の大きさに応じて補正スコアを調整
+
+        Args:
+            race_id: レースID
+            pit_number: 艇番（1-6）
+            exhibition_courses: 進入コース（コース依存評価用）
+
+        Returns:
+            選手×コース別得意・不得意スコア（-5.0 ~ +5.0点）
+        """
+        course = exhibition_courses.get(pit_number, pit_number)
+
+        # 選手番号を取得
+        racer_number = self._get_racer_number(race_id, pit_number)
+
+        if racer_number is None:
+            return 0.0
+
+        # 選手×コース別得意・不得意補正を適用
+        skill_adj = calculate_racer_course_skill_adjustment(
+            racer_number=racer_number,
+            course=course
+        )
+
+        return skill_adj
+
+    def _get_racer_number(self, race_id: int, pit_number: int) -> Optional[str]:
+        """
+        レースID・艇番から選手番号を取得
+
+        Args:
+            race_id: レースID
+            pit_number: 艇番（1-6）
+
+        Returns:
+            選手番号（文字列）またはNone
+        """
+        try:
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT racer_number
+                FROM entries
+                WHERE race_id = ? AND pit_number = ?
+            """, (race_id, pit_number))
+
+            row = cursor.fetchone()
+            conn.close()
+
+            if row and row[0] is not None:
+                return str(row[0])
+
+            return None
+
+        except Exception:
+            return None
+
+    def _get_venue_code(self, race_id: int) -> Optional[str]:
+        """
+        レースIDから会場コードを取得
+
+        Args:
+            race_id: レースID
+
+        Returns:
+            会場コード（'01'～'24'）またはNone
+        """
+        try:
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT venue_code
+                FROM races
+                WHERE id = ?
+            """, (race_id,))
+
+            row = cursor.fetchone()
+            conn.close()
+
+            if row:
+                venue_code = row[0]
+                # 2桁にフォーマット
+                return f"{int(venue_code):02d}" if venue_code else None
+
+            return None
+
+        except Exception:
+            return None
+
     def _calc_data_completeness(
         self,
         beforeinfo_data: Dict,
@@ -394,7 +705,7 @@ class BeforeInfoScorer:
         各データ要素の有無をチェック
         """
         completeness_score = 0
-        max_score = 7
+        max_score = 8  # モーター成績を追加して8項目に
 
         # 展示タイム
         if pit_number in beforeinfo_data.get('exhibition_times', {}):
@@ -424,6 +735,10 @@ class BeforeInfoScorer:
         weather = beforeinfo_data.get('weather', {})
         if weather and weather.get('wind_speed') is not None:
             completeness_score += 1
+
+        # モーター成績（常にデータがあるため必ず+1）
+        # entriesテーブルには100%モーター2連率データがある
+        completeness_score += 1
 
         return completeness_score / max_score
 
@@ -517,23 +832,44 @@ class BeforeInfoScorer:
                     if row[9] is not None:
                         previous_race[pit]['rank'] = row[9]
 
-            # weatherテーブルから気象データを取得
+            # 気象データを取得（race_conditions優先、fallbackでweather）
             cursor.execute("""
-                SELECT temperature, water_temperature, wind_speed, wave_height
-                FROM weather w
-                JOIN races r ON w.venue_code = r.venue_code AND w.weather_date = r.race_date
-                WHERE r.id = ?
+                SELECT temperature, water_temperature, wind_speed, wave_height, weather, wind_direction
+                FROM race_conditions
+                WHERE race_id = ?
             """, (race_id,))
 
             weather_row = cursor.fetchone()
             weather = {}
-            if weather_row:
+
+            if weather_row and weather_row[2] is not None:  # wind_speedがあればデータあり
                 weather = {
                     'temperature': weather_row[0],
                     'water_temp': weather_row[1],
                     'wind_speed': weather_row[2],
-                    'wave_height': weather_row[3]
+                    'wave_height': weather_row[3],
+                    'weather_condition': weather_row[4],  # 天候（晴/曇/雨など）
+                    'wind_direction': weather_row[5]      # 風向（北/南など）
                 }
+            else:
+                # fallback: weatherテーブルから取得
+                cursor.execute("""
+                    SELECT temperature, water_temperature, wind_speed, wave_height, weather_condition, wind_direction
+                    FROM weather w
+                    JOIN races r ON w.venue_code = r.venue_code AND w.weather_date = r.race_date
+                    WHERE r.id = ?
+                """, (race_id,))
+
+                weather_row = cursor.fetchone()
+                if weather_row:
+                    weather = {
+                        'temperature': weather_row[0],
+                        'water_temp': weather_row[1],
+                        'wind_speed': weather_row[2],
+                        'wave_height': weather_row[3],
+                        'weather_condition': weather_row[4],
+                        'wind_direction': weather_row[5]
+                    }
 
             cursor.close()
 
@@ -566,6 +902,9 @@ class BeforeInfoScorer:
             'prev_race_score': 0.0,
             'tilt_wind_score': 0.0,
             'parts_weight_score': 0.0,
+            'weather_score': 0.0,  # 気象条件スコア
+            'motor_score': 0.0,    # モーター成績スコア
+            'racer_skill_score': 0.0,  # NEW: 選手×コース別得意・不得意スコア
             'confidence': 0.0,
             'data_completeness': 0.0
         }

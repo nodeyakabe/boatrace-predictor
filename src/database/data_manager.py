@@ -211,7 +211,6 @@ class DataManager:
         race_distance = race_data.get('race_distance')
 
         # 新しいカラム（レースタイプ判定用）
-        grade = race_data.get('grade', race_grade or '')  # gradeを優先、なければrace_grade
         is_nighter = 1 if race_data.get('is_nighter', False) else 0
         is_ladies = 1 if race_data.get('is_ladies', False) else 0
         is_rookie = 1 if race_data.get('is_rookie', False) else 0
@@ -234,20 +233,20 @@ class DataManager:
             cursor.execute("""
                 UPDATE races
                 SET race_time = ?,
-                    grade = ?,
+                    race_grade = ?,
                     is_nighter = ?,
                     is_ladies = ?,
                     is_rookie = ?,
                     is_shinnyuu_kotei = ?
                 WHERE id = ?
-            """, (race_time, grade, is_nighter, is_ladies, is_rookie, is_shinnyuu_kotei, race_id))
+            """, (race_time, race_grade, is_nighter, is_ladies, is_rookie, is_shinnyuu_kotei, race_id))
             logger.info(f"レース情報を更新: race_id={race_id}")
         else:
             # 新規データを挿入
             cursor.execute("""
-                INSERT INTO races (venue_code, race_date, race_number, race_time, grade, is_nighter, is_ladies, is_rookie, is_shinnyuu_kotei)
+                INSERT INTO races (venue_code, race_date, race_number, race_time, race_grade, is_nighter, is_ladies, is_rookie, is_shinnyuu_kotei)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (venue_code, race_date_formatted, race_number, race_time, grade, is_nighter, is_ladies, is_rookie, is_shinnyuu_kotei))
+            """, (venue_code, race_date_formatted, race_number, race_time, race_grade, is_nighter, is_ladies, is_rookie, is_shinnyuu_kotei))
             race_id = cursor.lastrowid
             logger.info(f"レース情報を新規登録: race_id={race_id}")
 
@@ -556,7 +555,6 @@ class DataManager:
             # 各艇の結果を保存
             trifecta_odds = result_data.get('trifecta_odds')
             is_invalid = 1 if result_data.get('is_invalid', False) else 0
-            winning_technique = result_data.get('winning_technique')
             kimarite_text = result_data.get('kimarite')  # テキスト形式の決まり手
 
             for result in result_data.get('results', []):
@@ -565,14 +563,13 @@ class DataManager:
 
                 # 1着の艇にだけオッズと決まり手を記録
                 odds = trifecta_odds if rank == 1 else None
-                technique = winning_technique if rank == 1 else None
                 kimarite = kimarite_text if rank == 1 else None
 
                 cursor.execute("""
                     INSERT INTO results (
-                        race_id, pit_number, rank, is_invalid, trifecta_odds, winning_technique, kimarite
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (race_id, pit_number, rank, is_invalid, odds, technique, kimarite))
+                        race_id, pit_number, rank, is_invalid, trifecta_odds, kimarite
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                """, (race_id, pit_number, rank, is_invalid, odds, kimarite))
 
             conn.commit()
             return True
