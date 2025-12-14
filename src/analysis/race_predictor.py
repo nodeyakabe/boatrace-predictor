@@ -656,12 +656,13 @@ class RacePredictor:
         race_id = row[0]
         return self.get_applied_rules(race_id)
 
-    def predict_race(self, race_id: int) -> List[Dict]:
+    def predict_race(self, race_id: int, use_beforeinfo: bool = True) -> List[Dict]:
         """
         レースの総合予想を実行
 
         Args:
             race_id: レースID
+            use_beforeinfo: 直前情報を使用するか（True: before予測, False: advance予測）
 
         Returns:
             [
@@ -1026,12 +1027,14 @@ class RacePredictor:
 
         # ========================================
         # 直前情報スコアリングと統合（FINAL_SCORE = PRE_SCORE * 0.6 + BEFORE_SCORE * 0.4）
+        # use_beforeinfo=False の場合はスキップ（advance予測）
         # ========================================
-        predictions = self._apply_beforeinfo_integration(
-            predictions,
-            race_id,
-            venue_code
-        )
+        if use_beforeinfo:
+            predictions = self._apply_beforeinfo_integration(
+                predictions,
+                race_id,
+                venue_code
+            )
 
         # ========================================
         # 進入予測モデルを適用（機能フラグで制御）
@@ -1515,7 +1518,8 @@ class RacePredictor:
         venue_code: str,
         wind_speed: Optional[float],
         wave_height: Optional[float],
-        wind_direction: Optional[str] = None
+        wind_direction: Optional[str] = None,
+        weather_condition: Optional[str] = None
     ) -> List[Dict]:
         """
         天候に基づくスコア補正を適用

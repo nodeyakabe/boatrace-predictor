@@ -275,6 +275,28 @@ class FastDataManager:
                     VALUES (?, ?, ?, ?)
                 """, values_list)
 
+            # 天候データを保存
+            if result_data.get('weather_data'):
+                weather = result_data['weather_data']
+                # 既存のrace_conditionsを削除
+                self.cursor.execute("DELETE FROM race_conditions WHERE race_id = ?", (race_id,))
+
+                # race_conditionsに挿入
+                self.cursor.execute("""
+                    INSERT INTO race_conditions
+                    (race_id, weather, wind_direction, wind_speed, wave_height,
+                     temperature, water_temperature, collected_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
+                """, (
+                    race_id,
+                    weather.get('weather'),
+                    weather.get('wind_direction'),
+                    weather.get('wind_speed'),
+                    weather.get('wave_height'),
+                    weather.get('temperature'),
+                    weather.get('water_temperature')
+                ))
+
             return True
 
         except Exception as e:
