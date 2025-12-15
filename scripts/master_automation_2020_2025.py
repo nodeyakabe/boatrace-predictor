@@ -17,11 +17,17 @@
 """
 import sys
 import os
+import io
 import subprocess
 import time
 import sqlite3
 from pathlib import Path
 from datetime import datetime
+
+# Windows環境での文字コード問題を回避
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace', line_buffering=True)
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace', line_buffering=True)
 
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -289,12 +295,12 @@ def main():
     log("")
     log(f"完了タスク: {len(completed)}/{len(tasks)}")
     for name in completed:
-        log(f"  ✓ {name}")
+        log(f"  OK {name}")
 
     if failed:
         log(f"\n失敗タスク: {len(failed)}")
         for name in failed:
-            log(f"  ✗ {name}")
+            log(f"  NG {name}")
 
     log("")
     log(f"ログファイル: {LOG_FILE}")

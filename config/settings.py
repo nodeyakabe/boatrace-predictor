@@ -294,33 +294,56 @@ def get_venue_type(venue_code: str) -> str:
 
 
 # ==============================================================================
-# 拡張スコア重み設定（2024年11月27日更新）
+# 拡張スコア重み設定（2025-12-15更新: YAML外部化対応）
 # ==============================================================================
-# 分析結果に基づく調整:
-# - ST関連: 勝率との相関が高い（3倍差）→ 重み強化
-# - 展示タイム: 勝率との相関が高い（3倍差）→ 重み強化
-# - チルト: 影響小 → 重み低下
+# 設定値はconfig/presets/scoring_weights.yamlから読み込み
+# YAMLファイルが存在しない場合はデフォルト値を使用
 # ==============================================================================
 
-EXTENDED_SCORE_WEIGHTS = {
-    'class': 10,           # 級別（A1=10, A2=7, B1=4, B2=1）
-    'fl_penalty': 10,      # F/Lペナルティ（最大-10）
-    'session': 5,          # 節間成績
-    'prev_race': 5,        # 前走レベル
-    'course_entry': 5,     # 進入傾向
-    'matchup': 5,          # 選手間相性
-    'motor': 5,            # モーター特性
-    'start_timing': 10,    # 平均ST（8→10に強化）
-    'exhibition': 10,      # 展示タイム（8→10に強化）
-    'tilt': 2,             # チルト角度（3→2に低下）
-    'recent_form': 8,      # 直近成績
-    'venue_affinity': 8,   # 会場別勝率（6→8に強化）
-    'place_rate': 5,       # 連対率
-}
+def _load_extended_score_weights():
+    """YAMLから拡張スコア重みを読み込み"""
+    try:
+        from config.presets.loader import load_scoring_weights
+        config = load_scoring_weights()
+        es = config.get('extended_scorer', {})
+        return {
+            'class': es.get('class_score', 10),
+            'fl_penalty': abs(es.get('fl_penalty_max', -10)),
+            'session': es.get('session', 5),
+            'prev_race': es.get('prev_race', 5),
+            'course_entry': es.get('course_entry', 5),
+            'matchup': es.get('matchup', 5),
+            'motor': es.get('motor', 5),
+            'start_timing': es.get('start_timing', 8),
+            'exhibition': es.get('exhibition', 10),
+            'tilt': es.get('tilt', 3),
+            'recent_form': es.get('recent_form', 8),
+            'venue_affinity': es.get('venue_affinity', 3),
+            'place_rate': 5,  # YAMLにない場合のデフォルト
+        }
+    except Exception:
+        # YAMLロード失敗時のフォールバック
+        return {
+            'class': 10,
+            'fl_penalty': 10,
+            'session': 5,
+            'prev_race': 5,
+            'course_entry': 5,
+            'matchup': 5,
+            'motor': 5,
+            'start_timing': 10,
+            'exhibition': 10,
+            'tilt': 2,
+            'recent_form': 8,
+            'venue_affinity': 8,
+            'place_rate': 5,
+        }
+
+EXTENDED_SCORE_WEIGHTS = _load_extended_score_weights()
 
 # 拡張スコアの最大値（正規化用）
-EXTENDED_SCORE_MAX = sum(v for k, v in EXTENDED_SCORE_WEIGHTS.items() if k != 'fl_penalty')  # 78点
-EXTENDED_SCORE_MIN = -EXTENDED_SCORE_WEIGHTS['fl_penalty']  # -10点
+EXTENDED_SCORE_MAX = sum(v for k, v in EXTENDED_SCORE_WEIGHTS.items() if k != 'fl_penalty')
+EXTENDED_SCORE_MIN = -EXTENDED_SCORE_WEIGHTS['fl_penalty']
 
 # 期待値計算用設定（Bパターン予想用）
 EXPECTED_VALUE_CONFIG = {

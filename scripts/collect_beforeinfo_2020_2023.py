@@ -15,9 +15,10 @@
 """
 import sys
 import os
-import io
 
+# 最初に文字コード設定（他のインポート前）
 if sys.platform == 'win32':
+    import io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace', line_buffering=True)
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace', line_buffering=True)
 
@@ -101,7 +102,7 @@ def save_beforeinfo_to_db(race_id, beforeinfo, db_path):
         conn = sqlite3.connect(db_path, timeout=30.0)
         cursor = conn.cursor()
 
-        # 1. exhibition_data テーブルに保存
+        # 1. race_details テーブルに保存（直前情報）
         exhibition_times = beforeinfo.get('exhibition_times', {})
         tilt_angles = beforeinfo.get('tilt_angles', {})
         parts = beforeinfo.get('parts_replacements', {})
@@ -111,34 +112,24 @@ def save_beforeinfo_to_db(race_id, beforeinfo, db_path):
         prev_race = beforeinfo.get('previous_race', {})
 
         for pit in range(1, 7):
-            # 既存データ削除
-            cursor.execute('DELETE FROM exhibition_data WHERE race_id = ? AND pit_number = ?',
-                          (race_id, pit))
-
-            # 新規データ挿入
-            cursor.execute('''
-                INSERT INTO exhibition_data (
-                    race_id, pit_number, exhibition_time, tilt_angle,
-                    parts_replacement, adjusted_weight
-                ) VALUES (?, ?, ?, ?, ?, ?)
-            ''', (
-                race_id, pit,
-                exhibition_times.get(pit),
-                tilt_angles.get(pit),
-                parts.get(pit, ''),
-                weights.get(pit)
-            ))
-
-            # race_details テーブル更新（ST、展示進入、前走成績）
+            # race_details テーブル更新（全ての直前情報）
             cursor.execute('''
                 UPDATE race_details
-                SET st_time = ?,
-                    exhibition_course = ?,
-                    prev_race_course = ?,
-                    prev_race_st = ?,
-                    prev_race_rank = ?
+                SET exhibition_time = COALESCE(?, exhibition_time),
+                    tilt_angle = COALESCE(?, tilt_angle),
+                    parts_replacement = COALESCE(?, parts_replacement),
+                    adjusted_weight = COALESCE(?, adjusted_weight),
+                    st_time = COALESCE(?, st_time),
+                    exhibition_course = COALESCE(?, exhibition_course),
+                    prev_race_course = COALESCE(?, prev_race_course),
+                    prev_race_st = COALESCE(?, prev_race_st),
+                    prev_race_rank = COALESCE(?, prev_race_rank)
                 WHERE race_id = ? AND pit_number = ?
             ''', (
+                exhibition_times.get(pit),
+                tilt_angles.get(pit),
+                parts.get(pit, '') or None,
+                weights.get(pit),
                 st_times.get(pit),
                 courses.get(pit),
                 prev_race.get(pit, {}).get('course'),

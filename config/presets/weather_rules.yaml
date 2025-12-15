@@ -1,0 +1,287 @@
+# 天候ルールプリセット
+# 風速・波高・風向による補正ルールを定義
+#
+# 作成日: 2025-12-15
+# データソース: weather_rules.json、weather_venue_wind_adjuster_v2.py
+
+meta:
+  version: "1.0"
+  updated_at: "2025-12-15"
+  updated_by: "manual"
+  data_source: "weatherテーブル + resultsテーブル (5640件)、2025年暴風データ(264レース)"
+
+# 風速カテゴリ定義
+wind_speed_categories:
+  calm:
+    min: 0
+    max: 2
+    label: "微風"
+  moderate:
+    min: 3
+    max: 5
+    label: "中風"
+  strong:
+    min: 6
+    max: 7
+    label: "強風"
+  storm:
+    min: 8
+    max: 99
+    label: "暴風"
+
+# 波高カテゴリ定義
+wave_height_categories:
+  calm:
+    min: 0
+    max: 2
+    label: "静穏"
+  moderate:
+    min: 3
+    max: 5
+    label: "中波"
+  rough:
+    min: 6
+    max: 99
+    label: "高波"
+
+# 風向カテゴリ定義
+wind_direction_categories:
+  headwind:
+    directions: ["北", "北北西", "北西", "北北東", "北東"]
+    description: "向かい風 - 1コース有利傾向"
+  tailwind:
+    directions: ["南", "南南西", "南西", "南南東", "南東"]
+    description: "追い風 - まくり有利傾向"
+  crosswind:
+    directions: ["東", "西", "東北東", "西北西", "東南東", "西南西"]
+    description: "横風 - 影響は会場による"
+
+# 全会場共通のグローバルルール
+global_rules:
+  # 全会場合計での風速別1コース勝率データ
+  # 弱風: 59.8%, 中風: 58.6%, 強風: 48.3%
+  wind_impact:
+    calm_course1_rate: 0.598
+    moderate_course1_rate: 0.586
+    strong_course1_rate: 0.483
+    strong_wind_penalty: -0.115
+
+  # 強風時（6m以上）の補正
+  strong_wind:
+    course_1_penalty: -5.0
+    course_2_bonus: 2.5
+    course_3_bonus: 2.5
+    course_4_bonus: 1.5
+    course_5_bonus: 1.0
+    course_6_bonus: 0.5
+
+  # 高波時（6cm以上）の補正
+  high_wave:
+    course_1_penalty: -3.0
+    course_2_bonus: 1.0
+    course_3_bonus: 1.0
+    course_4_bonus: 1.5
+    course_5_bonus: 1.0
+    course_6_bonus: 0.5
+
+  # 風向による補正（向かい風・追い風）
+  headwind:
+    course_1_bonus: 2.0
+    course_2_penalty: -1.0
+  tailwind:
+    course_1_penalty: -2.0
+    makuri_bonus: 3.0
+
+# 会場別オーバーライド（グローバルを上書き）
+venue_overrides:
+  "02":
+    name: "戸田"
+    description: "強風時に荒れやすい"
+    strong_wind:
+      course_1_penalty: -10.0
+      course_2_bonus: 5.0
+      course_3_bonus: 5.0
+
+  "08":
+    name: "常滑"
+    description: "強風の影響が最大"
+    strong_wind:
+      course_1_penalty: -15.0
+      course_2_bonus: 7.5
+      course_3_bonus: 7.5
+      course_4_bonus: 5.0
+      course_5_bonus: 3.0
+      course_6_bonus: 2.0
+
+  "10":
+    name: "三国"
+    description: "風・波の影響大"
+    strong_wind:
+      course_1_penalty: -7.5
+      course_2_bonus: 4.0
+      course_3_bonus: 4.0
+    high_wave:
+      course_1_penalty: -5.0
+      course_4_bonus: 3.0
+
+  "15":
+    name: "丸亀"
+    description: "強風でやや荒れやすい"
+    strong_wind:
+      course_1_penalty: -5.0
+
+  "06":
+    name: "浜名湖"
+    description: "風の影響中程度"
+    strong_wind:
+      course_1_penalty: -4.0
+
+  "20":
+    name: "若松"
+    description: "強風でやや荒れやすい"
+    strong_wind:
+      course_1_penalty: -4.0
+
+  "23":
+    name: "唐津"
+    description: "強風でも1コースは有利"
+    strong_wind:
+      course_1_penalty: -4.0
+
+  "24":
+    name: "大村"
+    description: "強風でも1コースは有利"
+    strong_wind:
+      course_1_penalty: -4.0
+
+# 暴風時（8m以上）の会場×風向別特殊補正
+# データソース: 2025年通年データ（264暴風レース）
+storm_wind_adjustments:
+  description: "暴風時（8m+）の会場×風向別1コース勝率補正（ベースライン56.3%からの差分）"
+
+  # 1コースに大幅な影響があるパターン
+  high_impact:
+    "02_北":
+      venue: "02"
+      wind_direction: "北"
+      diff: -31.3
+      win_rate: 0.250
+      sample: 12
+      score_adjustment: -15.7
+
+    "02_南東":
+      venue: "02"
+      wind_direction: "南東"
+      diff: -18.8
+      win_rate: 0.375
+      sample: 24
+      score_adjustment: -9.4
+
+    "10_西":
+      venue: "10"
+      wind_direction: "西"
+      diff: -23.0
+      win_rate: 0.333
+      sample: 30
+      score_adjustment: -11.5
+
+    "13_西":
+      venue: "13"
+      wind_direction: "西"
+      diff: 35.4
+      win_rate: 0.917
+      sample: 12
+      score_adjustment: 17.7
+
+    "14_東北東":
+      venue: "14"
+      wind_direction: "東北東"
+      diff: -56.3
+      win_rate: 0.000
+      sample: 6
+      score_adjustment: -20.0
+
+    "14_東南東":
+      venue: "14"
+      wind_direction: "東南東"
+      diff: -19.9
+      win_rate: 0.364
+      sample: 11
+      score_adjustment: -10.0
+
+    "19_北北東":
+      venue: "19"
+      wind_direction: "北北東"
+      diff: 34.6
+      win_rate: 0.909
+      sample: 11
+      score_adjustment: 17.3
+
+    "23_西":
+      venue: "23"
+      wind_direction: "西"
+      diff: 34.6
+      win_rate: 0.909
+      sample: 11
+      score_adjustment: 17.3
+
+  # 中程度の影響
+  medium_impact:
+    "03_東":
+      venue: "03"
+      wind_direction: "東"
+      diff: -8.2
+      win_rate: 0.481
+      sample: 52
+      score_adjustment: -4.1
+
+    "04_東南東":
+      venue: "04"
+      wind_direction: "東南東"
+      diff: -6.3
+      win_rate: 0.500
+      sample: 10
+      score_adjustment: -3.2
+
+    "08_北北西":
+      venue: "08"
+      wind_direction: "北北西"
+      diff: 3.7
+      win_rate: 0.600
+      sample: 15
+      score_adjustment: 1.9
+
+    "13_北":
+      venue: "13"
+      wind_direction: "北"
+      diff: 10.4
+      win_rate: 0.667
+      sample: 12
+      score_adjustment: 5.2
+
+    "23_東":
+      venue: "23"
+      wind_direction: "東"
+      diff: 3.7
+      win_rate: 0.600
+      sample: 10
+      score_adjustment: 1.9
+
+# 複合条件ルール
+compound_rules:
+  strong_wind_high_wave:
+    description: "強風かつ高波 - 大荒れ"
+    conditions:
+      wind_category: "strong"
+      wave_category: "rough"
+    adjustments:
+      course_1_penalty: -8.0
+      outer_course_bonus: 4.0
+
+  storm_any:
+    description: "暴風（8m+） - 予測困難"
+    conditions:
+      wind_category: "storm"
+    adjustments:
+      confidence_penalty: -0.2
+      course_1_penalty: -10.0

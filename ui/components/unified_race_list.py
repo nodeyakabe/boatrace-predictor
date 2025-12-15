@@ -458,6 +458,8 @@ def _render_bet_targets():
         # ============ 終了済みレース ============
         if finished_targets:
             with st.expander(f"✅ 終了済みレース ({len(finished_targets)}件)", expanded=False):
+                st.caption("💡 結果・払戻は「直前情報取得」ボタンで自動取得されます")
+
                 # ヘッダー行
                 col1, col2, col3, col4, col5, col6 = st.columns([2, 1.5, 1.5, 1.5, 2, 1])
                 with col1:
@@ -638,12 +640,12 @@ def _render_race_card_compact(t: Dict, key_prefix: str):
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
 
-    # 着順を取得
+    # 着順を取得（rankはTEXT型なので文字列比較）
     cursor.execute("""
         SELECT pit_number, rank
         FROM results
-        WHERE race_id = ? AND is_invalid = 0 AND rank <= 3
-        ORDER BY rank
+        WHERE race_id = ? AND is_invalid = 0 AND rank IN ('1', '2', '3')
+        ORDER BY CAST(rank AS INTEGER)
     """, (race_id,))
     result_rows = cursor.fetchall()
 
@@ -1745,23 +1747,39 @@ def _fetch_and_update_beforeinfo(target_races: List[Dict]):
         progress_bar.empty()
         status_text.empty()
 
-        # === オッズ取得処理（未確定レースのみ、並列実行） ===
-        odds_status_text = st.empty()
-        odds_progress_bar = st.progress(0)
-        odds_status_text.text("オッズデータ取得中...")
-
-        # 未確定レースのみ抽出（レース開始前）
+        # === レース分類（未確定/終了済み） ===
         unfinished_races = []
+        finished_races = []
         for race in target_races:
             race_time = race.get('race_time')
             if race_time:
                 try:
                     race_time_dt = datetime.strptime(f"{now.strftime('%Y-%m-%d')} {race_time}", "%Y-%m-%d %H:%M:%S")
-                    is_unfinished = now < race_time_dt  # レース開始前
-                    if is_unfinished:
+                    if now < race_time_dt:
                         unfinished_races.append(race)
+                    elif now > race_time_dt + timedelta(minutes=10):  # 10分以上経過で終了とみなす
+                        finished_races.append(race)
                 except:
                     pass
+
+        # === 終了レースの結果取得 ===
+        result_success_count = 0
+        if finished_races:
+            result_status_text = st.empty()
+            result_progress_bar = st.progress(0)
+            result_status_text.text("終了レースの結果を取得中...")
+
+            result_success_count = _fetch_results_for_finished_races(
+                finished_races, today_ymd, venue_name_map, result_progress_bar, result_status_text
+            )
+
+            result_progress_bar.empty()
+            result_status_text.empty()
+
+        # === オッズ取得処理（未確定レースのみ、並列実行） ===
+        odds_status_text = st.empty()
+        odds_progress_bar = st.progress(0)
+        odds_status_text.text("オッズデータ取得中...")
 
         odds_success_count = 0
         odds_skip_count = 0
@@ -1816,7 +1834,7 @@ def _fetch_and_update_beforeinfo(target_races: List[Dict]):
         odds_status_text.empty()
 
         # === 結果をまとめて表示 ===
-        if success_count > 0 or odds_success_count > 0:
+        if success_count > 0 or odds_success_count > 0 or result_success_count > 0:
             # DBに保存（メッセージなしで実行）
             if success_count > 0:
                 saved_count = _save_beforeinfo_to_db(fetched_data)
@@ -1827,6 +1845,8 @@ def _fetch_and_update_beforeinfo(target_races: List[Dict]):
                 result_parts.append(f"直前情報: {success_count}件")
             if odds_success_count > 0:
                 result_parts.append(f"オッズ: {odds_success_count}件")
+            if result_success_count > 0:
+                result_parts.append(f"レース結果: {result_success_count}件")
 
             result_msg = f"✅ 取得完了: {', '.join(result_parts)}"
             if no_data_count > 0:
@@ -2151,3 +2171,236 @@ def _save_beforeinfo_to_db(fetched_data: List[Dict]) -> int:
         traceback.print_exc()
 
     return saved_count
+
+
+def _fetch_results_for_finished_races(finished_races: List[Dict], date_str: str, venue_name_map: Dict, progress_bar, status_text) -> int:
+    """
+    終了レースの結果と払戻金を取得してDBに保存（直前情報取得から呼び出される）
+
+    Args:
+        finished_races: 終了レースのリスト
+        date_str: 日付文字列（YYYYMMDD形式）
+        venue_name_map: 会場コード→名前のマッピング
+        progress_bar: Streamlit進捗バー
+        status_text: Streamlitステータステキスト
+
+    Returns:
+        int: 成功件数
+    """
+    import sqlite3
+    from config.settings import DATABASE_PATH
+    from src.scraper.result_scraper import ResultScraper
+
+    if not finished_races:
+        return 0
+
+    scraper = ResultScraper()
+    success_count = 0
+
+    try:
+        conn = sqlite3.connect(DATABASE_PATH, timeout=30.0)
+        cursor = conn.cursor()
+
+        for idx, race in enumerate(finished_races):
+            race_id = race['race_id']
+            venue_code = race['venue_code']
+            race_number = race['race_number']
+            venue_name = venue_name_map.get(venue_code, f'会場{venue_code}')
+
+            status_text.text(f"結果取得中: {venue_name} {race_number}R...")
+            progress_bar.progress((idx + 1) / len(finished_races))
+
+            try:
+                # 既に結果がある場合はスキップ
+                cursor.execute("SELECT COUNT(*) FROM results WHERE race_id = ?", (race_id,))
+                if cursor.fetchone()[0] > 0:
+                    continue
+
+                # 結果を取得
+                result_data = scraper.get_race_result_complete(
+                    venue_code=f"{int(venue_code):02d}",
+                    race_date=date_str,
+                    race_number=race_number
+                )
+
+                if not result_data or not result_data.get('results'):
+                    continue
+
+                # 結果をDBに保存
+                results = result_data.get('results', [])
+                is_invalid = result_data.get('is_invalid', False)
+
+                for res in results:
+                    pit_number = res.get('pit_number')
+                    rank = res.get('rank')
+
+                    if pit_number and rank:
+                        rank_str = str(rank) if isinstance(rank, int) else rank
+                        cursor.execute("""
+                            INSERT OR REPLACE INTO results (race_id, pit_number, rank, is_invalid)
+                            VALUES (?, ?, ?, ?)
+                        """, (race_id, pit_number, rank_str, 1 if is_invalid else 0))
+
+                # 払戻金をDBに保存
+                payouts = result_data.get('payouts', {})
+                trifecta_payout = payouts.get('trifecta', [])
+
+                if trifecta_payout:
+                    for payout_data in trifecta_payout:
+                        combination = payout_data.get('combination', '')
+                        amount = payout_data.get('amount', 0)
+
+                        if combination and amount:
+                            cursor.execute("""
+                                INSERT OR REPLACE INTO payouts (race_id, bet_type, combination, amount)
+                                VALUES (?, 'trifecta', ?, ?)
+                            """, (race_id, combination, amount))
+
+                # 決まり手を保存
+                kimarite = result_data.get('kimarite')
+                if kimarite:
+                    cursor.execute("""
+                        UPDATE races SET winning_technique = ? WHERE id = ?
+                    """, (kimarite, race_id))
+
+                success_count += 1
+
+            except Exception as e:
+                logger.error(f"結果取得エラー ({venue_name} {race_number}R): {e}")
+                continue
+
+        conn.commit()
+        conn.close()
+
+    except Exception as e:
+        logger.error(f"結果取得処理エラー: {e}")
+
+    return success_count
+
+
+def _fetch_and_save_results(finished_targets: List[Dict], target_date_str: str):
+    """
+    終了レースの結果と払戻金を取得してDBに保存
+
+    Args:
+        finished_targets: 終了レースのリスト
+        target_date_str: 対象日付文字列（YYYY-MM-DD）
+    """
+    import sqlite3
+    from config.settings import DATABASE_PATH
+    from src.scraper.result_scraper import ResultScraper
+
+    if not finished_targets:
+        st.info("取得対象の終了レースがありません")
+        return
+
+    st.info(f"🔄 {len(finished_targets)}件のレース結果を取得中...")
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    scraper = ResultScraper()
+    success_count = 0
+    error_count = 0
+
+    # 日付形式変換（YYYY-MM-DD → YYYYMMDD）
+    date_str = target_date_str.replace('-', '')
+
+    try:
+        conn = sqlite3.connect(DATABASE_PATH, timeout=30.0)
+        cursor = conn.cursor()
+
+        for idx, t in enumerate(finished_targets):
+            race_id = t['race_id']
+            venue_code = t['venue_code']
+            race_number = t['race_number']
+            venue_name = t['venue_name']
+
+            status_text.text(f"取得中: {venue_name} {race_number}R...")
+            progress_bar.progress((idx + 1) / len(finished_targets))
+
+            try:
+                # 結果を取得
+                result_data = scraper.get_race_result_complete(
+                    venue_code=f"{int(venue_code):02d}",
+                    race_date=date_str,
+                    race_number=race_number
+                )
+
+                if not result_data or not result_data.get('results'):
+                    error_count += 1
+                    continue
+
+                # 結果をDBに保存
+                results = result_data.get('results', [])
+                is_invalid = result_data.get('is_invalid', False)
+
+                for res in results:
+                    pit_number = res.get('pit_number')
+                    rank = res.get('rank')
+
+                    if pit_number and rank:
+                        # rankをTEXT型に変換（DB定義に合わせる）
+                        rank_str = str(rank) if isinstance(rank, int) else rank
+
+                        # 既存データを削除
+                        cursor.execute(
+                            "DELETE FROM results WHERE race_id = ? AND pit_number = ?",
+                            (race_id, pit_number)
+                        )
+                        # 新規挿入
+                        cursor.execute("""
+                            INSERT INTO results (race_id, pit_number, rank, is_invalid)
+                            VALUES (?, ?, ?, ?)
+                        """, (race_id, pit_number, rank_str, 1 if is_invalid else 0))
+
+                # 払戻金をDBに保存
+                payouts = result_data.get('payouts', {})
+                trifecta_payout = payouts.get('trifecta', [])
+
+                if trifecta_payout:
+                    for payout_data in trifecta_payout:
+                        combination = payout_data.get('combination', '')
+                        amount = payout_data.get('amount', 0)
+
+                        if combination and amount:
+                            # 既存データを削除
+                            cursor.execute(
+                                "DELETE FROM payouts WHERE race_id = ? AND bet_type = 'trifecta' AND combination = ?",
+                                (race_id, combination)
+                            )
+                            # 新規挿入
+                            cursor.execute("""
+                                INSERT INTO payouts (race_id, bet_type, combination, amount)
+                                VALUES (?, 'trifecta', ?, ?)
+                            """, (race_id, combination, amount))
+
+                # 決まり手を保存
+                kimarite = result_data.get('kimarite')
+                if kimarite:
+                    cursor.execute("""
+                        UPDATE races SET winning_technique = ? WHERE id = ?
+                    """, (kimarite, race_id))
+
+                success_count += 1
+
+            except Exception as e:
+                logger.error(f"結果取得エラー ({venue_name} {race_number}R): {e}")
+                error_count += 1
+                continue
+
+        conn.commit()
+        conn.close()
+
+        progress_bar.empty()
+        status_text.empty()
+
+        if success_count > 0:
+            st.success(f"✅ 結果取得完了: {success_count}件成功" + (f", {error_count}件失敗" if error_count > 0 else ""))
+            st.rerun()  # 結果を反映するためにリロード
+        else:
+            st.warning("結果を取得できませんでした")
+
+    except Exception as e:
+        st.error(f"エラーが発生しました: {e}")
+        import traceback
+        st.code(traceback.format_exc())

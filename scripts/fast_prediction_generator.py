@@ -38,11 +38,23 @@ from config.settings import DATABASE_PATH, VENUES
 class FastPredictionGenerator:
     """高速予想生成クラス（キャッシュ最適化版）"""
 
-    def __init__(self):
+    def __init__(self, prediction_type: str = 'advance'):
+        """
+        Args:
+            prediction_type: 予測タイプ
+                - 'advance': 事前予測（直前情報なし）- バックテスト用
+                - 'before': 直前予測（直前情報あり）- 実運用用
+        """
         # キャッシュ有効モードでRacePredictorを初期化
         self.predictor = RacePredictor(use_cache=True)
         self.data_manager = DataManager()
         self.db_path = DATABASE_PATH
+        self.prediction_type = prediction_type
+
+        # use_beforeinfoフラグの決定
+        # advance = 直前情報を使わない (use_beforeinfo=False)
+        # before = 直前情報を使う (use_beforeinfo=True)
+        self.use_beforeinfo = (prediction_type == 'before')
 
         # 旧キャッシュ（互換性のため残すが使用しない）
         self.racer_cache = {}
@@ -153,11 +165,9 @@ class FastPredictionGenerator:
         race_id = race_info['race_id']
 
         # 通常のpredict_raceメソッドを使用
-        # ※ここで本当に最適化するなら、predict_raceの内部ロジックを
-        # キャッシュ活用版に書き換える必要がありますが、
-        # まずは既存のロジックを使って動作確認します
+        # use_beforeinfo: advance=False（事前情報のみ）, before=True（直前情報も使用）
         try:
-            predictions = self.predictor.predict_race(race_id)
+            predictions = self.predictor.predict_race(race_id, use_beforeinfo=self.use_beforeinfo)
             return predictions if predictions else []
         except Exception as e:
             print(f"  [!] 予想生成エラー (race_id={race_id}): {str(e)[:50]}")
@@ -178,6 +188,7 @@ class FastPredictionGenerator:
         print('高速予想生成（キャッシュ最適化版）')
         print('='*70)
         print(f'対象日: {target_date}')
+        print(f'予測タイプ: {self.prediction_type} (直前情報: {"使用" if self.use_beforeinfo else "不使用"})')
         print(f'既存スキップ: {"有効" if skip_existing else "無効"}')
         print('='*70)
 
@@ -275,10 +286,10 @@ class FastPredictionGenerator:
                 predictions = self.predict_race_fast(race, entries)
 
                 if predictions and len(predictions) > 0:
-                    # データベースに保存
-                    if self.data_manager.save_race_predictions(race['race_id'], predictions):
+                    # データベースに保存（prediction_typeを明示的に指定）
+                    if self.data_manager.save_race_predictions(race['race_id'], predictions, prediction_type=self.prediction_type):
                         success_count += 1
-                        print(f'[OK] {len(predictions)}艇')
+                        print(f'[OK] {len(predictions)}艇 ({self.prediction_type})')
                     else:
                         error_count += 1
                         print('[!] DB保存失敗')
@@ -323,6 +334,8 @@ def main():
     parser = argparse.ArgumentParser(description='高速予想生成（キャッシュ最適化版）')
     parser.add_argument('--date', type=str, help='対象日（YYYY-MM-DD）。未指定の場合は今日')
     parser.add_argument('--force', action='store_true', help='既存の予想を上書き')
+    parser.add_argument('--type', type=str, default='advance', choices=['advance', 'before'],
+                        help='予測タイプ: advance=事前予測（直前情報なし）, before=直前予測（直前情報あり）。デフォルト: advance')
 
     args = parser.parse_args()
 
@@ -333,7 +346,7 @@ def main():
         target_date = datetime.now().strftime('%Y-%m-%d')
 
     try:
-        generator = FastPredictionGenerator()
+        generator = FastPredictionGenerator(prediction_type=args.type)
         results = generator.generate_all_predictions(
             target_date,
             skip_existing=not args.force

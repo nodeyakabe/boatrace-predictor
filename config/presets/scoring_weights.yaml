@@ -1,0 +1,198 @@
+# スコアリング重み設定
+#
+# 旧ロジック（race_predictor.py）のスコアリングパラメータを
+# 外部ファイルに集約し、調整・最適化を容易にする
+#
+# 更新日: 2025-12-15
+# 目的: パラメータの透明性向上、保守性改善
+
+meta:
+  version: "1.0"
+  updated_at: "2025-12-15"
+  description: "RacePredictorのスコアリング重み設定"
+
+# ============================================================
+# ExtendedScorerの重み設定
+# ============================================================
+extended_scorer:
+  # 各要素の最大スコア（合計62点）
+  class_score: 10        # 級別スコア (A1=10, A2=7, B1=4, B2=1)
+  fl_penalty_max: -10    # F/Lペナルティ最大（負の値）
+  session: 5             # 節間成績スコア
+  prev_race: 5           # 前走レベルスコア
+  course_entry: 5        # 進入傾向スコア
+  matchup: 5             # 選手間相性スコア
+  motor: 5               # モーター特性スコア
+  start_timing: 8        # 平均STスコア
+  exhibition: 10         # 展示タイムスコア（重要指標）
+  tilt: 3                # チルト角度スコア
+  recent_form: 8         # 直近成績スコア
+  venue_affinity: 3      # 会場別勝率スコア
+
+  # 正規化設定
+  total_weight: 20.0     # ExtendedScoreの最終的な重み
+  max_possible: 62       # 合計最大スコア
+  min_possible: -10      # 合計最小スコア
+
+# ============================================================
+# BEFORE_PATTERNSの倍率設定
+# ============================================================
+before_patterns:
+  # 1着予測パターン
+  first_place:
+    pre1_st1:
+      multiplier: 1.411
+      description: "PRE1位 & ST1位"
+    pre1_ex1:
+      multiplier: 1.321
+      description: "PRE1位 & 展示1位"
+    pre1_st1_ex1:
+      multiplier: 1.289
+      description: "PRE1位 & ST1位 & 展示1位"
+    pre1_2_ex_st_1_2:
+      multiplier: 1.212
+      description: "PRE1-2位 & 展示1-2位 & ST1-2位"
+    pre1_st1_2:
+      multiplier: 1.191
+      description: "PRE1位 & ST1-2位"
+    pre1_ex1_2:
+      multiplier: 1.165
+      description: "PRE1位 & 展示1-2位"
+    st_rank_1:
+      multiplier: 1.147
+      description: "ST1位"
+    ex_rank_1:
+      multiplier: 1.103
+      description: "展示1位"
+
+  # 2着予測パターン
+  second_place:
+    pre2_st1_2:
+      multiplier: 1.176
+      description: "PRE2位 & ST1-2位"
+    pre2_3_st_ex_1_2:
+      multiplier: 1.134
+      description: "PRE2-3位 & ST1-2位 & 展示1-2位"
+    pre2_ex1_2:
+      multiplier: 1.098
+      description: "PRE2位 & 展示1-2位"
+
+  # 3着予測パターン
+  third_place:
+    pre3_st1_3:
+      multiplier: 1.122
+      description: "PRE3位 & ST1-3位"
+    pre3_4_ex1_3:
+      multiplier: 1.087
+      description: "PRE3-4位 & 展示1-3位"
+    outer_st1_2:
+      multiplier: 1.065
+      description: "アウトコース(4-6) & ST1-2位"
+
+  # 3着以内予測パターン（TOP3）
+  top3:
+    ex_st_1_3:
+      multiplier: 1.154
+      description: "展示1-3位 & ST1-3位"
+    pre1_4_ex1_2:
+      multiplier: 1.104
+      description: "PRE1-4位 & 展示1-2位"
+    ex_rank_1_2:
+      multiplier: 1.051
+      description: "展示1-2位"
+
+# ============================================================
+# 動的重み調整（会場・グレード別）
+# ============================================================
+dynamic_weights:
+  # 基本重み（合計100）
+  base:
+    course_weight: 35
+    racer_weight: 35
+    motor_weight: 20
+    kimarite_weight: 5
+    grade_weight: 5
+
+  # モーター重視会場
+  high_motor_venues:
+    venues: ["23", "22", "18", "21"]  # 唐津、福岡、徳山、芦屋
+    adjustments:
+      motor_weight: +8
+      course_weight: -5
+      kimarite_weight: +2
+
+  # イン強会場
+  high_in_venues:
+    adjustments:
+      course_weight: +3
+      motor_weight: -2
+      racer_weight: -1
+
+  # イン弱会場
+  low_in_venues:
+    adjustments:
+      course_weight: -5
+      motor_weight: +4
+      racer_weight: +2
+
+  # 重賞レース（SG/G1）
+  high_grade:
+    grades: ["SG", "G1"]
+    adjustments:
+      grade_weight: +3
+      racer_weight: +2
+      kimarite_weight: -3
+      motor_weight: -2
+
+  # 準重賞（G2/G3）
+  mid_grade:
+    grades: ["G2", "G3"]
+    adjustments:
+      grade_weight: +2
+      kimarite_weight: -2
+
+# ============================================================
+# 補正の最大影響範囲
+# ============================================================
+adjustment_limits:
+  max_exhibition_adjustment: 10.0    # 展示補正の最大値
+  max_rule_adjustment: 10.0          # 法則補正の最大値
+  max_weather_adjustment: 8.0        # 天候補正の最大値
+  max_tide_adjustment: 5.0           # 潮位補正の最大値
+  max_compound_buff: 15.0            # 複合バフの最大値
+
+# ============================================================
+# コース×ランク勝率（全国平均）
+# ============================================================
+course_rank_win_rates:
+  # (コース, ランク): 勝率
+  course_1:
+    A1: 0.715
+    A2: 0.611
+    B1: 0.424
+    B2: 0.303
+  course_2:
+    A1: 0.195
+    A2: 0.167
+    B1: 0.096
+    B2: 0.081
+  course_3:
+    A1: 0.182
+    A2: 0.162
+    B1: 0.091
+    B2: 0.066
+  course_4:
+    A1: 0.138
+    A2: 0.119
+    B1: 0.076
+    B2: 0.039
+  course_5:
+    A1: 0.100
+    A2: 0.073
+    B1: 0.044
+    B2: 0.020
+  course_6:
+    A1: 0.066
+    A2: 0.034
+    B1: 0.017
+    B2: 0.006

@@ -38,6 +38,8 @@ from src.utils.db_connection_pool import get_connection
 from src.prediction.rule_based_engine import RuleBasedEngine
 from config.feature_flags import is_feature_enabled
 from config.optimized_pattern_multipliers import get_optimized_multiplier
+from config.presets.loader import get_pattern_multiplier, get_dynamic_weights_config
+from src.analysis.scorers import PatternScorer, BEFORE_PATTERNS_1ST, BEFORE_PATTERNS_2ND, BEFORE_PATTERNS_3RD, BEFORE_PATTERNS_TOP3
 # 階層的確率モデル（条件付き確率）
 try:
     from src.prediction.hierarchical_predictor import HierarchicalPredictor
@@ -57,164 +59,9 @@ from config.venue_course_win_rates import get_venue_course_win_rate
 # ==================================================
 # BEFORE情報パターンボーナス定義
 # ==================================================
-# バックテスト検証済み（200レース、2025年データ）
-# 基準: ベースライン55.5%を維持しつつ、該当時60-82%の高精度
-
-BEFORE_PATTERNS_1ST = [
-    # 1着予測用パターン（4パターン、全て55.5%維持確認済み）
-    {
-        'name': 'pre1_st1',
-        'description': 'PRE1位 & ST1位',
-        'multiplier': 1.411,
-        'target_rank': 1,
-        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 1 and st_rank == 1,
-    },
-    {
-        'name': 'pre1_ex1',
-        'description': 'PRE1位 & 展示1位',
-        'multiplier': 1.286,
-        'target_rank': 1,
-        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 1 and ex_rank == 1,
-    },
-    {
-        'name': 'pre1_ex1_3_st1_3',
-        'description': 'PRE1位 & 展示1-3位 & ST1-3位',
-        'multiplier': 1.328,
-        'target_rank': 1,
-        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 1 and ex_rank <= 3 and st_rank <= 3,
-    },
-    {
-        'name': 'pre1_st1_3',
-        'description': 'PRE1位 & ST1-3位',
-        'multiplier': 1.310,
-        'target_rank': 1,
-        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 1 and st_rank <= 3,
-    },
-]
-
-BEFORE_PATTERNS_2ND = [
-    # 2着予測用パターン（7パターン、20%以上または+5%以上）
-    {
-        'name': 'pre2_3_ex1_2',
-        'description': 'PRE2-3位 & 展示1-2位',
-        'multiplier': 1.084,
-        'target_rank': 2,
-        'condition': lambda pre_rank, ex_rank, st_rank: 2 <= pre_rank <= 3 and ex_rank <= 2,
-    },
-    {
-        'name': 'pre2_ex1_3_st1_3',
-        'description': 'PRE2位 & 展示1-3位 & ST1-3位',
-        'multiplier': 1.081,
-        'target_rank': 2,
-        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 2 and ex_rank <= 3 and st_rank <= 3,
-    },
-    {
-        'name': 'ex1_3_pre2_3',
-        'description': '展示1-3位 & PRE2-3位',
-        'multiplier': 1.069,
-        'target_rank': 2,
-        'condition': lambda pre_rank, ex_rank, st_rank: ex_rank <= 3 and 2 <= pre_rank <= 3,
-    },
-    {
-        'name': 'pre2_st1_3',
-        'description': 'PRE2位 & ST1-3位',
-        'multiplier': 1.064,
-        'target_rank': 2,
-        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 2 and st_rank <= 3,
-    },
-    {
-        'name': 'pre2_ex1_3',
-        'description': 'PRE2位 & 展示1-3位',
-        'multiplier': 1.063,
-        'target_rank': 2,
-        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 2 and ex_rank <= 3,
-    },
-    {
-        'name': 'ex_rank_2',
-        'description': '展示2位',
-        'multiplier': 1.035,
-        'target_rank': 2,
-        'condition': lambda pre_rank, ex_rank, st_rank: ex_rank == 2,
-    },
-    {
-        'name': 'st_rank_2_3',
-        'description': 'ST2-3位',
-        'multiplier': 1.034,
-        'target_rank': 2,
-        'condition': lambda pre_rank, ex_rank, st_rank: 2 <= st_rank <= 3,
-    },
-]
-
-BEFORE_PATTERNS_3RD = [
-    # 3着予測用パターン（4パターン、20%以上または+3%以上）
-    {
-        'name': 'pre3_4_ex2_4',
-        'description': 'PRE3-4位 & 展示2-4位',
-        'multiplier': 1.032,
-        'target_rank': 3,
-        'condition': lambda pre_rank, ex_rank, st_rank: 3 <= pre_rank <= 4 and 2 <= ex_rank <= 4,
-    },
-    {
-        'name': 'pre3_ex1_3',
-        'description': 'PRE3位 & 展示1-3位',
-        'multiplier': 1.031,
-        'target_rank': 3,
-        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 3 and ex_rank <= 3,
-    },
-    {
-        'name': 'outer_st1_2',
-        'description': 'アウトコース(4-6枠) & ST1-2位',
-        'multiplier': 1.022,
-        'target_rank': 3,
-        'condition': lambda pre_rank, ex_rank, st_rank, pit_number=None: pit_number >= 4 and st_rank <= 2 if pit_number is not None else False,
-    },
-    {
-        'name': 'pre3_4_ex1_3_st1_3',
-        'description': 'PRE3-4位 & 展示1-3位 & ST1-3位',
-        'multiplier': 1.020,
-        'target_rank': 3,
-        'condition': lambda pre_rank, ex_rank, st_rank: 3 <= pre_rank <= 4 and ex_rank <= 3 and st_rank <= 3,
-    },
-]
-
-BEFORE_PATTERNS_TOP3 = [
-    # 3着以内予測用パターン（5パターン、三連単・三連複に最適）
-    {
-        'name': 'pre1_3_st1_3',
-        'description': 'PRE1-3位 & ST1-3位',
-        'multiplier': 1.130,
-        'target_rank': 'top3',
-        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank <= 3 and st_rank <= 3,
-    },
-    {
-        'name': 'pre1_3_ex1_3',
-        'description': 'PRE1-3位 & 展示1-3位',
-        'multiplier': 1.123,
-        'target_rank': 'top3',
-        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank <= 3 and ex_rank <= 3,
-    },
-    {
-        'name': 'ex1_3_st1_3',
-        'description': '展示1-3位 & ST1-3位',
-        'multiplier': 1.108,
-        'target_rank': 'top3',
-        'condition': lambda pre_rank, ex_rank, st_rank: ex_rank <= 3 and st_rank <= 3,
-    },
-    {
-        'name': 'pre1_4_ex1_2',
-        'description': 'PRE1-4位 & 展示1-2位',
-        'multiplier': 1.104,
-        'target_rank': 'top3',
-        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank <= 4 and ex_rank <= 2,
-    },
-    {
-        'name': 'ex_rank_1_2',
-        'description': '展示1-2位',
-        'multiplier': 1.051,
-        'target_rank': 'top3',
-        'condition': lambda pre_rank, ex_rank, st_rank: ex_rank <= 2,
-    },
-]
+# パターン定義はsrc/analysis/scorers/pattern_scorer.pyに移動
+# BEFORE_PATTERNS_1ST, BEFORE_PATTERNS_2ND, BEFORE_PATTERNS_3RD, BEFORE_PATTERNS_TOP3
+# はsrc.analysis.scorersからインポートされる
 
 
 class RacePredictor:
@@ -1011,10 +858,13 @@ class RacePredictor:
             predictions.append(prediction_entry)
 
         # 展示データ補正を適用
-        predictions = self._apply_exhibition_adjustment(
-            predictions,
-            race_id
-        )
+        # NOTE: ExtendedScorerで既に展示タイムスコアを加算しているため、
+        # 重複加算を避けるためデフォルトで無効化（2025-12-15 バグ修正）
+        if is_feature_enabled('legacy_exhibition_adjustment'):
+            predictions = self._apply_exhibition_adjustment(
+                predictions,
+                race_id
+            )
 
         # 法則ベース補正を適用
         predictions = self._apply_rule_based_adjustment(

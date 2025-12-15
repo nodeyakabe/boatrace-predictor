@@ -3,11 +3,20 @@
 """
 2024年の全予測データを生成するスクリプト
 338日間、12,300レース分の予測データを生成
+
+【重要】
+バックテスト用にはadvance予測（直前情報なし）を使用する必要がある。
+直前情報（展示タイム、ST等）は当日にならないと分からないため、
+過去データでの検証には使用できない。
+
+- advance: 事前予測（直前情報なし）→ バックテストに使用
+- before: 直前予測（直前情報あり）→ 実運用・リアルタイム予測に使用
 """
 import sys
 import os
 import io
 import sqlite3
+import argparse
 from datetime import datetime, timedelta
 import subprocess
 
@@ -39,9 +48,21 @@ def get_2024_dates():
     return dates
 
 def main():
+    parser = argparse.ArgumentParser(description='2024年 全予測データ生成')
+    parser.add_argument('--type', type=str, default='advance', choices=['advance', 'before'],
+                        help='予測タイプ: advance=事前予測（直前情報なし）, before=直前予測（直前情報あり）。デフォルト: advance')
+    args = parser.parse_args()
+
+    prediction_type = args.type
+
     print("=" * 70)
     print("2024年 全予測データ生成")
     print("=" * 70)
+    print(f"予測タイプ: {prediction_type}")
+    if prediction_type == 'advance':
+        print("  → 直前情報を使用しない（バックテスト用）")
+    else:
+        print("  → 直前情報を使用する（実運用用）")
 
     dates = get_2024_dates()
     print(f"対象日数: {len(dates)}日")
@@ -57,11 +78,12 @@ def main():
     for i, date in enumerate(dates, 1):
         print(f"\n[{i}/{len(dates)}] {date} を処理中...")
 
-        # fast_prediction_generator.pyを呼び出し
+        # fast_prediction_generator.pyを呼び出し（--typeを明示的に指定）
         cmd = [
             sys.executable,
             os.path.join(PROJECT_ROOT, 'scripts', 'fast_prediction_generator.py'),
-            '--date', date
+            '--date', date,
+            '--type', prediction_type
         ]
 
         try:

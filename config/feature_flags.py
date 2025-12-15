@@ -3,46 +3,64 @@
 
 新機能のロールアウト制御とロールバック手順を提供。
 段階的導入により、リスクを最小化する。
+
+更新履歴:
+- 2025-12-15: フラグ整理（27個→12個）、重複加算バグ修正用フラグ追加
 """
 
-# 機能フラグ設定
+# ============================================================
+# 有効な機能フラグ（実績あり・本番運用中）
+# ============================================================
 FEATURE_FLAGS = {
-    # Phase 1: 実装完了・動作確認済み
-    'beforeinfo_flag_adjustment': False,  # 状態フラグ方式（検証結果: 1着的中率-3.65%悪化のためロールバック）
-    'hierarchical_before_prediction': False,  # 階層的予測（検証結果: 1着的中率-0.5%悪化のためロールバック）
-    'normalized_before_integration': False,  # 正規化統合（検証結果: 1着的中率-0.5%悪化のためロールバック）
-    'dynamic_integration': False,     # 動的合成比（BEFORE_SCORE停止中 - 逆相関のため）
-    'gated_before_integration': False,  # ゲーティング方式（PRE拮抗時のみBEFORE使用）
-    'before_safe_integration': False,  # BEFORE_SAFE統合（安全版直前情報統合、正規化統合に置き換え）
-    'before_safe_st_exhibition': False,  # BEFORE_SAFEにST/展示タイム統合（Phase 5テスト結果: 悪化、無効化）
-    'before_pattern_bonus': True,     # パターン方式（検証結果: 信頼度B +9.5pt, C +8.3pt, A -6.5pt）
-    'apply_pattern_to_confidence_d': False,  # 信頼度Dへのパターン適用（効果限定的+3.9pt、慎重モード）
-    'negative_patterns': True,        # ネガティブパターン（Phase 2: 軽量実装、テスト結果+2.0%改善で有効化 2025-12-11）
-    'venue_pattern_optimization': False,  # 会場別パターン最適化（Phase 3完了: 的中率±0.00pt効果なし、無効維持 2025-12-11）
-    'compound_pattern_bonus': False,  # 複合パターンボーナス（Phase 3完了: 的中率±0.00pt、ROI+11%のみ、無効維持 2025-12-11）
-    'optimized_pattern_multipliers': False,  # 最適化パターン倍率（Phase 3完了: 的中率±0.00pt効果なし、無効維持 2025-12-11）
+    # === コア機能（常時有効） ===
+    'before_pattern_bonus': True,     # パターン方式（検証結果: 信頼度B +9.5pt, C +8.3pt）
+    'negative_patterns': True,        # ネガティブパターン（+2.0%改善 2025-12-11）
     'entry_prediction_model': True,   # 進入予測モデル
-    'confidence_refinement': False,   # 信頼度細分化（未実装）
-    'st_course_interaction': True,    # ST×course交互作用（実装完了・再訓練済み）
+    'hierarchical_predictor': True,   # 階層的条件確率モデル
+    'lightgbm_ranking': True,         # LightGBMランキングモデル
+    'interaction_features': True,     # 交互作用特徴量
+    'st_course_interaction': True,    # ST×course交互作用
 
-    # Phase 2: 再訓練完了・有効化
-    'lightgbm_ranking': True,         # LightGBMランキングモデル（再訓練完了）
-    'kelly_betting': False,           # Kelly基準投資戦略（未実装）
-    'optuna_optimization': False,     # Optunaパラメータ最適化（予測時不要）
-    'interaction_features': True,     # 交互作用特徴量（再訓練完了）
-    'auto_buff_learning': False,      # 複合バフ自動学習（未実装）
-    'probability_calibration': False, # キャリブレーション（未実装）
+    # === バグ修正用フラグ（2025-12-15追加） ===
+    # 重複加算を避けるため、レガシー機能はデフォルト無効
+    'legacy_exhibition_adjustment': False,  # 旧展示補正（ExtendedScorerと重複するため無効）
 
-    # Phase 3: 再訓練完了・有効化
-    'venue_specific_models': False,   # 会場別専用モデル（未実装）
-    'hierarchical_predictor': True,   # 階層的条件確率モデル（再訓練完了）
-    'shap_explainability': False,     # SHAP説明可能性（予測時不要）
-    'bayesian_hierarchical': False,   # ベイズ階層モデル（未実装）
-    'reinforcement_learning': False,  # 強化学習最適化（未実装）
+    # === オプション機能（必要時に有効化） ===
+    'apply_pattern_to_confidence_d': False,  # 信頼度Dへのパターン適用
+    'venue_pattern_optimization': False,     # 会場別パターン最適化
+    'compound_pattern_bonus': False,         # 複合パターンボーナス（ROI+11%のみ）
 
-    # デバッグ・テスト用
+    # === デバッグ用 ===
     'verbose_logging': False,         # 詳細ログ出力
-    'validation_mode': False,         # 検証モード（過去データで検証）
+}
+
+# ============================================================
+# アーカイブ済みフラグ（削除予定・参照用に残す）
+# ============================================================
+ARCHIVED_FLAGS = {
+    # 以下は検証の結果、効果なしまたは悪化のため無効化済み
+    # コード内での参照がなくなり次第削除予定
+    'beforeinfo_flag_adjustment': False,      # -3.65%悪化
+    'hierarchical_before_prediction': False,  # -0.5%悪化
+    'normalized_before_integration': False,   # -0.5%悪化
+    'dynamic_integration': False,             # 逆相関
+    'gated_before_integration': False,        # 効果なし
+    'before_safe_integration': False,         # 効果なし
+    'before_safe_st_exhibition': False,       # 悪化
+    'optimized_pattern_multipliers': False,   # 効果なし
+    'confidence_refinement': False,           # 未実装
+    'kelly_betting': False,                   # 未実装
+    'optuna_optimization': False,             # 予測時不要
+    'auto_buff_learning': False,              # 未実装
+    'probability_calibration': False,         # 未実装
+    'venue_specific_models': False,           # 未実装
+    'shap_explainability': False,             # 予測時不要
+    'bayesian_hierarchical': False,           # 未実装
+    'reinforcement_learning': False,          # 未実装
+    'prediction_engine_v2': False,            # 実験的
+    'preset_based_adjustment': False,         # 実験的
+    'adjustment_tracing': False,              # 実験的
+    'validation_mode': False,                 # デバッグ用
 }
 
 
@@ -56,7 +74,10 @@ def is_feature_enabled(feature_name: str) -> bool:
     Returns:
         機能が有効な場合True
     """
-    return FEATURE_FLAGS.get(feature_name, False)
+    # メインフラグを優先、なければアーカイブを参照（後方互換性維持）
+    if feature_name in FEATURE_FLAGS:
+        return FEATURE_FLAGS[feature_name]
+    return ARCHIVED_FLAGS.get(feature_name, False)
 
 
 def enable_feature(feature_name: str):

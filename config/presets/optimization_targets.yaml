@@ -1,0 +1,225 @@
+# 最適化対象パラメータ定義
+#
+# グリッドサーチ/ベイズ最適化の対象となるパラメータを定義
+# 作成日: 2025-12-15
+
+meta:
+  version: "1.0"
+  updated_at: "2025-12-15"
+  description: "プリセット値の最適化対象パラメータ定義"
+
+# 会場特性の最適化対象
+venue_adjustments:
+  parameters:
+    course_1_base_bonus:
+      description: "1コース基本ボーナス"
+      default: 5.0
+      min: -5.0
+      max: 15.0
+      step: 1.0
+
+    course_1_a1_bonus:
+      description: "1コースA1選手ボーナス"
+      default: 5.0
+      min: 0.0
+      max: 10.0
+      step: 1.0
+
+    course_1_b_penalty:
+      description: "1コースB級選手ペナルティ"
+      default: -3.0
+      min: -10.0
+      max: 0.0
+      step: 1.0
+
+    outer_course_base_penalty:
+      description: "アウトコース（4-6）基本ペナルティ"
+      default: -2.0
+      min: -10.0
+      max: 0.0
+      step: 1.0
+
+    in_strong_venue_bonus:
+      description: "イン強会場ボーナス（大村等）"
+      default: 10.0
+      min: 5.0
+      max: 15.0
+      step: 1.0
+
+    in_weak_venue_penalty:
+      description: "イン弱会場ペナルティ（戸田等）"
+      default: -5.0
+      min: -10.0
+      max: 0.0
+      step: 1.0
+
+# 天候補正の最適化対象
+weather_adjustments:
+  parameters:
+    wind_threshold_strong:
+      description: "強風判定閾値（m/s）"
+      default: 6.0
+      min: 4.0
+      max: 8.0
+      step: 1.0
+
+    wind_threshold_storm:
+      description: "暴風判定閾値（m/s）"
+      default: 8.0
+      min: 7.0
+      max: 10.0
+      step: 1.0
+
+    strong_wind_course_1_penalty:
+      description: "強風時1コースペナルティ"
+      default: -5.0
+      min: -15.0
+      max: 0.0
+      step: 1.0
+
+    strong_wind_outer_bonus:
+      description: "強風時アウトコースボーナス"
+      default: 2.5
+      min: 0.0
+      max: 10.0
+      step: 0.5
+
+    wave_threshold:
+      description: "高波判定閾値（cm）"
+      default: 6
+      min: 3
+      max: 10
+      step: 1
+
+    high_wave_course_1_penalty:
+      description: "高波時1コースペナルティ"
+      default: -3.0
+      min: -10.0
+      max: 0.0
+      step: 1.0
+
+# 潮位補正の最適化対象
+tide_adjustments:
+  parameters:
+    rising_course_1_bonus:
+      description: "上げ潮1コースボーナス"
+      default: 2.0
+      min: 0.0
+      max: 5.0
+      step: 0.5
+
+    rising_outer_penalty:
+      description: "上げ潮アウトコースペナルティ"
+      default: -0.5
+      min: -3.0
+      max: 0.0
+      step: 0.5
+
+    falling_course_1_penalty:
+      description: "下げ潮1コースペナルティ"
+      default: -2.0
+      min: -5.0
+      max: 0.0
+      step: 0.5
+
+    falling_outer_bonus:
+      description: "下げ潮アウトコースボーナス"
+      default: 1.0
+      min: 0.0
+      max: 3.0
+      step: 0.5
+
+    tokuyama_multiplier:
+      description: "徳山会場の潮位補正係数"
+      default: 1.5
+      min: 1.0
+      max: 2.5
+      step: 0.25
+
+# スコア統合の最適化対象
+integration_weights:
+  parameters:
+    pre_weight:
+      description: "事前スコアの重み（固定モード用）"
+      default: 0.6
+      min: 0.4
+      max: 0.8
+      step: 0.05
+
+    before_factor:
+      description: "直前情報の影響係数（加算モード用）"
+      default: 1.0
+      min: 0.5
+      max: 2.0
+      step: 0.1
+
+    gating_threshold:
+      description: "ゲート方式の拮抗判定閾値（点）"
+      default: 5.0
+      min: 2.0
+      max: 10.0
+      step: 1.0
+
+    contested_before_factor:
+      description: "拮抗時の直前情報係数"
+      default: 1.3
+      min: 1.0
+      max: 2.0
+      step: 0.1
+
+# 複合条件の最適化対象
+compound_rules:
+  parameters:
+    tokuyama_high_tide_a1_bonus:
+      description: "徳山満潮A1イン複合ボーナス"
+      default: 8.0
+      min: 5.0
+      max: 15.0
+      step: 1.0
+
+    omura_b_in_bonus:
+      description: "大村B級イン複合ボーナス"
+      default: 3.0
+      min: 0.0
+      max: 8.0
+      step: 1.0
+
+    toda_b_in_penalty:
+      description: "戸田B級イン複合ペナルティ"
+      default: -4.0
+      min: -10.0
+      max: 0.0
+      step: 1.0
+
+    strong_wind_high_wave_penalty:
+      description: "強風×高波複合ペナルティ（1コース）"
+      default: -8.0
+      min: -15.0
+      max: 0.0
+      step: 1.0
+
+# 全体制約
+constraints:
+  min_single_adjustment: -20.0
+  max_single_adjustment: 20.0
+  max_total_adjustment: 30.0
+  min_final_score: 0.0
+  max_final_score: 100.0
+
+# 最適化設定
+optimization_config:
+  default_mode: "grid"
+  default_iterations: 50
+  default_test_period_days: 90
+  min_hit_rate_constraint: 0.55
+  target_recovery_rate: 0.85
+
+  # 評価関数の重み
+  evaluation_weights:
+    recovery_rate: 0.7
+    hit_rate: 0.3
+
+  # ベイズ最適化設定
+  bayesian:
+    init_points: 5
+    random_state: 42

@@ -273,8 +273,10 @@ BoatRace/
 │
 ├── docs/                  # ドキュメント
 │   ├── 残タスク一覧.md   # プロジェクト管理
-│   ├── betting_implementation_status.md
+│   ├── ARCHITECTURE.md   # モジュール構成図（2025-12-15新規）
+│   ├── CONFIGURATION.md  # 設定ファイル一覧（2025-12-15新規）
 │   ├── DATABASE_SCHEMA.md
+│   ├── betting_implementation_status.md
 │   └── archive/          # アーカイブされた古いドキュメント
 │
 ├── backups/              # バックアップディレクトリ

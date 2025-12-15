@@ -1,0 +1,230 @@
+# 潮位補正プリセット
+# 満潮/干潮/上げ潮/下げ潮による補正ルールを定義
+#
+# 作成日: 2025-12-15
+# データソース: tide_adjuster.py、rdmdb_tideテーブル分析結果
+
+meta:
+  version: "1.0"
+  updated_at: "2025-12-15"
+  updated_by: "manual"
+  data_source: "気象庁潮位データ + レース結果分析"
+
+# 潮位フェーズ定義
+tide_phases:
+  high:
+    label: "満潮"
+    description: "潮位が最高付近、水面安定、一般的にインコース有利"
+  rising:
+    label: "上げ潮"
+    description: "潮位が上昇中、水面やや不安定"
+  low:
+    label: "干潮"
+    description: "潮位が最低付近、水面不安定、一般的にインコース不利"
+  falling:
+    label: "下げ潮"
+    description: "潮位が下降中、水面やや不安定"
+
+# 観測所と対応会場のマッピング
+station_to_venues:
+  Hiroshima:
+    venues: ["16"]
+    description: "宮島"
+  Tokuyama:
+    venues: ["17", "18"]
+    description: "徳山、下関"
+  Hakata:
+    venues: ["21", "22", "23"]
+    description: "福岡、芦屋、若松"
+  Sasebo:
+    venues: ["24"]
+    description: "大村"
+
+# 対象会場（海水・汽水のみ）
+applicable_venues:
+  seawater:
+    - "04"   # 平和島
+    - "08"   # 常滑
+    - "09"   # 津
+    - "12"   # 住之江
+    - "13"   # 尼崎
+    - "14"   # 鳴門
+    - "15"   # 丸亀
+    - "16"   # 児島（宮島）
+    - "17"   # 徳山
+    - "18"   # 下関
+    - "19"   # 若松
+    - "20"   # 芦屋
+    - "21"   # 福岡
+    - "22"   # 芦屋
+    - "23"   # 唐津（若松）
+    - "24"   # 大村
+  brackish:
+    - "02"   # 戸田（汽水扱い）
+    - "03"   # 江戸川
+    - "06"   # 浜名湖
+    - "07"   # 蒲郡
+
+# デフォルト補正ルール（会場別データがない場合）
+default_rules:
+  rising:
+    course_1_bonus: 2.0
+    course_4_penalty: -0.5
+    course_5_penalty: -0.5
+    course_6_penalty: -0.5
+  falling:
+    course_1_penalty: -2.0
+    course_3_bonus: 0.5
+    course_4_bonus: 1.0
+    course_5_bonus: 0.5
+    course_6_bonus: 0.5
+  high:
+    course_1_bonus: 2.4
+    course_4_penalty: -0.6
+    course_5_penalty: -0.6
+    course_6_penalty: -0.6
+  low:
+    course_1_penalty: -2.4
+    course_2_bonus: 0.6
+    course_3_bonus: 0.6
+    course_4_bonus: 1.2
+    course_5_bonus: 0.6
+    course_6_bonus: 0.6
+
+# 会場別補正係数（分析結果に基づく）
+venue_coefficients:
+  "17":
+    name: "徳山"
+    description: "上げ潮で+14.7%の差、潮位の影響が顕著"
+    rising:
+      course_1_bonus: 3.5
+      course_4_penalty: -1.0
+      course_5_penalty: -1.0
+      course_6_penalty: -1.0
+    falling:
+      course_1_penalty: -3.5
+      course_3_bonus: 1.0
+      course_4_bonus: 1.5
+      course_5_bonus: 1.0
+      course_6_bonus: 1.0
+    high:
+      course_1_bonus: 4.2
+      course_4_penalty: -1.2
+    low:
+      course_1_penalty: -4.2
+      course_4_bonus: 1.8
+
+  "16":
+    name: "宮島"
+    description: "上げ潮で+9.8%の差"
+    rising:
+      course_1_bonus: 2.5
+      course_4_penalty: -0.75
+      course_5_penalty: -0.75
+      course_6_penalty: -0.75
+    falling:
+      course_1_penalty: -2.5
+      course_3_bonus: 0.75
+      course_4_bonus: 1.0
+      course_5_bonus: 0.75
+      course_6_bonus: 0.75
+    high:
+      course_1_bonus: 3.0
+    low:
+      course_1_penalty: -3.0
+      course_4_bonus: 1.2
+
+  "23":
+    name: "若松（唐津）"
+    description: "逆パターン - 下げ潮で+6.6%（下げ潮で1コース有利）"
+    rising:
+      course_1_penalty: -1.5
+      course_4_bonus: 0.5
+    falling:
+      course_1_bonus: 1.5
+      course_4_penalty: -0.5
+    high:
+      course_1_penalty: -1.8
+    low:
+      course_1_bonus: 1.8
+
+  "18":
+    name: "下関"
+    description: "徳山に準ずる"
+    rising:
+      course_1_bonus: 2.0
+      course_4_penalty: -0.75
+    falling:
+      course_1_penalty: -2.0
+      course_3_bonus: 0.75
+      course_4_bonus: 1.0
+    high:
+      course_1_bonus: 2.4
+    low:
+      course_1_penalty: -2.4
+      course_4_bonus: 1.2
+
+  "21":
+    name: "福岡"
+    description: "標準パターン"
+    rising:
+      course_1_bonus: 1.0
+      course_4_penalty: -0.5
+    falling:
+      course_1_penalty: -1.0
+      course_4_bonus: 0.5
+    high:
+      course_1_bonus: 1.2
+    low:
+      course_1_penalty: -1.2
+
+  "22":
+    name: "芦屋"
+    description: "標準パターン"
+    rising:
+      course_1_bonus: 1.0
+      course_4_penalty: -0.5
+    falling:
+      course_1_penalty: -1.0
+      course_4_bonus: 0.5
+
+  "24":
+    name: "大村"
+    description: "標準パターン、インが元々強いため影響は相対的に小さい"
+    rising:
+      course_1_bonus: 1.0
+      course_4_penalty: -0.5
+    falling:
+      course_1_penalty: -1.0
+      course_4_bonus: 0.5
+
+# 観測所別の平均潮位（カテゴリ分類用）
+station_averages:
+  Hiroshima:
+    avg_level: 200
+    high_threshold: 250
+    low_threshold: 150
+  Tokuyama:
+    avg_level: 180
+    high_threshold: 230
+    low_threshold: 130
+  Hakata:
+    avg_level: 190
+    high_threshold: 240
+    low_threshold: 140
+  Sasebo:
+    avg_level: 170
+    high_threshold: 220
+    low_threshold: 120
+
+# 潮位レベルのカテゴリ化閾値
+tide_level_categories:
+  high:
+    deviation: 50
+    description: "平均より50cm以上高い"
+  mid:
+    deviation_range: [-50, 50]
+    description: "平均付近"
+  low:
+    deviation: -50
+    description: "平均より50cm以上低い"
