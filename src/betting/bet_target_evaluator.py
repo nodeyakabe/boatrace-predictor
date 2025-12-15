@@ -8,6 +8,10 @@
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, List, Dict, Any
+from .multi_bet_generator import MultiBetGenerator, MultiBetPattern, MultiBetResult
+from .venue_evaluator import VenueEvaluator
+from .venue_course_adjuster import VenueCourseAdjuster, AdjustmentResult
+from config.venue_wind_adjustments import should_exclude_race
 
 
 class BetStatus(Enum):
@@ -33,6 +37,8 @@ class BetTarget:
     reason: str                          # 判定理由
     needs_beforeinfo: bool = False       # 直前情報が必要か
     bet_type: str = 'trifecta'           # 賭け式 (trifecta/exacta)
+    multi_bet_result: Optional[MultiBetResult] = None  # 複数点買い情報
+    venue_course_adjustment: Optional[AdjustmentResult] = None  # 会場コース調整情報
 
 
 @dataclass
@@ -153,8 +159,35 @@ class BetTargetEvaluator:
         },
     }
 
-    def __init__(self):
-        pass
+    def __init__(
+        self,
+        use_multi_bet: bool = True,
+        multi_bet_pattern: MultiBetPattern = MultiBetPattern.PATTERN_H,
+        enable_venue_wind_filter: bool = True,
+        enable_venue_course_adjustment: bool = True,
+        venue_course_adjustment_scale: float = 1.0,
+    ):
+        """
+        初期化
+
+        Args:
+            use_multi_bet: 複数点買いを使用するか（デフォルト: True）
+            multi_bet_pattern: 複数点買いパターン（デフォルト: PATTERN_H - 収支最大）
+            enable_venue_wind_filter: 風速・会場フィルターを有効化するか（デフォルト: True）
+            enable_venue_course_adjustment: 会場×コース別調整を有効化するか（デフォルト: True）
+            venue_course_adjustment_scale: 調整値のスケール（デフォルト: 1.0 = 100%適用）
+        """
+        self.use_multi_bet = use_multi_bet
+        self.multi_bet_generator = MultiBetGenerator(default_pattern=multi_bet_pattern) if use_multi_bet else None
+        self.enable_venue_wind_filter = enable_venue_wind_filter
+        self.venue_evaluator = VenueEvaluator() if enable_venue_wind_filter else None
+
+        # 会場×コース別調整
+        self.enable_venue_course_adjustment = enable_venue_course_adjustment
+        self.venue_course_adjuster = VenueCourseAdjuster(
+            enabled=enable_venue_course_adjustment,
+            adjustment_scale=venue_course_adjustment_scale,
+        ) if enable_venue_course_adjustment else None
 
     def evaluate(
         self,
@@ -384,10 +417,39 @@ class BetTargetEvaluator:
         # 会場コードを取得
         venue_code = race_data.get('venue_code')
 
+        # 気象データを取得
+        wind_speed = race_data.get('wind_speed', 0.0)
+
         # 予測情報
         confidence = predictions.get('confidence', 'D')
         old_pred = predictions.get('old_prediction', [1, 2, 3])
         new_pred = predictions.get('new_prediction', [1, 2, 3])
+
+        # 風速・会場フィルター（2024-2025年分析ベース）
+        if self.enable_venue_wind_filter and venue_code and wind_speed is not None:
+            # venue_codeを文字列化（'01'-'24'形式）
+            venue_code_str = f"{venue_code:02d}" if isinstance(venue_code, int) else str(venue_code).zfill(2)
+
+            # 除外判定
+            should_exclude, exclude_reason = should_exclude_race(
+                venue_code=venue_code_str,
+                wind_speed=wind_speed,
+                confidence=confidence
+            )
+
+            if should_exclude:
+                return BetTarget(
+                    status=BetStatus.EXCLUDED,
+                    confidence=confidence,
+                    method='-',
+                    combination='-',
+                    odds=0,
+                    odds_range='-',
+                    c1_rank=c1_rank,
+                    expected_roi=0,
+                    bet_amount=0,
+                    reason=f'風速・会場除外: {exclude_reason}'
+                )
 
         # 買い目
         old_combo = f"{old_pred[0]}-{old_pred[1]}-{old_pred[2]}"
@@ -397,7 +459,8 @@ class BetTargetEvaluator:
         old_odds = odds_data.get(old_combo, 0) if odds_data else 0
         new_odds = odds_data.get(new_combo, 0) if odds_data else 0
 
-        return self.evaluate(
+        # 基本的な購入対象判定
+        bet_target = self.evaluate(
             confidence=confidence,
             c1_rank=c1_rank,
             old_combo=old_combo,
@@ -407,6 +470,53 @@ class BetTargetEvaluator:
             has_beforeinfo=has_beforeinfo,
             venue_code=venue_code
         )
+
+        # 会場×コース別調整を適用
+        venue_course_adj_result = None
+        if self.enable_venue_course_adjustment and self.venue_course_adjuster and venue_code:
+            venue_code_str = f"{venue_code:02d}" if isinstance(venue_code, int) else str(venue_code).zfill(2)
+
+            # 1着予測のコースに対する調整を計算
+            first_course = old_pred[0] if old_pred else 1
+            venue_course_adj_result = self.venue_course_adjuster.apply_adjustment_with_details(
+                base_score=0,  # 調整量のみを取得
+                venue_code=venue_code_str,
+                course=first_course
+            )
+
+            # 理由に会場コース調整情報を追加
+            if bet_target.status in [BetStatus.TARGET_CONFIRMED, BetStatus.TARGET_ADVANCE]:
+                if venue_course_adj_result.adjustment != 0:
+                    adj_str = f"+{venue_course_adj_result.adjustment}" if venue_course_adj_result.adjustment > 0 else str(venue_course_adj_result.adjustment)
+                    bet_target.reason = f"{bet_target.reason} | 会場調整: {venue_course_adj_result.venue_name}{first_course}コース{adj_str}pt"
+
+            bet_target.venue_course_adjustment = venue_course_adj_result
+
+        # 購入対象の場合、複数点買いを生成
+        if self.use_multi_bet and bet_target.status in [BetStatus.TARGET_CONFIRMED, BetStatus.TARGET_ADVANCE]:
+            # 予測の全順位を取得（最低4艇必要）
+            full_prediction = predictions.get('full_prediction')
+            if full_prediction is None:
+                # old_predictionから推測（拡張が必要な場合）
+                full_prediction = list(old_pred)
+                # 不足分は1-6から補填
+                for i in range(1, 7):
+                    if i not in full_prediction:
+                        full_prediction.append(i)
+                full_prediction = full_prediction[:6]
+
+            if len(full_prediction) >= 4 and odds_data:
+                try:
+                    multi_bet_result = self.multi_bet_generator.generate(
+                        predictions=full_prediction,
+                        odds_dict=odds_data
+                    )
+                    bet_target.multi_bet_result = multi_bet_result
+                except Exception as e:
+                    # 複数点買い生成失敗時は1点買いのまま継続
+                    pass
+
+        return bet_target
 
     def get_summary(self, targets: List[BetTarget]) -> Dict[str, Any]:
         """

@@ -242,10 +242,10 @@ def save_batch():
             return count
     return 0
 
-# 並列処理でレース詳細データを取得（ワーカー数を12に増加）
+# 並列処理でレース詳細データを取得（ワーカー数を6に削減してサーバー負荷軽減）
 start_time = time.time()
 
-with ThreadPoolExecutor(max_workers=12) as executor:
+with ThreadPoolExecutor(max_workers=6) as executor:
     # タスクを投入
     futures = {
         executor.submit(fetch_race_details, race_id, venue_code, race_date, race_number): (race_id, venue_code, race_date, race_number)

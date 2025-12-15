@@ -49,18 +49,96 @@
 
 ---
 
+## 1.4. パターンH会場コース調整システム（✅ 完了 2025-12-15）
+
+### 目的
+会場の単純除外を廃止し、会場×コース別の特性を数値化してポイント調整する。曜日条件は統計的根拠が薄いため不採用。
+
+### 実装ファイル
+
+| ファイル | 説明 | 状態 |
+|---------|------|------|
+| `scripts/analysis/analyze_venue_course_performance.py` | 会場×コース別実勝率分析 | ✅ 完了 |
+| `config/venue_course_adjustments.py` | 24会場×6コース調整設定 | ✅ 完了 |
+| `src/betting/venue_course_adjuster.py` | VenueCourseAdjusterクラス | ✅ 完了 |
+| `scripts/backtest_pattern_h_with_venue_course_adjustment.py` | バックテスト | ✅ 完了 |
+| `docs/VENUE_COURSE_ADJUSTMENT_ANALYSIS.md` | 詳細分析ドキュメント | ✅ 完了 |
+| `data/venue_course_analysis.json` | 分析結果JSON | ✅ 完了 |
+
+### 実装内容
+
+**会場特性の定量化**:
+- インが弱い会場: 戸田(-12pt), 平和島(-12pt), 江戸川(-9pt), 鳴門(-8pt)
+- インが強い会場: 徳山(+9pt), 大村(+8pt), 下関(+6pt)
+- 統計的に有意な差分のみ採用（最低100レース以上）
+
+**BetTargetEvaluator統合**:
+- `enable_venue_course_adjustment=True`でデフォルト有効化
+- `venue_course_adjustment_scale`で調整スケール変更可能
+- 調整情報を`BetTarget.venue_course_adjustment`に自動付与
+
+### バックテスト結果（2024-2025年）
+
+| 条件 | 2024年収支 | 2025年収支 | 合計 |
+|------|-----------|-----------|------|
+| 調整なし | -263,300円 | -78,700円 | -342,000円 |
+| 最適調整 | -255,720円 | -77,700円 | -333,420円 |
+| **改善額** | **+7,580円** | **+1,000円** | **+8,580円** |
+
+**最適パラメータ**: スキップ閾値=-12pt, バフ閾値=+10pt
+
+### 使用方法
+
+```python
+from src.betting.bet_target_evaluator import BetTargetEvaluator
+
+# デフォルトで会場コース調整が有効
+evaluator = BetTargetEvaluator(
+    use_multi_bet=True,
+    multi_bet_pattern=MultiBetPattern.PATTERN_H
+)
+
+# レース評価
+target = evaluator.evaluate_race(race_data, predictions, odds_data)
+
+# 調整情報を確認
+if target.venue_course_adjustment:
+    print(f"調整: {target.venue_course_adjustment.adjustment}pt")
+    print(f"理由: {target.venue_course_adjustment.reason}")
+```
+
+### 勝利パターン分析（✅ 完了 2025-12-15）
+
+Opus AIによる2025年プラス月（6月、9月、10月）の詳細分析を実施:
+
+**分析結果ドキュメント**:
+- [docs/PATTERN_H_WINNING_ANALYSIS_2025.md](PATTERN_H_WINNING_ANALYSIS_2025.md)
+- [scripts/analysis/analyze_pattern_h_winning_months.py](../scripts/analysis/analyze_pattern_h_winning_months.py)
+- [scripts/analysis/analyze_pattern_h_golden_rules.py](../scripts/analysis/analyze_pattern_h_golden_rules.py)
+
+**主な発見**:
+- 期待改善効果: **+335,740円/年**
+- トップ会場: 鳴門(ROI 357.4%), 丸亀(312.4%), 蒲郡(296.6%)
+- ベスト条件: C × B1 × 30-40倍（ROI 162.8%, +61,510円）
+- 3点傾斜配分の有効性証明: 本命以外(1-2-4 + 1-2-5)で64.4%を的中
+
+---
+
 ## 2. Phase別実装状況
 
 ### Phase A: 低リスク改善
 
-| 項目 | 実装状況 | バックテスト | 備考 |
-|------|---------|------------|------|
-| ⑤ 除外条件明文化 | ✅ 実装済み | ❓ 未検証 | filter_engine.py |
-| ③ Edge計算導入 | ✅ 実装済み | ❓ 未検証 | ev_calculator.py |
+| 項目 | 実装 | バックテスト | 結果 | 判定 |
+|------|-----|-------------|------|------|
+| ⑤ 除外条件明文化 | ✅ 完了 | ✅ 実施 | ROI低下 | ❌ 不採用 |
+| ③ Edge計算導入 | ✅ 完了 | ✅ 実施 | 3連単ROI 24.0%→21.4% (-2.6pt) | ❌ 不採用 |
 
-**バックテストスクリプト**:
-- `scripts/backtest_v2_edge_test.py` - Edge計算テスト用
-- `scripts/backtest_all_modes.py` - 全モード比較用
+**バックテスト結果（2025年全期間）**:
+- **baseline**: 3連単ROI 24.0%, 収支 -908,070円
+- **edge_test**: 3連単ROI 21.4%, 収支 -755,020円（購入件数半減で若干マシだが本質的に悪化）
+- **venue_test**: 3連単ROI 19.9%, 収支 -990,950円（最悪）
+
+**不採用理由**: すべてのPhase A機能でROIが悪化。baseline維持が最適。
 
 ### Phase B: 中リスク改善
 

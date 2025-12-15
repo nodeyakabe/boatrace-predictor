@@ -51,6 +51,7 @@ from config.settings import (
     HIGH_IN_VENUES, LOW_IN_VENUES, EXTENDED_SCORE_WEIGHTS,
     EXTENDED_SCORE_MAX, EXTENDED_SCORE_MIN
 )
+from config.venue_course_win_rates import get_venue_course_win_rate
 
 
 # ==================================================
@@ -555,10 +556,13 @@ class RacePredictor:
 
     def calculate_course_rank_score(self, course: int, racer_rank: str, venue_code: str) -> float:
         """
-        コース×ランクの実績勝率に基づくスコアを計算
+        コース×ランクの実績勝率に基づくスコアを計算（会場別期待勝率テーブル使用）
 
         実際のデータから算出した勝率をベースに、
-        コースと選手ランクの相互作用を正確に反映。
+        コースと選手ランクの相互作用、会場特性を正確に反映。
+
+        更新履歴:
+        - 2025-12-15: 会場別期待勝率テーブル（config/venue_course_win_rates.py）を統合
 
         Args:
             course: コース番号（1-6）
@@ -570,21 +574,33 @@ class RacePredictor:
         """
         max_score = self.weights['course_weight']
 
-        # コース×ランクの実績勝率を取得
-        base_win_rate = self.COURSE_RANK_WIN_RATES.get(
+        # 【新規】会場別期待勝率テーブルからコース勝率を取得（2020年以降の実績ベース）
+        venue_course_win_rate = get_venue_course_win_rate(venue_code, course)
+
+        # コース×ランクの実績勝率を取得（全国平均）
+        national_rank_win_rate = self.COURSE_RANK_WIN_RATES.get(
             (course, racer_rank),
             self.NATIONAL_AVG_WIN_RATES.get(course, 0.10)  # フォールバック
         )
 
-        # 会場特性による補正（±20%程度）
+        # ランク補正係数を計算
+        # 全国平均コース勝率に対するランク別勝率の比率
+        national_course_avg = self.NATIONAL_AVG_WIN_RATES.get(course, 0.10)
+        rank_multiplier = national_rank_win_rate / national_course_avg if national_course_avg > 0 else 1.0
+
+        # 会場別コース勝率にランク補正を適用
+        adjusted_win_rate = venue_course_win_rate * rank_multiplier
+
+        # 会場特性による追加補正（±20%程度）
+        # 注: get_venue_course_adjustmentは独自のボーナス調整なので継続使用
         course_adjustment = get_venue_course_adjustment(venue_code, course)
         course_adjustment = max(0.80, min(1.20, course_adjustment))
 
-        adjusted_win_rate = base_win_rate * course_adjustment
+        adjusted_win_rate = adjusted_win_rate * course_adjustment
 
         # 勝率をスコアに変換
-        # 最大勝率（1コースA1: 71.5%）で満点になるよう正規化
-        MAX_WIN_RATE = 0.72
+        # 最大勝率（徳山1コースA1: 約75%程度）で満点になるよう正規化
+        MAX_WIN_RATE = 0.75
         score = (adjusted_win_rate / MAX_WIN_RATE) * max_score
 
         return min(score, max_score)

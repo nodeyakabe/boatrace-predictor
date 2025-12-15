@@ -48,6 +48,11 @@ class ConditionalRankModel:
         """
         2着予測用データを準備（1着が確定した条件下）- ベクトル化版
 
+        改善点（2025-12-15）:
+        - 1着艇との相対特徴量を追加（差分特徴量）
+        - 1着艇のコースとの位置関係を追加
+        - 重要な特徴量に絞って伝達（特徴量爆発を防ぐ）
+
         各レースで1着艇を除いた5艇の中から2着を予測
         """
         # 6艇完備のレースのみを抽出
@@ -62,30 +67,60 @@ class ConditionalRankModel:
         first_place = df[df['rank'] == 1][['race_id', 'pit_number']].copy()
         first_place.columns = ['race_id', 'first_pit']
 
+        # 重要な特徴量を選定（特徴量爆発を防ぐ）
+        # 直接伝達する特徴量
+        key_features = [c for c in df.columns if c not in ['rank', 'race_id', 'pit_number'] and
+                       df[c].dtype in [np.float64, np.int64, np.float32, np.int32]]
+
+        # 相対特徴量を計算するための主要指標
+        relative_feature_cols = [c for c in key_features if any(kw in c.lower() for kw in
+            ['win_rate', 'score', 'st_', 'motor', 'exhibition', 'course', 'total'])]
+
         # 1着艇の特徴量を取得
         first_features = df[df['rank'] == 1].copy()
-        feature_cols = [c for c in first_features.columns if c not in ['rank', 'race_id', 'pit_number']]
-        first_features = first_features[['race_id'] + feature_cols]
-        first_features.columns = ['race_id'] + [f'first_place_{c}' for c in feature_cols]
+        first_features = first_features[['race_id'] + key_features]
+        first_features.columns = ['race_id'] + [f'first_place_{c}' for c in key_features]
 
         # 1着艇を除外
         df_with_first = df.merge(first_place, on='race_id')
         remaining = df_with_first[df_with_first['pit_number'] != df_with_first['first_pit']].copy()
-        remaining = remaining.drop('first_pit', axis=1)
 
         # 1着艇の特徴量をマージ
         remaining = remaining.merge(first_features, on='race_id')
 
-        # ラベルと特徴量
+        # === 相対特徴量の追加（2025-12-15改善） ===
+        # 候補艇と1着艇の差分を計算
+        for col in relative_feature_cols:
+            first_col = f'first_place_{col}'
+            if first_col in remaining.columns and col in remaining.columns:
+                remaining[f'diff_first_{col}'] = remaining[col] - remaining[first_col]
+
+        # 1着艇のコースとの位置関係
+        if 'pit_number' in remaining.columns:
+            remaining['course_diff_from_first'] = remaining['pit_number'] - remaining['first_pit']
+            remaining['is_inner_than_first'] = (remaining['course_diff_from_first'] < 0).astype(int)
+            remaining['is_outer_than_first'] = (remaining['course_diff_from_first'] > 0).astype(int)
+
+        # ラベルを先に抽出（remainingから）
         y = (remaining['rank'] == 2).astype(int).values
-        X = remaining.drop(['rank', 'race_id', 'pit_number'], axis=1, errors='ignore')
-        X = X.select_dtypes(include=[np.number])
+
+        # 不要なカラムを削除
+        remaining = remaining.drop(['first_pit', 'rank', 'race_id', 'pit_number'], axis=1, errors='ignore')
+
+        # 特徴量のみを抽出
+        X = remaining.select_dtypes(include=[np.number])
 
         return X, y
 
     def _prepare_third_place_data(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, np.ndarray]:
         """
         3着予測用データを準備（1着・2着が確定した条件下）- ベクトル化版
+
+        改善点（2025-12-15）:
+        - 1着艇・2着艇との相対特徴量を追加（差分特徴量）
+        - 1着艇・2着艇のコースとの位置関係を追加
+        - 1-2着間の差分情報も追加（レースの展開を反映）
+        - 重要な特徴量に絞って伝達（特徴量爆発を防ぐ）
 
         各レースで1着・2着艇を除いた4艇の中から3着を予測
         """
@@ -104,14 +139,20 @@ class ConditionalRankModel:
         second_place = df[df['rank'] == 2][['race_id', 'pit_number']].copy()
         second_place.columns = ['race_id', 'second_pit']
 
+        # 重要な特徴量を選定（特徴量爆発を防ぐ）
+        key_features = [c for c in df.columns if c not in ['rank', 'race_id', 'pit_number'] and
+                       df[c].dtype in [np.float64, np.int64, np.float32, np.int32]]
+
+        # 相対特徴量を計算するための主要指標
+        relative_feature_cols = [c for c in key_features if any(kw in c.lower() for kw in
+            ['win_rate', 'score', 'st_', 'motor', 'exhibition', 'course', 'total'])]
+
         # 1着・2着艇の特徴量を取得
-        feature_cols = [c for c in df.columns if c not in ['rank', 'race_id', 'pit_number']]
+        first_features = df[df['rank'] == 1][['race_id'] + key_features].copy()
+        first_features.columns = ['race_id'] + [f'first_place_{c}' for c in key_features]
 
-        first_features = df[df['rank'] == 1][['race_id'] + feature_cols].copy()
-        first_features.columns = ['race_id'] + [f'first_place_{c}' for c in feature_cols]
-
-        second_features = df[df['rank'] == 2][['race_id'] + feature_cols].copy()
-        second_features.columns = ['race_id'] + [f'second_place_{c}' for c in feature_cols]
+        second_features = df[df['rank'] == 2][['race_id'] + key_features].copy()
+        second_features.columns = ['race_id'] + [f'second_place_{c}' for c in key_features]
 
         # 1着・2着艇を除外
         df_with_places = df.merge(first_place, on='race_id').merge(second_place, on='race_id')
@@ -119,16 +160,44 @@ class ConditionalRankModel:
             (df_with_places['pit_number'] != df_with_places['first_pit']) &
             (df_with_places['pit_number'] != df_with_places['second_pit'])
         ].copy()
-        remaining = remaining.drop(['first_pit', 'second_pit'], axis=1)
 
         # 1着・2着艇の特徴量をマージ
         remaining = remaining.merge(first_features, on='race_id')
         remaining = remaining.merge(second_features, on='race_id')
 
-        # ラベルと特徴量
+        # === 相対特徴量の追加（2025-12-15改善） ===
+        # 候補艇と1着艇の差分を計算
+        for col in relative_feature_cols:
+            first_col = f'first_place_{col}'
+            second_col = f'second_place_{col}'
+            if first_col in remaining.columns and col in remaining.columns:
+                remaining[f'diff_first_{col}'] = remaining[col] - remaining[first_col]
+            if second_col in remaining.columns and col in remaining.columns:
+                remaining[f'diff_second_{col}'] = remaining[col] - remaining[second_col]
+            # 1-2着間の差分（レース展開情報）
+            if first_col in remaining.columns and second_col in remaining.columns:
+                remaining[f'gap_1st_2nd_{col}'] = remaining[first_col] - remaining[second_col]
+
+        # 1着艇・2着艇のコースとの位置関係
+        if 'pit_number' in remaining.columns:
+            remaining['course_diff_from_first'] = remaining['pit_number'] - remaining['first_pit']
+            remaining['course_diff_from_second'] = remaining['pit_number'] - remaining['second_pit']
+            remaining['is_inner_than_first'] = (remaining['course_diff_from_first'] < 0).astype(int)
+            remaining['is_outer_than_first'] = (remaining['course_diff_from_first'] > 0).astype(int)
+            remaining['is_inner_than_second'] = (remaining['course_diff_from_second'] < 0).astype(int)
+            remaining['is_between_first_second'] = (
+                ((remaining['pit_number'] > remaining['first_pit']) & (remaining['pit_number'] < remaining['second_pit'])) |
+                ((remaining['pit_number'] < remaining['first_pit']) & (remaining['pit_number'] > remaining['second_pit']))
+            ).astype(int)
+
+        # ラベルを先に抽出（remainingから）
         y = (remaining['rank'] == 3).astype(int).values
-        X = remaining.drop(['rank', 'race_id', 'pit_number'], axis=1, errors='ignore')
-        X = X.select_dtypes(include=[np.number])
+
+        # 不要なカラムを削除
+        remaining = remaining.drop(['first_pit', 'second_pit', 'rank', 'race_id', 'pit_number'], axis=1, errors='ignore')
+
+        # 特徴量のみを抽出
+        X = remaining.select_dtypes(include=[np.number])
 
         return X, y
 

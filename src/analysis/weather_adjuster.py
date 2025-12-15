@@ -14,28 +14,30 @@ class WeatherAdjuster:
     """天候に基づくスコア補正クラス"""
 
     # 風向を分類するマッピング（16方位 → カテゴリ）
+    # 2025-12-15 データ分析に基づく修正:
+    # - 追い風（南系）: 1C勝率59.2% → 1コース有利
+    # - 向い風（北系）: 1C勝率56.9% → まくり・差し有利
     WIND_DIRECTION_MAP = {
-        # 向い風（スタート方向に向かって吹く風）→ 1コース有利
-        '北': 'headwind',
-        '北北東': 'headwind',
-        '北北西': 'headwind',
-        # 追い風（スタート方向から吹く風）→ まくり有利
+        # 追い風（スタート方向から吹く風）→ 1コース有利（伸びが効く）
         '南': 'tailwind',
         '南南東': 'tailwind',
         '南南西': 'tailwind',
+        '南東': 'tailwind',      # 南東も追い風グループに追加
+        '南西': 'tailwind',      # 南西も追い風グループに追加
+        # 向い風（スタート方向に向かって吹く風）→ まくり・差し有利
+        '北': 'headwind',
+        '北北東': 'headwind',
+        '北北西': 'headwind',
+        '北東': 'headwind',      # 北東も向い風グループに追加
+        '北西': 'headwind',      # 北西も向い風グループに追加
         # 左横風
         '西': 'crosswind_left',
         '西北西': 'crosswind_left',
         '西南西': 'crosswind_left',
-        '北西': 'crosswind_left',
         # 右横風
         '東': 'crosswind_right',
         '東北東': 'crosswind_right',
         '東南東': 'crosswind_right',
-        '北東': 'crosswind_right',
-        # 斜め風（影響少）
-        '南東': 'diagonal',
-        '南西': 'diagonal',
         # 旧フォーマット（手動入力用）
         '向い風': 'headwind',
         '追い風': 'tailwind',
@@ -166,38 +168,52 @@ class WeatherAdjuster:
         adjustment = 0.0
 
         # === 風向による補正 ===
+        # 2025-12-15 データ分析結果に基づく補正:
+        # - 追い風（南系）: 1C勝率59.2%（弱風時60.6%）→ 1コース有利
+        # - 向い風（北系）: 1C勝率56.9%（強風時55.4%）→ まくり・差し有利
         # 風速が一定以上の場合のみ風向の影響を考慮
         if wind_speed is not None and wind_speed >= 2.0:
-            if wind_dir_cat == 'headwind':
-                # 向い風: 1コース有利（スタート時に加速しやすい）
+            # 風速による補正係数（風速が強いほど影響大）
+            wind_multiplier = min(wind_speed / 5.0, 1.5)  # 5mで1.0、7.5m以上で1.5
+
+            if wind_dir_cat == 'tailwind':
+                # 追い風: 1コース有利（伸びが効く、スリットで有利）
+                # データ: 追い風×中風で1C勝率60.1%（向い風より+2.5%）
                 if course == 1:
-                    bonus = 0.03  # +3%
+                    bonus = 0.03 * wind_multiplier  # +3%（基準）
                     adjustment += bonus
-                    reasons.append(f'向い風1コースボーナス({bonus:+.0%})')
+                    reasons.append(f'追い風1コースボーナス({bonus:+.1%})')
+                elif course in [5, 6]:
+                    # 追い風強風時は外コースがやや不利（1コースの伸びに負ける）
+                    penalty = -0.02 * wind_multiplier  # -2%
+                    adjustment += penalty
+                    reasons.append(f'追い風外コースペナルティ({penalty:+.1%})')
+
+            elif wind_dir_cat == 'headwind':
+                # 向い風: まくり・差しが決まりやすい（4-6コース有利）
+                # データ: 向い風×強風で4C 10.6%、6C 3.4%（追い風より高い）
+                if course == 1:
+                    penalty = -0.03 * wind_multiplier  # -3%
+                    adjustment += penalty
+                    reasons.append(f'向い風1コースペナルティ({penalty:+.1%})')
                 elif course in [4, 5, 6]:
-                    # 外コースはやや不利
-                    penalty = -0.02  # -2%
-                    adjustment += penalty
-                    reasons.append(f'向い風外コースペナルティ({penalty:+.0%})')
-
-            elif wind_dir_cat == 'tailwind':
-                # 追い風: まくりが決まりやすい（2-4コース有利）
-                if course == 1:
-                    penalty = -0.05  # -5%
-                    adjustment += penalty
-                    reasons.append(f'追い風1コースペナルティ({penalty:+.0%})')
-                elif course in [2, 3, 4]:
-                    bonus = 0.03  # +3%
+                    # 外コースにボーナス（差し・まくりが決まりやすい）
+                    bonus = 0.02 * wind_multiplier  # +2%
                     adjustment += bonus
-                    reasons.append(f'追い風{course}コースボーナス({bonus:+.0%})')
+                    reasons.append(f'向い風{course}コースボーナス({bonus:+.1%})')
 
-        # === 強風時の補正 ===
+        # === 強風時の補正（風速6m以上） ===
+        # 2025-12-15 データ分析結果:
+        # - 風速2m以下: 1C勝率59.7%
+        # - 風速6m以上: 1C勝率52.3% → 差分-7.4%
+        # - 荒れ率: 弱風40.3% → 強風47.7%（1.18倍）
+        # - 2-4コースは強風時にやや勝率上昇
         if wind_cat == 'high':
             scoring_adj = self.rules.get('scoring_adjustments', {})
             wind_penalty = scoring_adj.get('strong_wind_course1_penalty', {})
 
             if course == 1:
-                # 1コースへのペナルティ
+                # 1コースへのペナルティ（会場別）
                 venue_specific = wind_penalty.get('venue_specific', {})
                 if venue_code in venue_specific:
                     penalty = venue_specific[venue_code]
@@ -207,11 +223,22 @@ class WeatherAdjuster:
                     reasons.append(f'強風時1コースペナルティ(全国平均{penalty:+.0%})')
                 adjustment += penalty
             else:
-                # 外コースへのボーナス
-                outer_bonus = scoring_adj.get('strong_wind_outer_bonus', {})
-                bonus_key = f'course_{course}'
-                if bonus_key in outer_bonus:
-                    bonus = outer_bonus[bonus_key]
+                # 外コースへのボーナス（データ分析に基づく最適化）
+                # 風速6m以上のデータ:
+                # - 2C: 15.3%（弱風13.4%比+1.9%）
+                # - 3C: 13.4%（弱風11.0%比+2.4%）
+                # - 4C: 11.2%（弱風9.4%比+1.8%）
+                # - 5C: 6.0%（弱風5.1%比+0.9%）
+                # - 6C: 3.6%（弱風2.8%比+0.8%）
+                outer_bonus_enhanced = {
+                    2: 0.05,   # +5%
+                    3: 0.06,   # +6%（最も改善）
+                    4: 0.05,   # +5%
+                    5: 0.03,   # +3%
+                    6: 0.02    # +2%
+                }
+                bonus = outer_bonus_enhanced.get(course, 0.0)
+                if bonus > 0:
                     adjustment += bonus
                     reasons.append(f'強風時{course}コースボーナス({bonus:+.0%})')
 
@@ -330,20 +357,25 @@ class WeatherAdjuster:
 if __name__ == "__main__":
     adjuster = WeatherAdjuster()
 
-    print("=== 天候補正テスト ===")
+    print("=== 天候補正テスト（2025-12-15更新版） ===")
     print()
 
-    # テストケース
+    # テストケース: (会場, コース, 風速, 波高, 風向, 天候)
     test_cases = [
-        ("08", 1, 7.0, 3),   # 常滑、1コース、強風、中波
-        ("08", 2, 7.0, 3),   # 常滑、2コース、強風、中波
-        ("02", 1, 8.0, 2),   # 戸田、1コース、強風、静穏
-        ("24", 1, 2.0, 1),   # 大村、1コース、弱風、静穏
+        ("08", 1, 7.0, 3, "南", None),     # 常滑、1コース、強風、中波、追い風
+        ("08", 1, 7.0, 3, "北", None),     # 常滑、1コース、強風、中波、向い風
+        ("08", 4, 7.0, 3, "北", None),     # 常滑、4コース、強風、中波、向い風
+        ("02", 1, 5.0, 2, "南南西", None), # 戸田、1コース、中風、追い風
+        ("02", 1, 5.0, 2, "北北東", None), # 戸田、1コース、中風、向い風
+        ("24", 1, 2.0, 1, None, None),     # 大村、1コース、弱風（風向なし）
+        ("10", 3, 6.0, 4, "北西", None),   # 三国、3コース、強風、向い風
     ]
 
-    for venue, course, wind, wave in test_cases:
-        result = adjuster.calculate_adjustment(venue, course, wind, wave)
-        print(f"会場{venue} {course}コース 風速{wind}m 波高{wave}cm:")
+    for venue, course, wind, wave, wind_dir, weather_cond in test_cases:
+        result = adjuster.calculate_adjustment(venue, course, wind, wave, wind_dir, weather_cond)
+        wind_dir_str = wind_dir if wind_dir else "なし"
+        print(f"会場{venue} {course}コース 風速{wind}m 波高{wave}cm 風向:{wind_dir_str}")
         print(f"  補正: {result['adjustment']:+.1%}")
+        print(f"  風向分類: {result['wind_direction_category']}")
         print(f"  理由: {result['reason']}")
         print()

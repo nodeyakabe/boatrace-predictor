@@ -336,14 +336,18 @@ class BeforeInfoScorer:
         コース依存の非線形評価:
         - 外コース（4-6）: 伸び型（+チルト）を高評価
         - 内コース（1-3）: 乗り心地・差し型（-チルト）を高評価
-        - 伸び型 + 向かい風強め: シナジー効果
+
+        2025-12-15 データ分析に基づく風向シナジー:
+        - 追い風（南系）: 1C有利（勝率59.2%）、伸び型が効く
+        - 向い風（北系）: 外C有利（まくり・差し決まりやすい）
         """
         if not tilt_angles or pit_number not in tilt_angles:
             return 0.0
 
         tilt = tilt_angles[pit_number]
         course = exhibition_courses.get(pit_number, pit_number)  # デフォルトは枠なり
-        wind_speed = weather.get('wind_speed', 0)
+        wind_speed = weather.get('wind_speed', 0) or 0
+        wind_direction = weather.get('wind_direction', '')
 
         score = 0.0
 
@@ -365,10 +369,28 @@ class BeforeInfoScorer:
             else:  # tilt < 0
                 score += 4.0
 
-        # 伸び型 + 向かい風のシナジー効果
-        # （向かい風は風向コードで判定するのが理想だが、ここでは風速で簡易判定）
-        if tilt >= 0.5 and wind_speed >= 3:
-            score += 3.0
+        # 風向判定
+        is_tailwind = wind_direction in ['南', '南南東', '南南西', '南東', '南西']
+        is_headwind = wind_direction in ['北', '北北東', '北北西', '北東', '北西']
+
+        # 風速3m以上の場合のみ風向シナジーを適用
+        if wind_speed >= 3:
+            if is_tailwind:
+                # 追い風: 伸び型（+チルト）+ 外コースでシナジー
+                # 追い風時は1コースの伸びが効くが、外コースの伸び型もスタート後に有利
+                if tilt >= 0.5 and course >= 4:
+                    score += 3.0  # 追い風×伸び型×外コースシナジー
+                elif course == 1:
+                    score += 1.5  # 追い風は1コースに微ボーナス
+
+            elif is_headwind:
+                # 向い風: 外コース（4-6）でまくり・差しが決まりやすい
+                # データ: 向い風×強風で4C 10.6%、6C 3.4%
+                if course >= 4:
+                    score += 2.0  # 向い風×外コースシナジー
+                    if tilt < 0:
+                        # 乗り心地重視（-チルト）でコーナリングがスムーズ
+                        score += 1.0  # 向い風×差し型×外コースシナジー
 
         # 10点満点に正規化
         return min(max(score, -10.0), 10.0)

@@ -741,8 +741,8 @@ class MissingDataFetchWorkflowParallel:
 
             for idx, future in enumerate(concurrent.futures.as_completed(futures), 1):
                 try:
-                    # 個別タスクに300秒のタイムアウト（補完スクリプトは時間がかかる）
-                    result = future.result(timeout=300)
+                    # 個別タスクに900秒（15分）のタイムアウト（補完スクリプトは時間がかかる）
+                    result = future.result(timeout=900)
 
                     progress = int((current_step / total_steps) * 100)
                     self._update_progress(
@@ -760,9 +760,16 @@ class MissingDataFetchWorkflowParallel:
                     current_step += 1
 
                 except concurrent.futures.TimeoutError:
-                    logger.error(f"スクリプトタイムアウト（300秒）: {idx}件目")
+                    logger.error(f"スクリプトタイムアウト（900秒）: {idx}件目")
                     errors += 1
                     current_step += 1
+                    # タイムアウト時もステータスを更新
+                    script_label = scripts[idx-1].get('label', f'スクリプト{idx}')
+                    self._update_progress(
+                        phase_name,
+                        f'{script_label} 失敗: タイムアウト ({idx}/{len(scripts)})',
+                        int((current_step / total_steps) * 100)
+                    )
                 except Exception as e:
                     logger.warning(f"スクリプト実行エラー: {e}")
                     errors += 1
