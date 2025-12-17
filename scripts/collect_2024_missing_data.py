@@ -86,17 +86,19 @@ def collect_exhibition(args):
             st_times = beforeinfo.get('start_timings', {})
 
             for pit in range(1, 7):
+                # INSERT OR REPLACEで既存レコードがあれば更新、なければ挿入
                 cursor.execute('''
-                    UPDATE race_details
-                    SET exhibition_time = COALESCE(?, exhibition_time),
-                        tilt_angle = COALESCE(?, tilt_angle),
-                        st_time = COALESCE(?, st_time)
-                    WHERE race_id = ? AND pit_number = ?
+                    INSERT INTO race_details (race_id, pit_number, exhibition_time, tilt_angle, st_time, actual_course)
+                    VALUES (?, ?, ?, ?, ?, NULL)
+                    ON CONFLICT(race_id, pit_number) DO UPDATE SET
+                        exhibition_time = COALESCE(excluded.exhibition_time, race_details.exhibition_time),
+                        tilt_angle = COALESCE(excluded.tilt_angle, race_details.tilt_angle),
+                        st_time = COALESCE(excluded.st_time, race_details.st_time)
                 ''', (
+                    race_id, pit,
                     exhibition_times.get(pit),
                     tilt_angles.get(pit),
-                    st_times.get(pit),
-                    race_id, pit
+                    st_times.get(pit)
                 ))
 
             conn.commit()

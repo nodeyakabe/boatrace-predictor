@@ -93,8 +93,18 @@ class RacerAnalyzer:
         # キャッシュ使用時
         if self._use_cache and self.batch_loader:
             cached = self.batch_loader.get_racer_overall_stats(racer_number)
-            if cached:
+            if cached is not None:
                 return cached
+            # キャッシュにデータがない場合はデフォルト値を返す
+            return {
+                'total_races': 0,
+                'win_count': 0,
+                'win_rate': 0.0,
+                'place_rate_2': 0.0,
+                'place_rate_3': 0.0,
+                'avg_rank': 0.0,
+                'avg_st': 0.18
+            }
 
         # 従来のDB直接クエリ
         start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
@@ -162,8 +172,17 @@ class RacerAnalyzer:
         # キャッシュ使用時
         if self._use_cache and self.batch_loader:
             cached = self.batch_loader.get_racer_course_stats(racer_number, course)
-            if cached:
+            if cached is not None:
                 return cached
+            # キャッシュにデータがない場合はデフォルト値を返す
+            return {
+                'total_races': 0,
+                'win_count': 0,
+                'win_rate': 0.0,
+                'place_rate_2': 0.0,
+                'place_rate_3': 0.0,
+                'avg_rank': 0.0
+            }
 
         # 従来のDB直接クエリ
         start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
@@ -227,8 +246,15 @@ class RacerAnalyzer:
         # キャッシュ使用時
         if self._use_cache and self.batch_loader:
             cached = self.batch_loader.get_racer_venue_stats(racer_number, venue_code)
-            if cached:
+            if cached is not None:
                 return cached
+            # キャッシュにデータがない場合はデフォルト値を返す
+            return {
+                'total_races': 0,
+                'win_rate': 0.0,
+                'place_rate_2': 0.0,
+                'place_rate_3': 0.0
+            }
 
         # 従来のDB直接クエリ
         start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
@@ -642,15 +668,72 @@ class RacerAnalyzer:
 
                     racer_data = racers_data.get(racer_number, {})
 
+                    # デフォルト値を定義
+                    default_overall = {
+                        'total_races': 0,
+                        'win_count': 0,
+                        'win_rate': 0.0,
+                        'place_rate_2': 0.0,
+                        'place_rate_3': 0.0,
+                        'avg_rank': 0.0,
+                        'avg_st': 0.18
+                    }
+                    default_course = {
+                        'total_races': 0,
+                        'win_count': 0,
+                        'win_rate': 0.0,
+                        'place_rate_2': 0.0,
+                        'place_rate_3': 0.0,
+                        'avg_rank': 0.0
+                    }
+                    default_venue = {
+                        'total_races': 0,
+                        'win_rate': 0.0,
+                        'place_rate_2': 0.0,
+                        'place_rate_3': 0.0
+                    }
+                    default_recent = {
+                        'total_races': 0,
+                        'wins': 0,
+                        'avg_rank': 0.0,
+                        'recent_races': [],
+                        'form_trend': 'stable'
+                    }
+                    default_st = {
+                        'avg_st': 0.18,
+                        'total_races': 0
+                    }
+
+                    # データがない場合はデフォルト値を使用
+                    overall_stats = racer_data.get('overall', default_overall)
+                    if not overall_stats or 'total_races' not in overall_stats:
+                        overall_stats = default_overall
+
+                    course_stats = racer_data.get('courses', {}).get(course_for_stats, default_course)
+                    if not course_stats or 'total_races' not in course_stats:
+                        course_stats = default_course
+
+                    venue_stats = racer_data.get('venues', {}).get(venue_code, default_venue)
+                    if not venue_stats or 'total_races' not in venue_stats:
+                        venue_stats = default_venue
+
+                    recent_form = racer_data.get('recent', default_recent)
+                    if not recent_form or 'recent_races' not in recent_form:
+                        recent_form = default_recent
+
+                    st_stats = racer_data.get('st', default_st)
+                    if not st_stats or 'avg_st' not in st_stats:
+                        st_stats = default_st
+
                     results.append({
                         'pit_number': entry['pit_number'],
                         'racer_number': racer_number,
                         'racer_name': entry['racer_name'],
-                        'overall_stats': racer_data.get('overall', {}),
-                        'course_stats': racer_data.get('courses', {}).get(course_for_stats, {}),
-                        'venue_stats': racer_data.get('venues', {}).get(venue_code, {}),
-                        'recent_form': racer_data.get('recent', {}),
-                        'st_stats': racer_data.get('st', {})
+                        'overall_stats': overall_stats,
+                        'course_stats': course_stats,
+                        'venue_stats': venue_stats,
+                        'recent_form': recent_form,
+                        'st_stats': st_stats
                     })
 
                 return results
@@ -849,7 +932,7 @@ class RacerAnalyzer:
         # キャッシュ使用時
         if self._use_cache and self.batch_loader:
             cached = self.batch_loader.get_racer_venue_stats(racer_number, venue_code)
-            if cached:
+            if cached is not None:
                 return cached
 
         # 従来のDB直接クエリ
