@@ -1,14 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-買い目選択エンジン（動的配分対応版）
+買い目選択エンジン（動的配分対応版・会場フィルター対応）
 
 Phase B-④: 動的資金配分
+Phase B-1: 会場特化型フィルター
 レースコンテキストに応じて3連単/2連単の配分を動的に調整
+会場別ROIに応じて購入金額を調整
 """
 
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
+import yaml
 
 from .config import (
     BET_UNIT,
@@ -20,6 +24,128 @@ from .config import (
 )
 from .ev_calculator import EVCalculator, EVResult
 from .filter_engine import FilterEngine, FilterResult
+
+
+# ============================================================
+# 会場フィルター（B-1実装）
+# ============================================================
+class VenueFilter:
+    """
+    会場特化型フィルター
+
+    ROIの高い会場で購入量を増やし、低い会場で減らす
+    """
+
+    DEFAULT_CONFIG = {
+        'enabled': False,
+        'tier1_venues': [],
+        'tier1_multiplier': 1.5,
+        'tier2_venues': [],
+        'tier2_multiplier': 1.0,
+        'tier3_venues': [],
+        'tier3_multiplier': 0.5,
+        'min_bet_amount': 100,
+        'max_bet_amount': 2000,
+    }
+
+    def __init__(self, config_path: Optional[Path] = None):
+        """
+        初期化
+
+        Args:
+            config_path: 設定ファイルパス（Noneの場合はデフォルト設定）
+        """
+        self.config = self.DEFAULT_CONFIG.copy()
+
+        if config_path is None:
+            # デフォルトパスを試行
+            default_path = Path(__file__).parent.parent.parent / "config" / "venue_filter.yaml"
+            if default_path.exists():
+                config_path = default_path
+
+        if config_path and config_path.exists():
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    yaml_config = yaml.safe_load(f)
+                    if yaml_config and 'venue_filter' in yaml_config:
+                        self.config.update(yaml_config['venue_filter'])
+            except Exception as e:
+                # 設定ファイル読み込みエラー時はデフォルト設定を使用
+                pass
+
+    def is_enabled(self) -> bool:
+        """フィルターが有効か"""
+        return self.config.get('enabled', False)
+
+    def get_multiplier(self, venue_code: int) -> float:
+        """
+        会場の購入倍率を取得
+
+        Args:
+            venue_code: 会場コード（1-24）
+
+        Returns:
+            購入倍率（1.0 = 通常、1.5 = 1.5倍、0.5 = 半額）
+        """
+        if not self.is_enabled():
+            return 1.0
+
+        tier1_venues = self.config.get('tier1_venues', [])
+        tier3_venues = self.config.get('tier3_venues', [])
+
+        if venue_code in tier1_venues:
+            return self.config.get('tier1_multiplier', 1.5)
+        elif venue_code in tier3_venues:
+            return self.config.get('tier3_multiplier', 0.5)
+        else:
+            return self.config.get('tier2_multiplier', 1.0)
+
+    def apply_multiplier(self, bet_amount: int, venue_code: int) -> int:
+        """
+        購入金額に会場倍率を適用
+
+        Args:
+            bet_amount: 基本購入金額
+            venue_code: 会場コード
+
+        Returns:
+            調整後の購入金額（100円単位）
+        """
+        if not self.is_enabled():
+            return bet_amount
+
+        multiplier = self.get_multiplier(venue_code)
+        adjusted = int(bet_amount * multiplier)
+
+        # 100円単位に丸める
+        adjusted = (adjusted // 100) * 100
+
+        # 上下限適用
+        min_bet = self.config.get('min_bet_amount', 100)
+        max_bet = self.config.get('max_bet_amount', 2000)
+        adjusted = max(min_bet, min(max_bet, adjusted))
+
+        return adjusted
+
+    def get_tier(self, venue_code: int) -> str:
+        """
+        会場のTierを取得
+
+        Args:
+            venue_code: 会場コード
+
+        Returns:
+            'tier1', 'tier2', or 'tier3'
+        """
+        tier1_venues = self.config.get('tier1_venues', [])
+        tier3_venues = self.config.get('tier3_venues', [])
+
+        if venue_code in tier1_venues:
+            return 'tier1'
+        elif venue_code in tier3_venues:
+            return 'tier3'
+        else:
+            return 'tier2'
 
 
 class BetType(Enum):
@@ -141,14 +267,20 @@ class BetSelector:
     """
     買い目選択エンジン
 
-    フィルタリング → EV計算 → 動的配分 → 買い目決定
+    フィルタリング → EV計算 → 動的配分 → 会場フィルター → 買い目決定
     """
 
-    def __init__(self):
-        """初期化"""
+    def __init__(self, venue_filter_config: Optional[Path] = None):
+        """
+        初期化
+
+        Args:
+            venue_filter_config: 会場フィルター設定ファイルパス
+        """
         self.filter_engine = FilterEngine()
         self.ev_calculator = EVCalculator()
         self.allocator = DynamicAllocator()
+        self.venue_filter = VenueFilter(venue_filter_config)
 
     def select_bets(
         self,
@@ -263,6 +395,44 @@ class BetSelector:
                     reason=exacta_decision.reason,
                     logic_version=exacta_decision.logic_version
                 )
+
+        # 会場フィルター適用（B-1）
+        if self.venue_filter.is_enabled():
+            if trifecta_decision.should_buy:
+                adjusted_tri_amount = self.venue_filter.apply_multiplier(tri_amount, venue_code)
+                venue_tier = self.venue_filter.get_tier(venue_code)
+                trifecta_decision = BetDecision(
+                    should_buy=trifecta_decision.should_buy,
+                    bet_type=trifecta_decision.bet_type,
+                    combination=trifecta_decision.combination,
+                    odds=trifecta_decision.odds,
+                    bet_amount=adjusted_tri_amount,
+                    ev=trifecta_decision.ev,
+                    edge=trifecta_decision.edge,
+                    confidence=trifecta_decision.confidence,
+                    method=trifecta_decision.method,
+                    reason=f'{trifecta_decision.reason} [会場{venue_tier}]',
+                    logic_version=trifecta_decision.logic_version
+                )
+                tri_amount = adjusted_tri_amount
+
+            if exacta_decision.should_buy:
+                adjusted_exa_amount = self.venue_filter.apply_multiplier(exa_amount, venue_code)
+                venue_tier = self.venue_filter.get_tier(venue_code)
+                exacta_decision = BetDecision(
+                    should_buy=exacta_decision.should_buy,
+                    bet_type=exacta_decision.bet_type,
+                    combination=exacta_decision.combination,
+                    odds=exacta_decision.odds,
+                    bet_amount=adjusted_exa_amount,
+                    ev=exacta_decision.ev,
+                    edge=exacta_decision.edge,
+                    confidence=exacta_decision.confidence,
+                    method=exacta_decision.method,
+                    reason=f'{exacta_decision.reason} [会場{venue_tier}]',
+                    logic_version=exacta_decision.logic_version
+                )
+                exa_amount = adjusted_exa_amount
 
         return RaceBetPlan(
             race_id=race_id,

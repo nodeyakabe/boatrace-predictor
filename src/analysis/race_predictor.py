@@ -55,6 +55,18 @@ from config.settings import (
 )
 from config.venue_course_win_rates import get_venue_course_win_rate
 
+# 予測戦略設定をロード
+try:
+    import yaml
+    _PREDICTION_STRATEGY_PATH = Path(__file__).parent.parent.parent / 'config' / 'prediction_strategy.yaml'
+    if _PREDICTION_STRATEGY_PATH.exists():
+        with open(_PREDICTION_STRATEGY_PATH, 'r', encoding='utf-8') as f:
+            PREDICTION_STRATEGY = yaml.safe_load(f)
+    else:
+        PREDICTION_STRATEGY = None
+except Exception:
+    PREDICTION_STRATEGY = None
+
 
 # ==================================================
 # BEFORE情報パターンボーナス定義
@@ -929,6 +941,12 @@ class RacePredictor:
 
         # 再ソート（ハイブリッドスコア適用後）
         predictions.sort(key=lambda x: x['total_score'], reverse=True)
+
+        # ========================================
+        # 予測コース強制化（2025-12-16追加）
+        # 非1コース予測の精度が低い問題への対策
+        # ========================================
+        predictions = self._apply_course_enforcement(predictions)
 
         # 順位予想を付与
         for rank, pred in enumerate(predictions, 1):
@@ -2595,6 +2613,133 @@ class RacePredictor:
         except Exception as e:
             # エラーが発生しても既存のスコアで継続
             pass
+
+        return predictions
+
+    def _apply_course_enforcement(
+        self,
+        predictions: List[Dict]
+    ) -> List[Dict]:
+        """
+        予測コース強制化を適用
+
+        2025年分析結果に基づく改善:
+        - 1コース予測時: 精度60.5%（ベースライン55.1%を上回る）
+        - 非1コース予測時: 精度24.8%（極めて低い）
+
+        設定に基づき、低精度な非1コース予測を1コースに強制変更する
+
+        Args:
+            predictions: スコア降順にソートされた予測結果リスト
+
+        Returns:
+            コース強制化適用後の予測結果
+        """
+        logger = logging.getLogger(__name__)
+
+        # 設定ファイルが読み込めていない場合は処理しない
+        if PREDICTION_STRATEGY is None:
+            return predictions
+
+        # 設定を取得
+        enforcement_config = PREDICTION_STRATEGY.get('course_enforcement', {})
+        if not enforcement_config.get('enabled', False):
+            return predictions
+
+        mode = enforcement_config.get('mode', 'score_threshold')
+
+        # 現在の1位予測を取得
+        if not predictions:
+            return predictions
+
+        top_prediction = predictions[0]
+        top_pit = top_prediction['pit_number']
+        top_score = top_prediction['total_score']
+        top_confidence = top_prediction['confidence']
+
+        # 1コースが既に1位予測の場合は処理不要
+        if top_pit == 1:
+            return predictions
+
+        # 1コースの予測データを取得
+        course1_prediction = None
+        for pred in predictions:
+            if pred['pit_number'] == 1:
+                course1_prediction = pred
+                break
+
+        if course1_prediction is None:
+            return predictions
+
+        course1_score = course1_prediction['total_score']
+        score_diff = top_score - course1_score
+
+        # 強制化判定
+        should_enforce = False
+        enforce_reason = ""
+
+        if mode == 'all':
+            # 全ての非1コース予測を強制
+            should_enforce = True
+            enforce_reason = "全件1コース強制モード"
+
+        elif mode == 'confidence_threshold':
+            # 信頼度による強制
+            conf_settings = enforcement_config.get('confidence_threshold_settings', {})
+            min_confidence = conf_settings.get('min_confidence', 'C')
+
+            confidence_order = {'A': 5, 'B': 4, 'C': 3, 'D': 2, 'E': 1}
+            min_conf_level = confidence_order.get(min_confidence, 3)
+            top_conf_level = confidence_order.get(top_confidence, 3)
+
+            if top_conf_level <= min_conf_level:
+                should_enforce = True
+                enforce_reason = f"信頼度{top_confidence}（閾値{min_confidence}以下）"
+
+        elif mode == 'score_threshold':
+            # スコア差による強制
+            score_settings = enforcement_config.get('score_threshold_settings', {})
+            min_score_diff = score_settings.get('min_score_difference', 8.0)
+
+            if score_diff < min_score_diff:
+                should_enforce = True
+                enforce_reason = f"スコア差{score_diff:.1f}pt（閾値{min_score_diff}pt未満）"
+
+        elif mode == 'combined':
+            # 信頼度とスコア差の組み合わせ
+            conf_settings = enforcement_config.get('confidence_threshold_settings', {})
+            score_settings = enforcement_config.get('score_threshold_settings', {})
+
+            min_confidence = conf_settings.get('min_confidence', 'C')
+            min_score_diff = score_settings.get('min_score_difference', 8.0)
+
+            confidence_order = {'A': 5, 'B': 4, 'C': 3, 'D': 2, 'E': 1}
+            min_conf_level = confidence_order.get(min_confidence, 3)
+            top_conf_level = confidence_order.get(top_confidence, 3)
+
+            # どちらかの条件を満たせば強制
+            if top_conf_level <= min_conf_level:
+                should_enforce = True
+                enforce_reason = f"信頼度{top_confidence}（閾値{min_confidence}以下）"
+            elif score_diff < min_score_diff:
+                should_enforce = True
+                enforce_reason = f"スコア差{score_diff:.1f}pt（閾値{min_score_diff}pt未満）"
+
+        # 強制化を適用
+        if should_enforce:
+            logger.info(
+                f"コース強制化適用: {top_pit}コース → 1コースに変更 "
+                f"（理由: {enforce_reason}, 元スコア差: {score_diff:.1f}pt）"
+            )
+
+            # 1コースのスコアを最大にする（元の1位より少し高く設定）
+            course1_prediction['total_score'] = top_score + 0.1
+            course1_prediction['course_enforcement_applied'] = True
+            course1_prediction['enforcement_reason'] = enforce_reason
+            course1_prediction['original_score'] = course1_score
+
+            # 再ソート
+            predictions.sort(key=lambda x: x['total_score'], reverse=True)
 
         return predictions
 
