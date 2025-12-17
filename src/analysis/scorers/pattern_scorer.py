@@ -24,13 +24,42 @@ from src.utils.db_connection_pool import get_connection
 # 倍率はconfig/presets/scoring_weights.yamlから読み込み可能
 
 BEFORE_PATTERNS_1ST = [
-    # 1着予測用パターン（4パターン）
+    # 1着予測用パターン（4パターン + ネガティブ3パターン）
+    {
+        'name': 'pre1_st1_ex1',
+        'description': 'PRE1位 & ST1位 & 展示1位（最強複合）',
+        'multiplier': get_pattern_multiplier('pre1_st1_ex1', 1.50),  # +193%効果（分析結果より）
+        'target_rank': 1,
+        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 1 and st_rank == 1 and ex_rank == 1,
+    },
     {
         'name': 'pre1_st1',
         'description': 'PRE1位 & ST1位',
         'multiplier': get_pattern_multiplier('pre1_st1', 1.411),
         'target_rank': 1,
-        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 1 and st_rank == 1,
+        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 1 and st_rank == 1 and ex_rank != 1,  # 展示1位は上のパターンで処理
+    },
+    # ネガティブパターン: ST遅い場合のペナルティ
+    {
+        'name': 'pre1_st6',
+        'description': 'PRE1位 & ST6位（大幅ペナルティ）',
+        'multiplier': get_pattern_multiplier('pre1_st6', 0.53),  # -24.84%効果
+        'target_rank': 1,
+        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 1 and st_rank == 6,
+    },
+    {
+        'name': 'pre1_st5_6',
+        'description': 'PRE1位 & ST5-6位（ペナルティ緩和）',
+        'multiplier': get_pattern_multiplier('pre1_st5_6', 0.80),  # 緊急修正: 0.63→0.80（誤ブロック率40.7%のため緩和）
+        'target_rank': 1,
+        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 1 and st_rank >= 5 and st_rank != 6,  # ST6は上のパターンで処理
+    },
+    {
+        'name': 'pre1_st4_6',
+        'description': 'PRE1位 & ST4-6位（無効化）',
+        'multiplier': get_pattern_multiplier('pre1_st4_6', 1.0),  # 緊急修正: 0.70→1.0（誤ブロック率44.6%のため無効化）
+        'target_rank': 1,
+        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 1 and st_rank >= 4 and st_rank not in [5, 6],  # ST5-6は上のパターンで処理
     },
     {
         'name': 'pre1_ex1',
@@ -56,7 +85,15 @@ BEFORE_PATTERNS_1ST = [
 ]
 
 BEFORE_PATTERNS_2ND = [
-    # 2着予測用パターン（7パターン）
+    # 2着予測用パターン（7パターン + 新規強力パターン）
+    # 新規強力パターン: PRE2位 & ST1-2位（+2.90%効果）
+    {
+        'name': 'pre2_st1_2',
+        'description': 'PRE2位 & ST1-2位（強力）',
+        'multiplier': get_pattern_multiplier('pre2_st1_2', 1.12),  # +2.90%効果
+        'target_rank': 2,
+        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank == 2 and st_rank <= 2,
+    },
     {
         'name': 'pre2_3_ex1_2',
         'description': 'PRE2-3位 & 展示1-2位',
@@ -141,13 +178,37 @@ BEFORE_PATTERNS_3RD = [
 ]
 
 BEFORE_PATTERNS_TOP3 = [
-    # 3着以内予測用パターン（5パターン）
+    # 3着以内予測用パターン（5パターン + 新規強力パターン + ネガティブパターン）
+    # 最強複合パターン: ST1-2位 & 展示1-2位（+123%効果）
+    {
+        'name': 'st1_2_ex1_2_double_top',
+        'description': 'ST1-2位 & 展示1-2位（両方上位、超強力）',
+        'multiplier': get_pattern_multiplier('st1_2_ex1_2_double_top', 1.35),  # +123%効果
+        'target_rank': 'top3',
+        'condition': lambda pre_rank, ex_rank, st_rank: st_rank <= 2 and ex_rank <= 2,
+    },
+    # 新規強力パターン: PRE1-3位 & ST1位（+15.07%効果、34,985サンプル）
+    {
+        'name': 'pre1_3_st1',
+        'description': 'PRE1-3位 & ST1位（強力）',
+        'multiplier': get_pattern_multiplier('pre1_3_st1', 1.23),  # +15.07%効果
+        'target_rank': 'top3',
+        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank <= 3 and st_rank == 1,
+    },
+    # ネガティブパターン: ST5-6位 & 展示5-6位（-75.75%効果）
+    {
+        'name': 'st5_6_ex5_6_double_bottom',
+        'description': 'ST5-6位 & 展示5-6位（両方下位、大幅ペナルティ）',
+        'multiplier': get_pattern_multiplier('st5_6_ex5_6_double_bottom', 0.60),  # -75.75%効果
+        'target_rank': 'top3',
+        'condition': lambda pre_rank, ex_rank, st_rank: st_rank >= 5 and ex_rank >= 5,
+    },
     {
         'name': 'pre1_3_st1_3',
         'description': 'PRE1-3位 & ST1-3位',
         'multiplier': get_pattern_multiplier('pre1_3_st1_3', 1.130),
         'target_rank': 'top3',
-        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank <= 3 and st_rank <= 3,
+        'condition': lambda pre_rank, ex_rank, st_rank: pre_rank <= 3 and st_rank <= 3 and st_rank != 1,  # ST1は上のパターンで処理
     },
     {
         'name': 'pre1_3_ex1_3',

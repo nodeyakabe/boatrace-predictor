@@ -23,8 +23,8 @@ extended_scorer:
   course_entry: 5        # 進入傾向スコア
   matchup: 5             # 選手間相性スコア
   motor: 5               # モーター特性スコア
-  start_timing: 8        # 平均STスコア
-  exhibition: 10         # 展示タイムスコア（重要指標）
+  start_timing: 10       # 平均STスコア（8→10: 統計分析により最適化）
+  exhibition: 8          # 展示タイムスコア（10→8: 統計分析により最適化）
   tilt: 3                # チルト角度スコア
   recent_form: 8         # 直近成績スコア
   venue_affinity: 3      # 会場別勝率スコア
