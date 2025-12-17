@@ -60,7 +60,7 @@ BEFORE_PATTERNS_2ND = [
     {
         'name': 'pre2_3_ex1_2',
         'description': 'PRE2-3位 & 展示1-2位',
-        'multiplier': get_pattern_multiplier('pre2_3_ex1_2', 1.084),
+        'multiplier': get_pattern_multiplier('pre2_3_ex1_2', 1.0),  # 修正: 1.084 → 1.0 (逆効果のため無効化)
         'target_rank': 2,
         'condition': lambda pre_rank, ex_rank, st_rank: 2 <= pre_rank <= 3 and ex_rank <= 2,
     },
@@ -74,7 +74,7 @@ BEFORE_PATTERNS_2ND = [
     {
         'name': 'ex1_3_pre2_3',
         'description': '展示1-3位 & PRE2-3位',
-        'multiplier': get_pattern_multiplier('ex1_3_pre2_3', 1.069),
+        'multiplier': get_pattern_multiplier('ex1_3_pre2_3', 1.0),  # 修正: 1.069 → 1.0 (逆効果のため無効化)
         'target_rank': 2,
         'condition': lambda pre_rank, ex_rank, st_rank: ex_rank <= 3 and 2 <= pre_rank <= 3,
     },
@@ -95,7 +95,7 @@ BEFORE_PATTERNS_2ND = [
     {
         'name': 'ex_rank_2',
         'description': '展示2位',
-        'multiplier': get_pattern_multiplier('ex_rank_2', 1.035),
+        'multiplier': get_pattern_multiplier('ex_rank_2', 1.0),  # 修正: 1.035 → 1.0 (逆効果-6.0%のため無効化)
         'target_rank': 2,
         'condition': lambda pre_rank, ex_rank, st_rank: ex_rank == 2,
     },
@@ -166,14 +166,14 @@ BEFORE_PATTERNS_TOP3 = [
     {
         'name': 'pre1_4_ex1_2',
         'description': 'PRE1-4位 & 展示1-2位',
-        'multiplier': get_pattern_multiplier('pre1_4_ex1_2', 1.104),
+        'multiplier': get_pattern_multiplier('pre1_4_ex1_2', 1.0),  # 修正: 1.104 → 1.0 (逆効果-2.6%のため無効化)
         'target_rank': 'top3',
         'condition': lambda pre_rank, ex_rank, st_rank: pre_rank <= 4 and ex_rank <= 2,
     },
     {
         'name': 'ex_rank_1_2',
         'description': '展示1-2位',
-        'multiplier': get_pattern_multiplier('ex_rank_1_2', 1.051),
+        'multiplier': get_pattern_multiplier('ex_rank_1_2', 1.0),  # 修正: 1.051 → 1.0 (逆効果-4.1%のため無効化)
         'target_rank': 'top3',
         'condition': lambda pre_rank, ex_rank, st_rank: ex_rank <= 2,
     },
