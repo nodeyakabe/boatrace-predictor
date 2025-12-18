@@ -29,6 +29,10 @@ FEATURE_FLAGS = {
     'apply_pattern_to_confidence_d': False,  # 信頼度Dへのパターン適用
     'venue_pattern_optimization': False,     # 会場別パターン最適化
     'compound_pattern_bonus': False,         # 複合パターンボーナス（ROI+11%のみ）
+    'odds_calibration': False,               # 1着オッズ校正（効果なし、保留中）
+    'rank23_odds_calibration': False,        # 2着・3着オッズ校正（2024年+2.04pt, 2025年±0.00pt → 不採用）
+    'second_place_specialized': True,        # 2着専用スコアリングモデル（アプローチ2）
+    'confidence_based_switching': True,       # 信頼度ベース戦略切り替え（アプローチ1）
 
     # === デバッグ用 ===
     'verbose_logging': False,         # 詳細ログ出力
@@ -209,6 +213,39 @@ FEATURE_RISKS = {
         'risk_level': 'high',
         'main_risks': ['学習不安定', '実環境との乖離'],
         'mitigation': 'シミュレーション環境構築'
+    },
+    'odds_calibration': {
+        'risk_level': 'low',
+        'main_risks': ['オッズデータ欠損時の処理', '市場確率の過信'],
+        'mitigation': 'オッズなし時はスキップ、alpha=0.3で緩やかな補正',
+        'expected_effect': '効果なし（1着予測は市場効率が高い）',
+        'status': '保留中'
+    },
+    'rank23_odds_calibration': {
+        'risk_level': 'low',
+        'main_risks': ['オッズデータ欠損時の処理', '2着・3着順位の変動'],
+        'mitigation': 'オッズなし時はスキップ、alpha=0.3で緩やかな統合',
+        'expected_effect': '+2.0pt（三連単的中率改善）',
+        'test_result': '2024年: +2.04pt（49レース）, 2025年: ±0.00pt（100レース）',
+        'enabled_date': '2025-12-18',
+        'disabled_date': '2025-12-18',  # モデルドリフトにより効果消失
+        'status': '不採用 - 2025年データで効果なし'
+    },
+    'second_place_specialized': {
+        'risk_level': 'low',
+        'main_risks': ['モデル未学習時の処理', '2着順位の変動'],
+        'mitigation': 'モデルなし時はスキップ、統合重み0.5で緩やかな適用',
+        'expected_effect': '+6.0pt（2着的中率改善）',
+        'test_result': '+6.8pt（432レース検証 2025-12-18）AUC=0.6819',
+        'enabled_date': '2025-12-18'  # 実装日
+    },
+    'confidence_based_switching': {
+        'risk_level': 'low',
+        'main_risks': ['戦略切り替えによる予測変動', '閾値チューニングの必要性'],
+        'mitigation': '段階的閾値（high=0.7, medium=0.5）で緩やかな切り替え',
+        'expected_effect': '+2-3pt（2着・3着的中率改善）',
+        'test_result': '検証中（アプローチ1: 信頼度ベース戦略切り替え）',
+        'enabled_date': '2025-12-18'  # 実装日
     }
 }
 

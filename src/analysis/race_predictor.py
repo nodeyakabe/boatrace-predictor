@@ -29,6 +29,7 @@ from .top3_scorer import Top3Scorer
 from .pattern_priority_optimizer import PatternPriorityOptimizer
 from .negative_pattern_checker import NegativePatternChecker
 from .venue_pattern_optimizer import VenuePatternOptimizer
+from .scorers.odds_calibrator import OddsCalibrator
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -46,6 +47,27 @@ try:
     HIERARCHICAL_MODEL_AVAILABLE = True
 except ImportError:
     HIERARCHICAL_MODEL_AVAILABLE = False
+
+# 2着専用スコアリングモデル（アプローチ2）
+try:
+    from src.ml.second_place_specialized_model import (
+        SecondPlaceSpecializedScorer,
+        SecondPlaceIntegrator
+    )
+    SECOND_PLACE_MODEL_AVAILABLE = True
+except ImportError:
+    SECOND_PLACE_MODEL_AVAILABLE = False
+
+# 信頼度ベース予測（アプローチ1）
+try:
+    from src.ml.confidence_based_rank_predictor import (
+        ConfidenceBasedRankPredictor,
+        ConfidenceBasedIntegrator,
+        calculate_market_probs_from_odds
+    )
+    CONFIDENCE_BASED_MODEL_AVAILABLE = True
+except ImportError:
+    CONFIDENCE_BASED_MODEL_AVAILABLE = False
 from src.database.batch_data_loader import BatchDataLoader
 from config.venue_characteristics import get_venue_adjustment, get_venue_course_adjustment
 from config.settings import (
@@ -127,6 +149,7 @@ class RacePredictor:
         self.pattern_optimizer = PatternPriorityOptimizer()
         self.negative_pattern_checker = NegativePatternChecker()
         self.venue_pattern_optimizer = VenuePatternOptimizer(db_path)
+        self.odds_calibrator = OddsCalibrator(db_path, alpha=0.5, temperature=4.0)  # オッズ校正（α=0.5, T=4.0）
         self.race_data_cache = RaceDataCache()
 
         # 階層的確率モデル（条件付き確率ベースの三連単予測）
@@ -136,6 +159,43 @@ class RacePredictor:
                 self.hierarchical_predictor = HierarchicalPredictor(db_path)
             except Exception as e:
                 print(f"階層的予測モデル初期化エラー: {e}")
+
+        # 2着専用スコアリングモデル（アプローチ2: 差し・まくり差し特化）
+        self.second_place_scorer = None
+        self.second_place_integrator = None
+        if SECOND_PLACE_MODEL_AVAILABLE and is_feature_enabled('second_place_specialized'):
+            try:
+                self.second_place_scorer = SecondPlaceSpecializedScorer(
+                    model_dir='models',
+                    db_path=db_path
+                )
+                # モデルが存在すれば読み込み
+                import os
+                model_path = os.path.join('models', 'second_place_specialized.txt')
+                if os.path.exists(model_path):
+                    self.second_place_scorer.load('second_place_specialized')
+                    self.second_place_integrator = SecondPlaceIntegrator(
+                        specialized_scorer=self.second_place_scorer,
+                        integration_weight=0.5  # 専用モデルの重み
+                    )
+            except Exception as e:
+                print(f"2着専用モデル初期化エラー: {e}")
+
+        # 信頼度ベース予測（アプローチ1: 信頼度に応じた戦略切り替え）
+        self.confidence_based_predictor = None
+        self.confidence_based_integrator = None
+        if CONFIDENCE_BASED_MODEL_AVAILABLE and is_feature_enabled('confidence_based_switching'):
+            try:
+                self.confidence_based_predictor = ConfidenceBasedRankPredictor(
+                    high_threshold=0.7,
+                    medium_threshold=0.5
+                )
+                self.confidence_based_integrator = ConfidenceBasedIntegrator(
+                    predictor=self.confidence_based_predictor,
+                    enable_logging=False
+                )
+            except Exception as e:
+                print(f"信頼度ベース予測器初期化エラー: {e}")
 
         # 重み設定をロード（優先順位: custom_weights > mode > default）
         if custom_weights:
@@ -927,8 +987,54 @@ class RacePredictor:
         # ========================================
         predictions = self._apply_probability_calibration(predictions)
 
+        # ========================================
+        # オッズ校正適用（機能フラグで制御）
+        # 1着予測: 市場確率とモデル確率の乖離を検出してスコアを補正
+        # ========================================
+        if is_feature_enabled('odds_calibration'):
+            predictions = self.odds_calibrator.calibrate_predictions(predictions, race_id)
+
         # スコア順にソート（信頼度判定のため）
         predictions.sort(key=lambda x: x['total_score'], reverse=True)
+
+        # ========================================
+        # 2着・3着オッズ校正適用（機能フラグで制御）
+        # 市場の2着・3着条件付き確率とML予測を統合
+        # 期待効果: 三連単的中率 +2.0pt
+        # ========================================
+        if is_feature_enabled('rank23_odds_calibration'):
+            predictions = self.odds_calibrator.calibrate_rank23_predictions(
+                predictions, race_id, alpha=0.3
+            )
+
+        # ========================================
+        # 2着専用スコアリング適用（機能フラグで制御）
+        # アプローチ2: 差し・まくり差し特化型特徴量
+        # 期待効果: 2着的中率 +3pt
+        # ========================================
+        if (is_feature_enabled('second_place_specialized') and
+            self.second_place_scorer is not None and
+            self.second_place_scorer.model is not None):
+            try:
+                predictions = self._apply_second_place_specialized(
+                    predictions, race_id
+                )
+            except Exception as e:
+                logger.debug(f"Race {race_id}: 2着専用スコア適用エラー: {e}")
+
+        # ========================================
+        # 信頼度ベース戦略切り替え適用（機能フラグで制御）
+        # アプローチ1: 1着予測の確信度に応じた2着・3着予測方法の切り替え
+        # 期待効果: 2着・3着的中率の向上
+        # ========================================
+        if (is_feature_enabled('confidence_based_switching') and
+            self.confidence_based_integrator is not None):
+            try:
+                predictions = self._apply_confidence_based_switching(
+                    predictions, race_id
+                )
+            except Exception as e:
+                logger.debug(f"Race {race_id}: 信頼度ベース戦略切り替えエラー: {e}")
 
         # ========================================
         # 三連対スコアを計算して追加（2着・3着予測の精度向上）
@@ -2742,6 +2848,298 @@ class RacePredictor:
             predictions.sort(key=lambda x: x['total_score'], reverse=True)
 
         return predictions
+
+    def _apply_second_place_specialized(
+        self,
+        predictions: List[Dict],
+        race_id: int
+    ) -> List[Dict]:
+        """
+        2着専用スコアリングを適用
+
+        差し・まくり差し特化型の特徴量を使用して
+        2着予測の精度を向上させる。
+
+        アプローチ2: 2着専用の機械学習モデルを使用
+        - 1着予測艇を条件として2着確率を予測
+        - 既存の順位予測と統合
+
+        Args:
+            predictions: 予測結果リスト（スコア順）
+            race_id: レースID
+
+        Returns:
+            2着専用スコア適用後の予測結果
+        """
+        logger = logging.getLogger(__name__)
+
+        if self.second_place_scorer is None or self.second_place_scorer.model is None:
+            return predictions
+
+        if len(predictions) < 2:
+            return predictions
+
+        try:
+            # レース特徴量を取得
+            import pandas as pd
+            import sqlite3
+            conn = get_connection(self.db_path)
+
+            query = """
+            SELECT
+                e.pit_number,
+                e.racer_number,
+                e.racer_rank,
+                e.win_rate,
+                e.second_rate,
+                e.third_rate,
+                e.motor_number,
+                e.motor_second_rate,
+                e.motor_third_rate,
+                e.boat_second_rate,
+                e.avg_st,
+                e.f_count,
+                e.l_count,
+                rd.exhibition_time,
+                rd.st_time,
+                rd.tilt_angle
+            FROM entries e
+            LEFT JOIN race_details rd ON e.race_id = rd.race_id AND e.pit_number = rd.pit_number
+            WHERE e.race_id = ?
+            ORDER BY e.pit_number
+            """
+
+            race_features = pd.read_sql_query(query, conn, params=(race_id,))
+
+            if len(race_features) != 6:
+                return predictions
+
+            # 予測結果からスコアを追加
+            for pred in predictions:
+                pit = pred['pit_number']
+                idx = race_features[race_features['pit_number'] == pit].index
+                if len(idx) > 0:
+                    race_features.loc[idx[0], 'total_score'] = pred['total_score']
+
+            # 予測1着艇
+            predicted_first = predictions[0]['pit_number']
+
+            # 2着専用モデルで予測
+            specialized_probs = self.second_place_scorer.predict(
+                race_features, predicted_first
+            )
+
+            if not specialized_probs:
+                return predictions
+
+            # 既存の2着確率（スコアベース）
+            total_remaining_score = sum(
+                p['total_score'] for p in predictions[1:]
+            )
+            baseline_probs = {}
+            if total_remaining_score > 0:
+                for p in predictions[1:]:
+                    baseline_probs[p['pit_number']] = p['total_score'] / total_remaining_score
+
+            # 統合（重み: 0.5 baseline, 0.5 specialized）
+            integration_weight = 0.5
+            integrated_probs = {}
+
+            for pit in specialized_probs:
+                baseline = baseline_probs.get(pit, 0.0)
+                specialized = specialized_probs[pit]
+                integrated_probs[pit] = (
+                    (1 - integration_weight) * baseline +
+                    integration_weight * specialized
+                )
+
+            # 正規化
+            total_integrated = sum(integrated_probs.values())
+            if total_integrated > 0:
+                integrated_probs = {
+                    pit: prob / total_integrated
+                    for pit, prob in integrated_probs.items()
+                }
+
+            # 予測結果に追加
+            for pred in predictions:
+                pit = pred['pit_number']
+                if pit == predicted_first:
+                    pred['specialized_2nd_prob'] = 0.0
+                    pred['integrated_2nd_prob'] = 0.0
+                else:
+                    pred['specialized_2nd_prob'] = round(
+                        specialized_probs.get(pit, 0.0), 4
+                    )
+                    pred['integrated_2nd_prob'] = round(
+                        integrated_probs.get(pit, 0.0), 4
+                    )
+
+            # 2着候補を統合確率で再順位付け
+            first_pred = predictions[0]
+            rest_preds = sorted(
+                [p for p in predictions[1:]],
+                key=lambda x: x.get('integrated_2nd_prob', 0.0),
+                reverse=True
+            )
+
+            # スコア調整（2着候補のスコアを微調整）
+            if rest_preds:
+                # 統合確率に基づいてスコアを再調整
+                max_rest_score = max(p['total_score'] for p in rest_preds)
+                for i, pred in enumerate(rest_preds):
+                    integrated_prob = pred.get('integrated_2nd_prob', 0.0)
+                    # 統合確率に基づくスコア調整（最大5点）
+                    adjustment = (integrated_prob - 0.2) * 25  # 0.2が基準
+                    adjustment = max(-3.0, min(5.0, adjustment))
+                    pred['second_place_adjustment'] = round(adjustment, 2)
+                    pred['total_score'] = round(pred['total_score'] + adjustment, 1)
+
+            # 再ソート
+            predictions = [first_pred] + sorted(
+                rest_preds,
+                key=lambda x: x['total_score'],
+                reverse=True
+            )
+
+            logger.debug(
+                f"Race {race_id}: 2着専用スコア適用 - "
+                f"予測1着: {predicted_first}号艇, "
+                f"予測2着: {predictions[1]['pit_number']}号艇"
+            )
+
+        except Exception as e:
+            logger.debug(f"Race {race_id}: 2着専用スコア計算エラー: {e}")
+
+        return predictions
+
+    def _apply_confidence_based_switching(
+        self,
+        predictions: List[Dict],
+        race_id: int
+    ) -> List[Dict]:
+        """
+        信頼度ベースの戦略切り替えを適用
+
+        アプローチ1: 1着予測の確信度に応じた2着・3着予測方法の切り替え
+
+        理論的根拠:
+        - 1着予測が正しい場合: 2着的中率 31.67%（良好）
+        - 1着予測が誤りの場合: 2着的中率 16.93%（ランダム20%以下）
+
+        戦略:
+        - 高信頼度: 条件付きモデル + 2着専用スコアリング
+        - 中信頼度: 2着専用スコアリングのみ
+        - 低信頼度: 独立予測（1着を条件としない全艇並列評価）
+
+        Args:
+            predictions: 予測結果リスト（スコア順）
+            race_id: レースID
+
+        Returns:
+            信頼度ベース予測適用後の予測結果
+        """
+        logger = logging.getLogger(__name__)
+
+        if self.confidence_based_integrator is None:
+            return predictions
+
+        if len(predictions) < 2:
+            return predictions
+
+        try:
+            # 市場確率を取得（オッズから計算）
+            market_probs = None
+            try:
+                trifecta_odds = self.odds_calibrator._get_trifecta_odds(race_id)
+                if trifecta_odds:
+                    market_probs = calculate_market_probs_from_odds(trifecta_odds)
+            except Exception:
+                pass
+
+            # プリセットパターンを取得（適用された法則から）
+            preset_pattern = None
+            try:
+                applied_rules = self.get_applied_rules(race_id)
+                if applied_rules:
+                    # 最も信頼度の高い法則名を取得
+                    preset_pattern = applied_rules[0].get('rule_name', None)
+            except Exception:
+                pass
+
+            # 2着専用モデルの確率を取得
+            specialized_second_probs = None
+            if self.second_place_scorer is not None and self.second_place_scorer.model is not None:
+                try:
+                    import pandas as pd
+                    conn = get_connection(self.db_path)
+
+                    query = """
+                    SELECT
+                        e.pit_number,
+                        e.racer_number,
+                        e.racer_rank,
+                        e.win_rate,
+                        e.second_rate,
+                        e.third_rate,
+                        e.motor_second_rate,
+                        e.boat_second_rate,
+                        e.avg_st,
+                        e.f_count,
+                        e.l_count,
+                        rd.exhibition_time,
+                        rd.st_time
+                    FROM entries e
+                    LEFT JOIN race_details rd ON e.race_id = rd.race_id AND e.pit_number = rd.pit_number
+                    WHERE e.race_id = ?
+                    ORDER BY e.pit_number
+                    """
+
+                    race_features = pd.read_sql_query(query, conn, params=(race_id,))
+
+                    if len(race_features) == 6:
+                        # 予測結果からスコアを追加
+                        for pred in predictions:
+                            pit = pred['pit_number']
+                            idx = race_features[race_features['pit_number'] == pit].index
+                            if len(idx) > 0:
+                                race_features.loc[idx[0], 'total_score'] = pred['total_score']
+
+                        predicted_first = predictions[0]['pit_number']
+                        specialized_second_probs = self.second_place_scorer.predict(
+                            race_features, predicted_first
+                        )
+                except Exception:
+                    pass
+
+            # 条件付きモデルの確率を取得（既存の予測から）
+            conditional_second_probs = None
+            if predictions[0].get('integrated_2nd_prob', 0) > 0:
+                conditional_second_probs = {
+                    p['pit_number']: p.get('integrated_2nd_prob', 0.0)
+                    for p in predictions if p['pit_number'] != predictions[0]['pit_number']
+                }
+
+            # 信頼度ベース予測を適用
+            processed, confidence = self.confidence_based_integrator.process_predictions(
+                predictions=predictions,
+                market_probs=market_probs,
+                preset_pattern=preset_pattern,
+                conditional_second_probs=conditional_second_probs,
+                specialized_second_probs=specialized_second_probs
+            )
+
+            logger.debug(
+                f"Race {race_id}: 信頼度ベース戦略 - "
+                f"レベル: {confidence.confidence_level}, "
+                f"スコア: {confidence.total_confidence:.3f}"
+            )
+
+            return processed
+
+        except Exception as e:
+            logger.debug(f"Race {race_id}: 信頼度ベース戦略エラー: {e}")
+            return predictions
 
 
 if __name__ == "__main__":

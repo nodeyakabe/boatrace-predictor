@@ -1,9 +1,9 @@
 {
-  "status": "completed",
-  "step": "Step 6/6",
-  "message": "今日の予測生成が完了しました（132レース）",
-  "progress": 100,
-  "updated_at": "2025-12-16T14:37:05.635773",
+  "status": "running",
+  "step": "Step 5/6",
+  "message": "予測を生成中...",
+  "progress": 60,
+  "updated_at": "2025-12-18T15:36:55.802526",
   "completed_at": "2025-12-16T14:37:05.620754",
-  "started_at": "2025-12-16T14:26:58.751916"
+  "started_at": "2025-12-18T15:27:56.559170"
 }

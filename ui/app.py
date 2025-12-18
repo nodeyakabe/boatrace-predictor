@@ -57,11 +57,13 @@ def main():
         initial_sidebar_state="expanded"
     )
 
-    # データベースビューを初期化
-    try:
-        initialize_views(DATABASE_PATH)
-    except Exception as e:
-        st.warning(f"ビュー初期化エラー: {e}")
+    # データベースビューを初期化（セッション状態で1回のみ実行）
+    if 'views_initialized' not in st.session_state:
+        try:
+            initialize_views(DATABASE_PATH)
+            st.session_state.views_initialized = True
+        except Exception as e:
+            st.warning(f"ビュー初期化エラー: {e}")
 
     st.title("🦅 コンドル")
 
