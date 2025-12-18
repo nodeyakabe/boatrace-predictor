@@ -5,6 +5,7 @@
 段階的導入により、リスクを最小化する。
 
 更新履歴:
+- 2025-12-18: ペアワイズスコアリング（アプローチ3）フラグ追加
 - 2025-12-15: フラグ整理（27個→12個）、重複加算バグ修正用フラグ追加
 """
 
@@ -33,6 +34,7 @@ FEATURE_FLAGS = {
     'rank23_odds_calibration': False,        # 2着・3着オッズ校正（2024年+2.04pt, 2025年±0.00pt → 不採用）
     'second_place_specialized': True,        # 2着専用スコアリングモデル（アプローチ2）
     'confidence_based_switching': True,       # 信頼度ベース戦略切り替え（アプローチ1）
+    'pairwise_scoring': False,                # ペアワイズ相対スコアリング（アプローチ3）※検証中
 
     # === デバッグ用 ===
     'verbose_logging': False,         # 詳細ログ出力
@@ -245,6 +247,14 @@ FEATURE_RISKS = {
         'mitigation': '段階的閾値（high=0.7, medium=0.5）で緩やかな切り替え',
         'expected_effect': '+2-3pt（2着・3着的中率改善）',
         'test_result': '検証中（アプローチ1: 信頼度ベース戦略切り替え）',
+        'enabled_date': '2025-12-18'  # 実装日
+    },
+    'pairwise_scoring': {
+        'risk_level': 'low',
+        'main_risks': ['計算コスト増加', '既存スコアとの統合バランス'],
+        'mitigation': 'integration_weight=0.5で緩やかな統合、モデルなし時はスキップ',
+        'expected_effect': '+2-3pt（2着・3着的中率改善）',
+        'test_result': '検証中（アプローチ3: ペアワイズ相対スコアリング）',
         'enabled_date': '2025-12-18'  # 実装日
     }
 }
