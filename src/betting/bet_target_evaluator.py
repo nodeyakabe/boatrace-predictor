@@ -136,9 +136,51 @@ class BetTargetEvaluator:
         ],
     }
 
+    # ============================================================
+    # A・Bランク特別条件（2025年12月19日追加）
+    # ============================================================
+    # サンプル数増加（A:約7,500件、B:約39,000件）により統計的に有効と判断
+    # Aランク全体ROI 60%、Bランク全体ROI 74%は赤字だが、
+    # 以下の特定条件でROI 100%以上を確認
+    # ============================================================
+    AB_RANK_SPECIAL_CONDITIONS = {
+        # Bランク × 50-100倍帯: ROI 512% (n=14, 的中率7.14%)
+        'B': [
+            {
+                'method': '両方式',
+                'odds_min': 50, 'odds_max': 100,
+                'c1_rank': ['A1', 'A2', 'B1'],  # B2除外
+                'expected_roi': 512.1,
+                'bet_amount': 300,
+                'priority': 1,
+                'description': 'B×50-100倍（高配当特化）',
+            },
+        ],
+        # A・Bランク × 1コースB1級: ROI 154% (n=82, 的中率6.10%)
+        'A': [
+            {
+                'method': '両方式',
+                'odds_min': 10, 'odds_max': 100,  # 幅広いオッズ帯
+                'c1_rank': ['B1'],  # B1級限定
+                'expected_roi': 154.1,
+                'bet_amount': 300,
+                'priority': 1,
+                'description': 'A×B1級（特別条件）',
+            },
+        ],
+    }
+    # Bランク × B1級も追加（A+BランクでB1級が有効）
+    AB_RANK_SPECIAL_CONDITIONS['B'].append({
+        'method': '両方式',
+        'odds_min': 10, 'odds_max': 100,
+        'c1_rank': ['B1'],
+        'expected_roi': 154.1,
+        'bet_amount': 300,
+        'priority': 2,
+        'description': 'B×B1級（特別条件）',
+    })
+
     # 除外条件
-    # - 信頼度A, B: サンプル不足・安定性低
-    EXCLUDED_CONFIDENCE = ['A', 'B']
     # - B2級のみ除外（B1級は高配当範囲で超優秀なため使用）
     EXCLUDED_C1_RANKS = ['B2']
 
@@ -216,23 +258,28 @@ class BetTargetEvaluator:
         Returns:
             BetTarget: 購入対象情報
         """
-        # 信頼度チェック
-        if confidence in self.EXCLUDED_CONFIDENCE:
-            return BetTarget(
-                status=BetStatus.EXCLUDED,
-                confidence=confidence,
-                method='-',
-                combination='-',
-                odds=None,
-                odds_range='-',
-                c1_rank=c1_rank,
-                expected_roi=0,
-                bet_amount=0,
-                reason=f'信頼度{confidence}は購入対象外（サンプル不足）'
-            )
+        # A・Bランクは特別条件をチェック（feature_flagで制御）
+        from config.feature_flags import is_feature_enabled
 
-        # 信頼度に応じた条件をチェック
-        conditions = self.BET_CONDITIONS.get(confidence, [])
+        if confidence in ['A', 'B']:
+            if not is_feature_enabled('ab_rank_special_betting'):
+                return BetTarget(
+                    status=BetStatus.EXCLUDED,
+                    confidence=confidence,
+                    method='-',
+                    combination='-',
+                    odds=None,
+                    odds_range='-',
+                    c1_rank=c1_rank,
+                    expected_roi=0,
+                    bet_amount=0,
+                    reason=f'信頼度{confidence}は購入対象外（フラグ無効）'
+                )
+            # 特別条件をチェック
+            conditions = self.AB_RANK_SPECIAL_CONDITIONS.get(confidence, [])
+        else:
+            # 信頼度に応じた条件をチェック（C, D）
+            conditions = self.BET_CONDITIONS.get(confidence, [])
 
         # 1コース級別チェック（条件定義で許可されている級別かチェック）
         # 条件定義に合致する級別があるかを先に確認

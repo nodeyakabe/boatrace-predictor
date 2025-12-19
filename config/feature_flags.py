@@ -39,6 +39,14 @@ FEATURE_FLAGS = {
     'monte_carlo_simulation': False,          # モンテカルロシミュレーション（アプローチ5）不採用: 1着-8.5pt
     'motor_capsizing_penalty': True,           # モーター転覆履歴ペナルティ（2025-12-19追加）
 
+    # === A・Bランク特別条件（2025-12-19追加） ===
+    # サンプル数増加により統計的に有効と判断された条件
+    'ab_rank_special_betting': True,           # A・Bランク特別条件での購入を有効化
+    # 有効条件:
+    # 1. Bランク × 50-100倍帯: ROI 512% (n=14)
+    # 2. A+Bランク × 1コースB1級: ROI 154% (n=82)
+    # 注意: Aランク全体(ROI 60%)、Bランク全体(ROI 74%)は赤字のため除外
+
     # === デバッグ用 ===
     'verbose_logging': False,         # 詳細ログ出力
 }

@@ -28,7 +28,7 @@ def main():
                 GROUP BY e.race_id HAVING COUNT(*) = 6
             )
         ORDER BY RANDOM()
-        LIMIT 400
+        LIMIT 800
     ''')
     races = cursor.fetchall()
     print(f"Sample: {len(races)} races")
