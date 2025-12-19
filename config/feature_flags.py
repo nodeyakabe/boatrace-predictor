@@ -5,6 +5,7 @@
 段階的導入により、リスクを最小化する。
 
 更新履歴:
+- 2025-12-19: モンテカルロシミュレーション（アプローチ5）フラグ追加
 - 2025-12-18: ペアワイズスコアリング（アプローチ3）フラグ追加
 - 2025-12-15: フラグ整理（27個→12個）、重複加算バグ修正用フラグ追加
 """
@@ -35,6 +36,7 @@ FEATURE_FLAGS = {
     'second_place_specialized': True,        # 2着専用スコアリングモデル（アプローチ2）
     'confidence_based_switching': True,       # 信頼度ベース戦略切り替え（アプローチ1）
     'pairwise_scoring': False,                # ペアワイズ相対スコアリング（アプローチ3）※検証中
+    'monte_carlo_simulation': False,          # モンテカルロシミュレーション（アプローチ5）※検証中
 
     # === デバッグ用 ===
     'verbose_logging': False,         # 詳細ログ出力
@@ -256,6 +258,14 @@ FEATURE_RISKS = {
         'expected_effect': '+2-3pt（2着・3着的中率改善）',
         'test_result': '検証中（アプローチ3: ペアワイズ相対スコアリング）',
         'enabled_date': '2025-12-18'  # 実装日
+    },
+    'monte_carlo_simulation': {
+        'risk_level': 'medium',
+        'main_risks': ['計算コスト増加（5000回シミュレーション）', '物理モデルの精度依存'],
+        'mitigation': 'シミュレーション回数を調整可能、integration_weight=0.3で緩やかな統合',
+        'expected_effect': '+3pt（2着・3着的中率改善、最高ポテンシャル）',
+        'test_result': '検証中（アプローチ5: モンテカルロレースシミュレーション）',
+        'enabled_date': '2025-12-19'  # 実装日
     }
 }
 

@@ -92,17 +92,19 @@ class KimariteScorer:
             start_date = end_date - timedelta(days=days)
 
             # 選手のコース別決まり手傾向を取得
+            # Note: resultsテーブルのカラム名は'kimarite'（'winning_technique'ではない）
             query_racer = """
-                SELECT r.winning_technique, COUNT(*) as count
+                SELECT r.kimarite as winning_technique, COUNT(*) as count
                 FROM results r
                 JOIN races ra ON r.race_id = ra.id
                 JOIN entries e ON r.race_id = e.race_id AND r.pit_number = e.pit_number
                 WHERE e.racer_number = ?
                   AND e.pit_number = ?
-                  AND r.rank = 1
-                  AND r.winning_technique IS NOT NULL
+                  AND r.rank = '1'
+                  AND r.kimarite IS NOT NULL
+                  AND r.kimarite != ''
                   AND ra.race_date BETWEEN ? AND ?
-                GROUP BY r.winning_technique
+                GROUP BY r.kimarite
                 ORDER BY count DESC
             """
 
@@ -111,15 +113,16 @@ class KimariteScorer:
 
             # 会場のコース別決まり手傾向を取得
             query_venue = """
-                SELECT r.winning_technique, COUNT(*) as count
+                SELECT r.kimarite as winning_technique, COUNT(*) as count
                 FROM results r
                 JOIN races ra ON r.race_id = ra.id
                 WHERE ra.venue_code = ?
                   AND r.pit_number = ?
-                  AND r.rank = 1
-                  AND r.winning_technique IS NOT NULL
+                  AND r.rank = '1'
+                  AND r.kimarite IS NOT NULL
+                  AND r.kimarite != ''
                   AND ra.race_date BETWEEN ? AND ?
-                GROUP BY r.winning_technique
+                GROUP BY r.kimarite
                 ORDER BY count DESC
             """
 

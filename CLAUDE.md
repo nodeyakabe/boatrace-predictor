@@ -207,6 +207,78 @@ grep -A 50 "完了済みタスク" docs/残タスク一覧.md
 - 重複ドキュメントの作成
 
 ✅ **必ず実施すること**:
-- 作業開始前の文献調査（上記1-3の実施）
+- 作業開始前の文献調査（上記0-3の実施）
 - 既存の調査結果の尊重
 - ユーザーへの事前報告と確認
+
+## 施策検証完了時の必須手順
+
+新規施策の検証が完了したら、**必ず知見DBに登録**すること：
+
+### 1. 知見DBへの登録
+
+```bash
+python scripts/register_experiment.py \
+    --id "施策ID" \
+    --name "施策名" \
+    --category "カテゴリ" \
+    --result "accepted/rejected/pending" \
+    --effect "効果値（例: +2.5pt）" \
+    --reason "不採用理由（rejectの場合）" \
+    --lesson "教訓・学び" \
+    --keywords "キーワード1,キーワード2" \
+    --files "関連ファイル1,関連ファイル2" \
+    --doc "詳細ドキュメントパス"
+```
+
+**例（不採用の場合）**:
+```bash
+python scripts/register_experiment.py \
+    --id "rank23_odds_calibration" \
+    --name "2着・3着オッズ校正" \
+    --category "odds_integration" \
+    --result "rejected" \
+    --effect "2024年: +2.04pt, 2025年: ±0.00pt" \
+    --reason "モデルドリフトにより2025年データで効果消失" \
+    --lesson "年度別検証必須。過去データのみで判断しない" \
+    --keywords "オッズ,2着,3着,市場確率" \
+    --doc "docs/improvement_attempts/rank23_odds_calibration_rejection_20251218.md"
+```
+
+**例（採用の場合）**:
+```bash
+python scripts/register_experiment.py \
+    --id "negative_patterns" \
+    --name "ネガティブパターン" \
+    --category "pattern_optimization" \
+    --result "accepted" \
+    --effect "+2.0%" \
+    --keywords "パターン,ネガティブ,減算" \
+    --files "src/analysis/scorers/pattern_scorer.py"
+```
+
+### 2. 追加ドキュメント作成
+
+**不採用の場合**:
+- `docs/improvement_attempts/` に詳細レポートを作成
+- 検証結果、不採用理由、教訓を記録
+
+**失敗事例の場合**:
+- `docs/lessons_learned/` に教訓ドキュメントを作成
+
+**採用の場合**:
+- `config/feature_flags.py` にフラグを追加
+- DAILY_REPORTに実装内容を記録
+
+### 3. 知見DBの統計確認（オプション）
+
+```bash
+# 統計情報を確認
+python scripts/query_knowledge_db.py --stats
+
+# カテゴリ別検索
+python scripts/query_knowledge_db.py --category odds_integration
+
+# 不採用施策のみ
+python scripts/query_knowledge_db.py --result rejected
+```

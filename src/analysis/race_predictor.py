@@ -3315,6 +3315,101 @@ class RacePredictor:
 
         return predictions
 
+    def _apply_monte_carlo_simulation(
+        self,
+        predictions: List[Dict],
+        race_id: int,
+        wind_speed: Optional[float] = None,
+        wave_height: Optional[float] = None,
+        wind_direction: Optional[str] = None
+    ) -> List[Dict]:
+        """
+        モンテカルロレースシミュレーションを適用
+
+        アプローチ5: 確率的レース展開をシミュレーションして順位分布を予測
+
+        理論的根拠:
+        - 現在のモデルは各艇の絶対スコアを計算しているが、
+          レースは確率的な要素（ST誤差、ターン成功率、追い上げ等）で決まる
+        - 大量のシミュレーションで順位分布を算出することで、
+          2着・3着の予測精度を向上できる可能性がある
+
+        実装:
+        - 各艇のパラメータ（速度、ST誤差、ターン成功率）をスコアから推定
+        - レースを5000回シミュレーション
+        - 順位分布から2着・3着確率を計算し、スコアに反映
+
+        Args:
+            predictions: 予測結果リスト（スコア順）
+            race_id: レースID
+            wind_speed: 風速
+            wave_height: 波高
+            wind_direction: 風向
+
+        Returns:
+            シミュレーション適用後の予測結果
+        """
+        logger = logging.getLogger(__name__)
+
+        if self.monte_carlo_integrator is None:
+            return predictions
+
+        if len(predictions) != 6:
+            return predictions
+
+        try:
+            # 級別情報を予測結果に追加（シミュレーションで使用）
+            import sqlite3
+            conn = get_connection(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT pit_number, racer_rank, avg_st
+                FROM entries
+                WHERE race_id = ?
+                ORDER BY pit_number
+            """, (race_id,))
+            entry_data = {row['pit_number']: dict(row) for row in cursor.fetchall()}
+            cursor.close()
+
+            # 予測に級別情報を追加
+            for pred in predictions:
+                pit = pred['pit_number']
+                if pit in entry_data:
+                    if 'extended_detail' not in pred:
+                        pred['extended_detail'] = {}
+                    pred['extended_detail']['class'] = {
+                        'class_name': entry_data[pit].get('racer_rank', 'B1')
+                    }
+                    pred['extended_detail']['start_timing'] = {
+                        'avg_st': entry_data[pit].get('avg_st')
+                    }
+                    # racer_rank を直接追加
+                    pred['racer_rank'] = entry_data[pit].get('racer_rank', 'B1')
+
+            # シミュレーション適用
+            predictions = self.monte_carlo_integrator.apply_simulation(
+                predictions,
+                wind_speed=wind_speed or 0.0,
+                wave_height=wave_height or 0.0,
+                wind_direction=wind_direction
+            )
+
+            # 再ソート
+            predictions.sort(key=lambda x: x['total_score'], reverse=True)
+
+            logger.debug(
+                f"Race {race_id}: モンテカルロシミュレーション適用 - "
+                f"予測1着: {predictions[0]['pit_number']}号艇, "
+                f"シミュレーション1着確率: {predictions[0].get('simulation_1st_prob', 'N/A')}%"
+            )
+
+        except Exception as e:
+            logger.debug(f"Race {race_id}: モンテカルロシミュレーションエラー: {e}")
+
+        return predictions
+
 
 if __name__ == "__main__":
     # テスト実行
