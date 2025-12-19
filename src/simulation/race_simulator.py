@@ -364,9 +364,18 @@ class MonteCarloRaceSimulator:
             pred['integrated_3rd_prob'] = round(integrated_show_prob * 100, 1)
 
             # スコア調整（シミュレーション結果を反映）
-            # 2着・3着確率が高い艇はスコアを微調整
-            place_adjustment = (sim_place_prob + sim_show_prob) * 5.0  # 最大5点
-            pred['simulation_adjustment'] = round(place_adjustment, 1)
+            # シミュレーションの順位確率に基づいてスコアを調整
+            # 1着確率が高い艇はボーナス、2着・3着確率が高い艇は維持
+            win_adjustment = sim_win_prob * 3.0  # 1着確率に応じたボーナス（最大3点）
+            place_adjustment = sim_place_prob * 2.0  # 2着確率に応じたボーナス（最大2点）
+            show_adjustment = sim_show_prob * 1.0  # 3着確率に応じたボーナス（最大1点）
+
+            total_adjustment = win_adjustment + place_adjustment + show_adjustment
+            pred['simulation_adjustment'] = round(total_adjustment, 1)
+
+            # スコアに反映（delta=MLの重みで逆にシミュレーションの重み）
+            sim_weight = 1.0 - delta
+            pred['total_score'] = min(100.0, pred['total_score'] + total_adjustment * sim_weight)
 
         return predictions
 
@@ -498,6 +507,9 @@ class SimulationScoreIntegrator:
         """
         2着・3着予測のためにスコアを調整
 
+        保守的アプローチ: MLスコアを基本とし、シミュレーション結果は
+        参考情報として付与するのみ。スコア調整は最小限。
+
         Args:
             predictions: 予測結果
             sim_result: シミュレーション結果
@@ -505,20 +517,14 @@ class SimulationScoreIntegrator:
         Returns:
             調整後の予測結果
         """
-        # 1着予測は維持し、2着・3着候補のスコアを調整
+        # スコア順でソート
         predictions.sort(key=lambda x: x['total_score'], reverse=True)
 
-        for pred in predictions[1:]:  # 1着候補以外
+        # シミュレーション情報を付与するのみ（スコアは変更しない）
+        for pred in predictions:
             pit = pred['pit_number']
-
-            # シミュレーションの2着・3着確率
             sim_2nd = sim_result.place_probs.get(pit, 0.0)
             sim_3rd = sim_result.show_probs.get(pit, 0.0)
-
-            # 2着・3着確率が高い艇はボーナス
-            # 最大3点のボーナス
-            rank23_bonus = (sim_2nd + sim_3rd) * 3.0
-            pred['total_score'] = min(100.0, pred['total_score'] + rank23_bonus)
-            pred['simulation_rank23_bonus'] = round(rank23_bonus, 1)
+            pred['simulation_rank23_bonus'] = 0.0  # スコア変更なし
 
         return predictions

@@ -967,6 +967,7 @@ class RacePredictor:
                 prediction_entry['extended_detail'] = {
                     'class': extended_score_detail['class'],
                     'fl_penalty': extended_score_detail['fl_penalty'],
+                    'capsizing_penalty': extended_score_detail.get('capsizing_penalty', {}),  # 転覆ペナルティ（新規）
                     'session': extended_score_detail['session'],
                     'prev_race': extended_score_detail['prev_race'],
                     'matchup': extended_score_detail['matchup'],

@@ -4,7 +4,15 @@
       "id": "rank23_odds_calibration",
       "name": "2着・3着オッズ校正",
       "category": "odds_integration",
-      "keywords": ["オッズ", "2着", "3着", "市場確率", "calibration", "三連単", "市場効率"],
+      "keywords": [
+        "オッズ",
+        "2着",
+        "3着",
+        "市場確率",
+        "calibration",
+        "三連単",
+        "市場効率"
+      ],
       "date_tested": "2025-12-18",
       "result": "rejected",
       "effect_2024": "+2.04pt",
@@ -22,7 +30,14 @@
       "id": "pattern_separation",
       "name": "ポジティブ/ネガティブパターン分離",
       "category": "pattern_optimization",
-      "keywords": ["パターン", "分離", "ポジティブ", "ネガティブ", "相殺", "ベースライン"],
+      "keywords": [
+        "パターン",
+        "分離",
+        "ポジティブ",
+        "ネガティブ",
+        "相殺",
+        "ベースライン"
+      ],
       "date_tested": "2025-12-17",
       "result": "rejected",
       "effect": "-0.69pt",
@@ -37,7 +52,13 @@
       "id": "odds_calibration_1st",
       "name": "1着オッズ校正",
       "category": "odds_integration",
-      "keywords": ["オッズ", "1着", "校正", "市場効率", "calibration"],
+      "keywords": [
+        "オッズ",
+        "1着",
+        "校正",
+        "市場効率",
+        "calibration"
+      ],
       "date_tested": "2025-12-18",
       "result": "rejected",
       "effect": "±0.00pt",
@@ -52,7 +73,12 @@
       "id": "negative_patterns",
       "name": "ネガティブパターン",
       "category": "pattern_optimization",
-      "keywords": ["パターン", "ネガティブ", "減算", "マイナス補正"],
+      "keywords": [
+        "パターン",
+        "ネガティブ",
+        "減算",
+        "マイナス補正"
+      ],
       "date_tested": "2025-12-11",
       "result": "accepted",
       "effect": "+2.0%",
@@ -66,7 +92,13 @@
       "id": "second_place_specialized",
       "name": "2着専用スコアリングモデル",
       "category": "conditional_prediction",
-      "keywords": ["2着", "専用モデル", "条件付き確率", "LightGBM", "AUC"],
+      "keywords": [
+        "2着",
+        "専用モデル",
+        "条件付き確率",
+        "LightGBM",
+        "AUC"
+      ],
       "date_tested": "2025-12-18",
       "result": "accepted",
       "effect": "+6.8pt（432レース）",
@@ -82,7 +114,12 @@
       "id": "confidence_based_switching",
       "name": "信頼度ベース戦略切り替え",
       "category": "strategy",
-      "keywords": ["信頼度", "戦略切り替え", "条件分岐", "閾値"],
+      "keywords": [
+        "信頼度",
+        "戦略切り替え",
+        "条件分岐",
+        "閾値"
+      ],
       "date_tested": "2025-12-18",
       "result": "accepted",
       "effect": "検証中",
@@ -97,13 +134,63 @@
       "id": "before_pattern_bonus",
       "name": "直前情報パターンボーナス",
       "category": "pattern_optimization",
-      "keywords": ["パターン", "直前情報", "ボーナス", "信頼度"],
+      "keywords": [
+        "パターン",
+        "直前情報",
+        "ボーナス",
+        "信頼度"
+      ],
       "date_tested": "2025-12-15以前",
       "result": "accepted",
       "effect": "信頼度B: +9.5pt、信頼度C: +8.3pt",
       "flag_name": "before_pattern_bonus",
       "related_files": [
         "src/analysis/scorers/pattern_scorer.py"
+      ]
+    },
+    {
+      "id": "pairwise_scoring",
+      "name": "ペアワイズ相対スコアリング",
+      "category": "rank_prediction",
+      "keywords": [
+        "ペアワイズ",
+        "2着",
+        "3着",
+        "順位予測",
+        "相対スコア",
+        "LightGBM"
+      ],
+      "date_tested": "2025-12-19",
+      "result": "accepted",
+      "effect": "2着+7.3pt, 3着+3.9pt, ROI+1.7pt (482レース)",
+      "lesson": "艇間の直接対決確率モデルが効果的。絶対スコアより相対スコアが順位予測に有効。gamma=0.5が最適",
+      "doc_reference": "docs/pairwise_scoring_results.md",
+      "related_files": [
+        "src/ml/pairwise_rank_model.py",
+        "models/pairwise_rank.txt",
+        "scripts/test_pairwise_scoring.py"
+      ]
+    },
+    {
+      "id": "monte_carlo_simulation",
+      "name": "モンテカルロレースシミュレーション",
+      "category": "simulation_based_prediction",
+      "keywords": [
+        "モンテカルロ",
+        "シミュレーション",
+        "物理モデル",
+        "不採用"
+      ],
+      "date_tested": "2025-12-19",
+      "result": "rejected",
+      "effect": "1着-8.5pt, 3着-2.5pt, 実行時間+407ms (300レース)",
+      "rejection_reason": "主要指標の大幅悪化と計算コスト増大。物理モデルの限界",
+      "lesson": "物理シミュレーションはボートレースの複雑性に対応困難。既存モデルを希釈してしまう。シンプルなアプローチが有効",
+      "doc_reference": "docs/improvement_attempts/monte_carlo_rejection_20251219.md",
+      "related_files": [
+        "src/simulation/race_physics.py",
+        "src/simulation/race_simulator.py",
+        "scripts/quick_monte_carlo_test.py"
       ]
     }
   ],
@@ -245,9 +332,9 @@
   "metadata": {
     "version": "1.0.0",
     "last_updated": "2025-12-19",
-    "total_experiments": 7,
-    "accepted_count": 4,
-    "rejected_count": 3,
+    "total_experiments": 9,
+    "accepted_count": 5,
+    "rejected_count": 4,
     "known_pitfalls_count": 4
   }
 }

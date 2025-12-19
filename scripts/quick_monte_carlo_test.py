@@ -160,13 +160,14 @@ if __name__ == '__main__':
 
     races = get_test_races(db_path, start_date, end_date)
     print(f'Available races: {len(races)}')
-    print(f'Testing first 100 races...')
+    max_races = min(300, len(races))  # 最大300レース
+    print(f'Testing first {max_races} races...')
 
     # Baseline
     print('\n=== Baseline (without Monte Carlo) ===')
     disable_feature('monte_carlo_simulation')
     predictor_baseline = RacePredictor(db_path=db_path, use_cache=False)
-    baseline = run_backtest(predictor_baseline, races, db_path, 'Baseline', max_races=100)
+    baseline = run_backtest(predictor_baseline, races, db_path, 'Baseline', max_races=max_races)
     print(f"Total races: {baseline['total_races']}")
     print(f"Purchased: {baseline['purchased_races']}")
     print(f"ROI: {baseline['roi']:.1f}%")

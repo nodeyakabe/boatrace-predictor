@@ -39,7 +39,8 @@ from src.ml.pairwise_rank_model import (
     PairwiseScoreIntegrator,
     prepare_training_dataset
 )
-from src.analysis.race_predictor import RacePredictor
+# 注: RacePredictorはDBスキーマ変更の影響を受けるため、簡易版を使用
+# from src.analysis.race_predictor import RacePredictor
 
 # ログ設定
 logging.basicConfig(

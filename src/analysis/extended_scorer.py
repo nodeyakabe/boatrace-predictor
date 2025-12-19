@@ -20,6 +20,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 sys.path.insert(0, PROJECT_ROOT)
 
 from config.settings import DATABASE_PATH, EXTENDED_SCORE_WEIGHTS
+from config.feature_flags import is_feature_enabled
 from src.utils.db_connection_pool import get_connection
 
 
@@ -169,6 +170,14 @@ class ExtendedScorer:
             'description': desc
         }
 
+    # 転覆ペナルティ定数（データ分析に基づく調整 2025-12-19）
+    # 実績: 転覆後30日以内は勝率-0.5pt、2連対率-1.3pt低下、31日以降は影響なし
+    CAPSIZING_PENALTIES = {
+        'motor_recent_30d': -1.0,    # 直近30日以内にモーターで転覆（実測-1.3pt相当）
+        'motor_recent_90d': 0.0,     # 31日以降は影響なし（データで確認済み）
+        'motor_multiple': -0.5,      # 同モーターで複数回転覆（追加ペナルティ/回）
+    }
+
     def calculate_fl_penalty(self, f_count: int, l_count: int, max_penalty: float = -10.0) -> Dict:
         """
         F/L持ちペナルティを計算
@@ -208,6 +217,139 @@ class ExtendedScorer:
             'risk_level': risk_level,
             'description': f'F{f_count}L{l_count}' if (f_count + l_count) > 0 else 'クリーン'
         }
+
+    def calculate_motor_capsizing_penalty(
+        self,
+        motor_number: int,
+        venue_code: str,
+        target_date: str,
+        max_penalty: float = -5.0
+    ) -> Dict:
+        """
+        モーター転覆履歴ペナルティを計算
+
+        転覆後のモーターは性能が低下している可能性があるため、
+        直近の転覆履歴に基づいてペナルティを適用。
+
+        Args:
+            motor_number: モーター番号
+            venue_code: 会場コード
+            target_date: 対象日付（YYYY-MM-DD）
+            max_penalty: 最大ペナルティ（負の値）
+
+        Returns:
+            {
+                'penalty': float,
+                'capsizing_count': int,
+                'days_since_last': int or None,
+                'risk_level': str,
+                'description': str
+            }
+        """
+        if not motor_number:
+            return {
+                'penalty': 0.0,
+                'capsizing_count': 0,
+                'days_since_last': None,
+                'risk_level': 'unknown',
+                'description': 'モーター番号なし'
+            }
+
+        conn = get_connection(self.db_path)
+        cursor = conn.cursor()
+
+        try:
+            # 同じモーター番号で結果が欠損している（転覆/失格の可能性）レースを検索
+            # 転覆は results に6件未満しか登録されないパターンで検出
+            cursor.execute('''
+                WITH race_result_counts AS (
+                    SELECT
+                        r.id as race_id,
+                        r.race_date,
+                        r.venue_code,
+                        e.motor_number,
+                        e.pit_number,
+                        COUNT(res.id) as result_count,
+                        MAX(CASE WHEN res.pit_number = e.pit_number THEN res.rank ELSE NULL END) as my_rank
+                    FROM races r
+                    JOIN entries e ON r.id = e.race_id
+                    LEFT JOIN results res ON r.id = res.race_id
+                    WHERE e.motor_number = ?
+                      AND r.venue_code = ?
+                      AND r.race_date < ?
+                      AND r.race_date >= date(?, '-180 days')
+                    GROUP BY r.id, e.pit_number
+                )
+                SELECT
+                    race_date,
+                    result_count,
+                    my_rank,
+                    julianday(?) - julianday(race_date) as days_ago
+                FROM race_result_counts
+                WHERE result_count < 6 AND (my_rank IS NULL OR my_rank NOT IN ('1','2','3','4','5','6'))
+                ORDER BY race_date DESC
+            ''', (motor_number, venue_code, target_date, target_date, target_date))
+
+            capsizing_events = cursor.fetchall()
+            capsizing_count = len(capsizing_events)
+
+            if capsizing_count == 0:
+                return {
+                    'penalty': 0.0,
+                    'capsizing_count': 0,
+                    'days_since_last': None,
+                    'risk_level': 'none',
+                    'description': '転覆履歴なし'
+                }
+
+            # 最新の転覆からの日数
+            days_since_last = int(capsizing_events[0][3]) if capsizing_events else None
+
+            # ペナルティ計算（データ分析に基づく: 30日以内のみ影響あり）
+            total_penalty = 0.0
+
+            # 直近30日以内に転覆 → 成績低下あり
+            if days_since_last and days_since_last <= 30:
+                total_penalty += self.CAPSIZING_PENALTIES['motor_recent_30d']
+                risk_level = 'high'
+
+                # 複数回転覆の追加ペナルティ（30日以内の場合のみ、最大2回分）
+                if capsizing_count >= 2:
+                    additional = min(capsizing_count - 1, 2) * self.CAPSIZING_PENALTIES['motor_multiple']
+                    total_penalty += additional
+            else:
+                # 31日以降は影響なし（データで確認済み）
+                risk_level = 'none'
+                total_penalty = 0.0
+
+            # 最大ペナルティ制限
+            total_penalty = max(total_penalty, max_penalty)
+
+            # 説明文
+            if days_since_last and days_since_last <= 30:
+                desc = f'転覆注意（{days_since_last}日前, 計{capsizing_count}回）'
+            else:
+                desc = f'転覆履歴あり（{days_since_last}日前）※31日以上経過で影響なし'
+
+            return {
+                'penalty': round(total_penalty, 2),
+                'capsizing_count': capsizing_count,
+                'days_since_last': days_since_last,
+                'risk_level': risk_level,
+                'description': desc
+            }
+
+        except Exception as e:
+            # エラー時は安全側に倒す（ペナルティなし）
+            return {
+                'penalty': 0.0,
+                'capsizing_count': 0,
+                'days_since_last': None,
+                'risk_level': 'error',
+                'description': f'エラー: {str(e)}'
+            }
+        finally:
+            cursor.close()
 
     def calculate_session_performance(
         self,
@@ -1222,9 +1364,19 @@ class ExtendedScorer:
         fl_result = self.calculate_fl_penalty(entry.get('f_count', 0), entry.get('l_count', 0))
         st_result = self.calculate_start_timing_score(entry.get('avg_st'), pit_number, max_score=float(weights.get('start_timing', 10)))
 
+        # 転覆ペナルティ計算（フラグが有効な場合のみ）
+        capsizing_result = {'penalty': 0.0, 'capsizing_count': 0, 'days_since_last': None, 'risk_level': 'none', 'description': '転覆履歴なし'}
+        if is_feature_enabled('motor_capsizing_penalty') and entry.get('motor_number'):
+            capsizing_result = self.calculate_motor_capsizing_penalty(
+                entry.get('motor_number'),
+                venue_code,
+                target_date
+            )
+
         # 全てのDBアクセスメソッドをデフォルト値に置き換え
         total_score = (
             class_result['score'] + fl_result['penalty'] + st_result['score'] +
+            capsizing_result['penalty'] +  # 転覆ペナルティを追加
             2.5 + 2.5 + 2.5 + 2.5 + 2.5 + 4.0 + 1.0 + 4.0 + 3.0 + 2.5
         )
 
@@ -1234,6 +1386,7 @@ class ExtendedScorer:
             'weights_used': weights,
             'class': class_result,
             'fl_penalty': fl_result,
+            'capsizing_penalty': capsizing_result,  # 転覆ペナルティを追加
             'session': {'score': 2.5, 'description': 'バイパス中'},
             'prev_race': {'score': 2.5, 'description': 'バイパス中'},
             'course_entry': {'score': 2.5, 'description': 'バイパス中'},
@@ -1353,11 +1506,21 @@ class ExtendedScorer:
             max_score=float(weights.get('place_rate', 5))
         )
 
+        # 14. 転覆ペナルティ（フラグが有効な場合のみ）
+        capsizing_result = {'penalty': 0.0, 'capsizing_count': 0, 'days_since_last': None, 'risk_level': 'none', 'description': '転覆履歴なし'}
+        if is_feature_enabled('motor_capsizing_penalty') and entry.get('motor_number'):
+            capsizing_result = self.calculate_motor_capsizing_penalty(
+                entry.get('motor_number'),
+                venue_code,
+                target_date
+            )
+
         # 総合スコア計算
         # 各スコアを合算
         total_score = (
             class_result['score'] +
             fl_result['penalty'] +
+            capsizing_result['penalty'] +  # 転覆ペナルティを追加
             session_result['score'] +
             prev_race_result['score'] +
             course_entry_result['score'] +
@@ -1389,6 +1552,7 @@ class ExtendedScorer:
             'weights_used': weights,  # 使用した重み設定
             'class': class_result,
             'fl_penalty': fl_result,
+            'capsizing_penalty': capsizing_result,  # 転覆ペナルティを追加
             'session': session_result,
             'prev_race': prev_race_result,
             'course_entry': course_entry_result,

@@ -35,8 +35,9 @@ FEATURE_FLAGS = {
     'rank23_odds_calibration': False,        # 2着・3着オッズ校正（2024年+2.04pt, 2025年±0.00pt → 不採用）
     'second_place_specialized': True,        # 2着専用スコアリングモデル（アプローチ2）
     'confidence_based_switching': True,       # 信頼度ベース戦略切り替え（アプローチ1）
-    'pairwise_scoring': False,                # ペアワイズ相対スコアリング（アプローチ3）※検証中
-    'monte_carlo_simulation': False,          # モンテカルロシミュレーション（アプローチ5）※検証中
+    'pairwise_scoring': True,                 # ペアワイズ相対スコアリング（アプローチ3）2着+7.3pt, 3着+3.9pt
+    'monte_carlo_simulation': False,          # モンテカルロシミュレーション（アプローチ5）不採用: 1着-8.5pt
+    'motor_capsizing_penalty': True,           # モーター転覆履歴ペナルティ（2025-12-19追加）
 
     # === デバッグ用 ===
     'verbose_logging': False,         # 詳細ログ出力
@@ -256,8 +257,8 @@ FEATURE_RISKS = {
         'main_risks': ['計算コスト増加', '既存スコアとの統合バランス'],
         'mitigation': 'integration_weight=0.5で緩やかな統合、モデルなし時はスキップ',
         'expected_effect': '+2-3pt（2着・3着的中率改善）',
-        'test_result': '検証中（アプローチ3: ペアワイズ相対スコアリング）',
-        'enabled_date': '2025-12-18'  # 実装日
+        'test_result': '2着+7.3pt, 3着+3.9pt, ROI+1.7pt（482レース検証 2025-12-19）AUC=0.7351',
+        'enabled_date': '2025-12-19'  # 検証完了
     },
     'monte_carlo_simulation': {
         'risk_level': 'medium',
@@ -266,6 +267,14 @@ FEATURE_RISKS = {
         'expected_effect': '+3pt（2着・3着的中率改善、最高ポテンシャル）',
         'test_result': '検証中（アプローチ5: モンテカルロレースシミュレーション）',
         'enabled_date': '2025-12-19'  # 実装日
+    },
+    'motor_capsizing_penalty': {
+        'risk_level': 'low',
+        'main_risks': ['転覆データの不完全性（DB欠損）', '過度なペナルティによる予測変動'],
+        'mitigation': '結果欠損からの推定、最大ペナルティ-5pt制限、リスクレベル別の段階的適用',
+        'expected_effect': 'モーター性能低下の反映による予測精度向上',
+        'test_result': '検証中',
+        'enabled_date': '2025-12-19'
     }
 }
 

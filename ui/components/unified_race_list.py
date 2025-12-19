@@ -229,15 +229,23 @@ def _render_bet_targets():
             else:
                 race_data_by_id[race_id]['initial'] = pred_data
 
-        # 1コースの級別を取得
+        # 1コースの級別を取得（複数点買い用にエントリー情報も取得）
         race_ids = list(race_data_by_id.keys())
         placeholders = ','.join('?' * len(race_ids))
         cursor.execute(f"""
-            SELECT race_id, racer_rank
+            SELECT race_id, pit_number, racer_rank
             FROM entries
-            WHERE race_id IN ({placeholders}) AND pit_number = 1
+            WHERE race_id IN ({placeholders})
         """, race_ids)
-        c1_ranks = {row[0]: row[1] for row in cursor.fetchall()}
+        entries_by_race = {}
+        c1_ranks = {}
+        for row in cursor.fetchall():
+            race_id, pit_number, racer_rank = row
+            if race_id not in entries_by_race:
+                entries_by_race[race_id] = []
+            entries_by_race[race_id].append({'pit_number': pit_number, 'racer_rank': racer_rank})
+            if pit_number == 1:
+                c1_ranks[race_id] = racer_rank
 
         # オッズデータを取得
         cursor.execute(f"""
@@ -271,22 +279,40 @@ def _render_bet_targets():
             if len(top3) < 3:
                 continue
 
+            # 全予測順位（6位まで）を構築
+            all_predictions = pred['predictions']
+            full_prediction = [p['pit_number'] for p in sorted(all_predictions, key=lambda x: x['rank'])]
+            if len(full_prediction) < 6:
+                # 不足分は1-6から補填
+                for i in range(1, 7):
+                    if i not in full_prediction:
+                        full_prediction.append(i)
+
             old_combo = f"{top3[0]['pit_number']}-{top3[1]['pit_number']}-{top3[2]['pit_number']}"
             new_combo = old_combo  # 新方式予測は後で計算（簡略化のため同じ）
 
             # オッズ
             odds_data = odds_by_race.get(race_id, {})
-            old_odds = odds_data.get(old_combo, 0)
-            new_odds = odds_data.get(new_combo, 0)
 
-            # 評価実行
-            target = evaluator.evaluate(
-                confidence=confidence,
-                c1_rank=c1_rank,
-                old_combo=old_combo,
-                new_combo=new_combo,
-                old_odds=old_odds,
-                new_odds=new_odds,
+            # race_dataを構築（evaluate_race用）
+            race_data_for_eval = {
+                'venue_code': data['venue_code'],
+                'entries': entries_by_race.get(race_id, []),
+            }
+
+            # predictions辞書を構築
+            predictions_for_eval = {
+                'confidence': confidence,
+                'old_prediction': [top3[0]['pit_number'], top3[1]['pit_number'], top3[2]['pit_number']],
+                'new_prediction': [top3[0]['pit_number'], top3[1]['pit_number'], top3[2]['pit_number']],
+                'full_prediction': full_prediction,
+            }
+
+            # 評価実行（evaluate_raceで複数点買いも生成）
+            target = evaluator.evaluate_race(
+                race_data=race_data_for_eval,
+                predictions=predictions_for_eval,
+                odds_data=odds_data if odds_data else None,
                 has_beforeinfo=has_beforeinfo
             )
 
@@ -366,8 +392,14 @@ def _render_bet_targets():
         # 投資サマリー（大きく表示）
         active_and_upcoming = active_targets + upcoming_targets
         if active_and_upcoming:
-            total_bet = sum(t['target'].bet_amount for t in active_and_upcoming)
-            expected_return = sum(t['target'].bet_amount * t['target'].expected_roi / 100 for t in active_and_upcoming)
+            # 複数点買い対応の賭け金計算
+            def get_bet_amount(target):
+                if target.multi_bet_result and hasattr(target.multi_bet_result, 'total_bet_amount'):
+                    return target.multi_bet_result.total_bet_amount
+                return target.bet_amount
+
+            total_bet = sum(get_bet_amount(t['target']) for t in active_and_upcoming)
+            expected_return = sum(get_bet_amount(t['target']) * t['target'].expected_roi / 100 for t in active_and_upcoming)
             avg_roi = expected_return / total_bet * 100 if total_bet > 0 else 0
 
             st.markdown(f"""
@@ -555,6 +587,29 @@ def _render_race_card_enhanced(t: Dict, key_prefix: str, is_candidate: bool = Fa
     # オッズ表示
     odds_display = f"{target.odds:.1f}倍" if target.odds else target.odds_range
 
+    # 複数点買い情報を取得
+    multi_bet = target.multi_bet_result
+    has_multi_bet = multi_bet is not None and hasattr(multi_bet, 'bets') and len(multi_bet.bets) > 0
+
+    # 買い目・オッズ・賭け金の表示HTML生成
+    if has_multi_bet:
+        # パターンH等の複数点買い表示
+        bet_lines = []
+        for bet in multi_bet.bets:
+            bet_lines.append(f"<div style='display:flex; gap:8px; align-items:center; margin-bottom:4px;'>"
+                           f"<span style='font-family:monospace; font-weight:bold;'>{bet.combination}</span>"
+                           f"<span style='color:#666; font-size:0.85em;'>{bet.odds:.1f}倍</span>"
+                           f"<span style='font-weight:bold;'>¥{bet.bet_amount}</span>"
+                           f"</div>")
+        bet_html = "".join(bet_lines)
+        total_bet = multi_bet.total_bet_amount
+        multi_bet_badge = f"<span style='background:#1976d2;color:white;padding:2px 6px;border-radius:4px;font-size:0.7em;margin-left:8px;'>パターンH</span>"
+    else:
+        # 1点買い表示
+        bet_html = f"<span style='font-size: 1.4em; font-weight: bold; font-family: monospace;'>{target.combination}</span>"
+        total_bet = target.bet_amount
+        multi_bet_badge = ""
+
     # カードHTML
     st.markdown(f"""
     <style>
@@ -585,19 +640,17 @@ def _render_race_card_enhanced(t: Dict, key_prefix: str, is_candidate: bool = Fa
                         border-radius: 4px;
                         font-size: 0.7em;
                     ">{'直前済' if t['has_beforeinfo'] else '事前'}</span>
+                    {multi_bet_badge}
                 </div>
-                <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+                <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start;">
                     <div>
-                        <span style="color: #666; font-size: 0.8em;">買い目</span><br>
-                        <span style="font-size: 1.4em; font-weight: bold; font-family: monospace;">{target.combination}</span>
+                        <span style="color: #666; font-size: 0.8em;">買い目{' (3点)' if has_multi_bet else ''}</span><br>
+                        {bet_html}
                     </div>
+                    {'<div><span style="color: #666; font-size: 0.8em;">オッズ</span><br><span style="font-size: 1.1em; font-weight: bold;">' + odds_display + '</span></div>' if not has_multi_bet else ''}
                     <div>
-                        <span style="color: #666; font-size: 0.8em;">オッズ</span><br>
-                        <span style="font-size: 1.1em; font-weight: bold;">{odds_display}</span>
-                    </div>
-                    <div>
-                        <span style="color: #666; font-size: 0.8em;">賭け金</span><br>
-                        <span style="font-size: 1.1em; font-weight: bold;">¥{target.bet_amount}</span>
+                        <span style="color: #666; font-size: 0.8em;">{'投資計' if has_multi_bet else '賭け金'}</span><br>
+                        <span style="font-size: 1.1em; font-weight: bold;">¥{total_bet}</span>
                     </div>
                 </div>
             </div>
@@ -660,30 +713,49 @@ def _render_race_card_compact(t: Dict, key_prefix: str):
     # 結果を整形
     if len(result_rows) >= 3:
         actual_combo = f"{result_rows[0][0]}-{result_rows[1][0]}-{result_rows[2][0]}"
-        is_hit = target.combination == actual_combo
     else:
         actual_combo = "-"
-        is_hit = False
 
     payout = int(payout_row[0]) if payout_row else 0
 
+    # 複数点買い対応
+    multi_bet = target.multi_bet_result
+    has_multi_bet = multi_bet is not None and hasattr(multi_bet, 'bets') and len(multi_bet.bets) > 0
+
+    # 的中判定（複数点買いの場合はどれかに的中）
+    if has_multi_bet:
+        hit_combos = [bet.combination for bet in multi_bet.bets if bet.combination == actual_combo]
+        is_hit = len(hit_combos) > 0
+        bet_display = " / ".join([bet.combination for bet in multi_bet.bets])
+        bet_amount = multi_bet.total_bet_amount
+    else:
+        is_hit = target.combination == actual_combo
+        bet_display = target.combination
+        bet_amount = target.bet_amount
+
     # 的中判定のアイコン
-    if is_hit:
+    if actual_combo == "-":
+        hit_icon = ""
+        hit_color = "#666"
+    elif is_hit:
         hit_icon = "🎉"
         hit_color = "green"
     else:
         hit_icon = "❌"
         hit_color = "red"
 
-    col1, col2, col3, col4, col5, col6 = st.columns([2, 1.5, 1.5, 1.5, 2, 1])
+    col1, col2, col3, col4, col5, col6 = st.columns([2, 2, 1.5, 1.5, 2, 1])
     with col1:
         st.write(f"**{t['venue_name']} {t['race_number']}R**")
     with col2:
-        st.write(f"`{target.combination}`")
+        if has_multi_bet:
+            st.caption(bet_display)
+        else:
+            st.write(f"`{bet_display}`")
     with col3:
-        st.write(odds_display)
+        st.write(odds_display if not has_multi_bet else "3点")
     with col4:
-        st.write(f"¥{target.bet_amount}")
+        st.write(f"¥{bet_amount}")
     with col5:
         # 結果表示
         if actual_combo != "-":
