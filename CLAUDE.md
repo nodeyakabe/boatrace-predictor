@@ -97,7 +97,30 @@ git push origin main
 
 ユーザーから作業依頼があった場合、**必ず以下を確認してから作業を開始**すること：
 
-### 1. 直近のDAILY_REPORT確認（最重要）
+### 0. 知見インデックスの検索（最優先）⭐NEW
+
+**新規施策の検討前に必ず実施**:
+
+```bash
+python scripts/search_knowledge.py "検討中のキーワード"
+```
+
+**検索例**:
+- 依頼「オッズを使って改善」→ `python scripts/search_knowledge.py "オッズ"`
+- 依頼「2着精度改善」→ `python scripts/search_knowledge.py "2着"`
+- 問題「検証が遅い」→ `python scripts/search_knowledge.py "検証が遅い"`
+
+**確認内容**:
+- 過去に同じ施策を実施していないか？
+- 不採用になった理由は？
+- 既知の落とし穴（パフォーマンス問題など）はないか？
+
+**⚠️ 重要**: 検索結果で類似施策が見つかった場合：
+1. 不採用理由と教訓を必ず確認
+2. 同じ理由で再度失敗しないか検討
+3. ユーザーに過去の結果を報告し、再検討の必要性を確認
+
+### 1. 直近のDAILY_REPORT確認
 
 ```bash
 # 直近3日分のDAILY_REPORTを確認

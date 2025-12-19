@@ -68,6 +68,27 @@ try:
     CONFIDENCE_BASED_MODEL_AVAILABLE = True
 except ImportError:
     CONFIDENCE_BASED_MODEL_AVAILABLE = False
+
+# ペアワイズ相対スコアリング（アプローチ3）
+try:
+    from src.ml.pairwise_rank_model import (
+        PairwiseRankModel,
+        PairwiseScoreIntegrator
+    )
+    PAIRWISE_MODEL_AVAILABLE = True
+except ImportError:
+    PAIRWISE_MODEL_AVAILABLE = False
+
+# モンテカルロレースシミュレーション（アプローチ5）
+try:
+    from src.simulation.race_simulator import (
+        MonteCarloRaceSimulator,
+        SimulationScoreIntegrator
+    )
+    MONTE_CARLO_AVAILABLE = True
+except ImportError:
+    MONTE_CARLO_AVAILABLE = False
+
 from src.database.batch_data_loader import BatchDataLoader
 from config.venue_characteristics import get_venue_adjustment, get_venue_course_adjustment
 from config.settings import (
@@ -196,6 +217,39 @@ class RacePredictor:
                 )
             except Exception as e:
                 print(f"信頼度ベース予測器初期化エラー: {e}")
+
+        # ペアワイズ相対スコアリング（アプローチ3: 艇間の直接対決スコア）
+        self.pairwise_model = None
+        self.pairwise_integrator = None
+        if PAIRWISE_MODEL_AVAILABLE and is_feature_enabled('pairwise_scoring'):
+            try:
+                self.pairwise_model = PairwiseRankModel(
+                    model_dir='models',
+                    db_path=db_path
+                )
+                # モデルが存在すれば読み込み
+                import os
+                model_path = os.path.join('models', 'pairwise_rank.txt')
+                if os.path.exists(model_path):
+                    self.pairwise_model.load('pairwise_rank')
+                    self.pairwise_integrator = PairwiseScoreIntegrator(
+                        pairwise_model=self.pairwise_model,
+                        integration_weight=0.5  # ペアワイズモデルの重み
+                    )
+            except Exception as e:
+                print(f"ペアワイズモデル初期化エラー: {e}")
+
+        # モンテカルロレースシミュレーション（アプローチ5: 確率的シミュレーション）
+        self.monte_carlo_integrator = None
+        if MONTE_CARLO_AVAILABLE and is_feature_enabled('monte_carlo_simulation'):
+            try:
+                self.monte_carlo_integrator = SimulationScoreIntegrator(
+                    n_simulations=5000,  # 実行速度と精度のバランス
+                    integration_weight=0.3,  # シミュレーションの影響度
+                    use_for_rank23=True  # 2着・3着予測に使用
+                )
+            except Exception as e:
+                print(f"モンテカルロシミュレーター初期化エラー: {e}")
 
         # 重み設定をロード（優先順位: custom_weights > mode > default）
         if custom_weights:
@@ -1035,6 +1089,34 @@ class RacePredictor:
                 )
             except Exception as e:
                 logger.debug(f"Race {race_id}: 信頼度ベース戦略切り替えエラー: {e}")
+
+        # ========================================
+        # ペアワイズ相対スコアリング適用（機能フラグで制御）
+        # アプローチ3: 艇間の直接対決スコアで順位予測
+        # 期待効果: 2着・3着的中率の向上
+        # ========================================
+        if (is_feature_enabled('pairwise_scoring') and
+            self.pairwise_integrator is not None):
+            try:
+                predictions = self._apply_pairwise_scoring(
+                    predictions, race_id
+                )
+            except Exception as e:
+                logger.debug(f"Race {race_id}: ペアワイズスコアリングエラー: {e}")
+
+        # ========================================
+        # モンテカルロシミュレーション適用（機能フラグで制御）
+        # アプローチ5: 確率的レース展開シミュレーションで順位分布を予測
+        # 期待効果: 2着・3着的中率の向上（最高ポテンシャル）
+        # ========================================
+        if (is_feature_enabled('monte_carlo_simulation') and
+            self.monte_carlo_integrator is not None):
+            try:
+                predictions = self._apply_monte_carlo_simulation(
+                    predictions, race_id, wind_speed, wave_height, wind_direction
+                )
+            except Exception as e:
+                logger.debug(f"Race {race_id}: モンテカルロシミュレーションエラー: {e}")
 
         # ========================================
         # 三連対スコアを計算して追加（2着・3着予測の精度向上）
@@ -3140,6 +3222,98 @@ class RacePredictor:
         except Exception as e:
             logger.debug(f"Race {race_id}: 信頼度ベース戦略エラー: {e}")
             return predictions
+
+    def _apply_pairwise_scoring(
+        self,
+        predictions: List[Dict],
+        race_id: int
+    ) -> List[Dict]:
+        """
+        ペアワイズ相対スコアリングを適用
+
+        アプローチ3: 艇間の直接対決確率を使用して順位予測を強化
+
+        理論的根拠:
+        - 現在のモデルは各艇の絶対スコアを計算しているが、
+          実際のレースは相対的な強さで決まる
+        - 艇1が艇2に勝つ確率 P(1 > 2) を直接モデル化することで、
+          より精度の高い順位予測が可能
+
+        実装:
+        - 各艇ペア(i, j)に対してペアワイズ特徴量を計算
+        - LightGBM二値分類で艇iが艇jより上位かを予測
+        - 全ペアの勝率から順位スコアを計算し、既存スコアと統合
+
+        Args:
+            predictions: 予測結果リスト（スコア順）
+            race_id: レースID
+
+        Returns:
+            ペアワイズスコア適用後の予測結果
+        """
+        logger = logging.getLogger(__name__)
+
+        if self.pairwise_integrator is None:
+            return predictions
+
+        if len(predictions) != 6:
+            return predictions
+
+        try:
+            # レース特徴量を取得
+            import pandas as pd
+            conn = get_connection(self.db_path)
+
+            query = """
+            SELECT
+                e.pit_number,
+                e.racer_number,
+                e.racer_rank,
+                e.win_rate,
+                e.second_rate,
+                e.third_rate,
+                e.motor_number,
+                e.motor_second_rate,
+                e.motor_third_rate,
+                e.boat_second_rate,
+                e.avg_st,
+                e.f_count,
+                e.l_count,
+                rd.exhibition_time,
+                rd.st_time,
+                rd.tilt_angle
+            FROM entries e
+            LEFT JOIN race_details rd ON e.race_id = rd.race_id AND e.pit_number = rd.pit_number
+            WHERE e.race_id = ?
+            ORDER BY e.pit_number
+            """
+
+            race_features = pd.read_sql_query(query, conn, params=(race_id,))
+
+            if len(race_features) != 6:
+                return predictions
+
+            # 予測結果からスコアを追加
+            for pred in predictions:
+                pit = pred['pit_number']
+                idx = race_features[race_features['pit_number'] == pit].index
+                if len(idx) > 0:
+                    race_features.loc[idx[0], 'total_score'] = pred['total_score']
+
+            # ペアワイズスコアを統合
+            predictions = self.pairwise_integrator.integrate_predictions(
+                predictions, race_features
+            )
+
+            logger.debug(
+                f"Race {race_id}: ペアワイズスコア適用 - "
+                f"予測1着: {predictions[0]['pit_number']}号艇"
+            )
+
+        except Exception as e:
+            logger.debug(f"Race {race_id}: ペアワイズスコア計算エラー: {e}")
+
+        return predictions
 
 
 if __name__ == "__main__":
