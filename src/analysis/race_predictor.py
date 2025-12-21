@@ -89,6 +89,20 @@ try:
 except ImportError:
     MONTE_CARLO_AVAILABLE = False
 
+# P-3: 決まり手別展開予測
+try:
+    from src.prediction.kimarite_flow_predictor import KimariteFlowPredictor
+    KIMARITE_FLOW_AVAILABLE = True
+except ImportError:
+    KIMARITE_FLOW_AVAILABLE = False
+
+# P-6-2: まくりリスク評価
+try:
+    from src.prediction.makuri_risk_evaluator import MakuriRiskEvaluator
+    MAKURI_RISK_AVAILABLE = True
+except ImportError:
+    MAKURI_RISK_AVAILABLE = False
+
 from src.database.batch_data_loader import BatchDataLoader
 from config.venue_characteristics import get_venue_adjustment, get_venue_course_adjustment
 from config.settings import (
@@ -250,6 +264,22 @@ class RacePredictor:
                 )
             except Exception as e:
                 print(f"モンテカルロシミュレーター初期化エラー: {e}")
+
+        # P-3: 決まり手別展開予測（2025-12-20追加）
+        self.kimarite_flow_predictor = None
+        if KIMARITE_FLOW_AVAILABLE and is_feature_enabled('kimarite_flow_prediction'):
+            try:
+                self.kimarite_flow_predictor = KimariteFlowPredictor(db_path)
+            except Exception as e:
+                print(f"決まり手別展開予測初期化エラー: {e}")
+
+        # P-6-2: まくりリスク評価（2025-12-20追加）
+        self.makuri_risk_evaluator = None
+        if MAKURI_RISK_AVAILABLE and is_feature_enabled('makuri_risk_adjustment'):
+            try:
+                self.makuri_risk_evaluator = MakuriRiskEvaluator(db_path)
+            except Exception as e:
+                print(f"まくりリスク評価初期化エラー: {e}")
 
         # 重み設定をロード（優先順位: custom_weights > mode > default）
         if custom_weights:
@@ -1118,6 +1148,34 @@ class RacePredictor:
                 )
             except Exception as e:
                 logger.debug(f"Race {race_id}: モンテカルロシミュレーションエラー: {e}")
+
+        # ========================================
+        # P-3: 決まり手別展開予測によるスコア調整（機能フラグで制御）
+        # 2025-12-20追加: 決まり手から2着・3着展開を予測
+        # 期待効果: 2着・3着的中率の向上
+        # ========================================
+        if (is_feature_enabled('kimarite_flow_prediction') and
+            self.kimarite_flow_predictor is not None):
+            try:
+                predictions = self._apply_kimarite_flow_prediction(
+                    predictions, race_id
+                )
+            except Exception as e:
+                logger.debug(f"Race {race_id}: 決まり手別展開予測エラー: {e}")
+
+        # ========================================
+        # P-6-2: まくりリスク評価によるスコア調整（機能フラグで制御）
+        # 2025-12-20追加: 1コース敗北リスクを評価してスコア調整
+        # 期待効果: まくり展開時の2着・3着精度向上
+        # ========================================
+        if (is_feature_enabled('makuri_risk_adjustment') and
+            self.makuri_risk_evaluator is not None):
+            try:
+                predictions = self._apply_makuri_risk_adjustment(
+                    predictions, race_id
+                )
+            except Exception as e:
+                logger.debug(f"Race {race_id}: まくりリスク評価エラー: {e}")
 
         # ========================================
         # 三連対スコアを計算して追加（2着・3着予測の精度向上）
@@ -3408,6 +3466,183 @@ class RacePredictor:
 
         except Exception as e:
             logger.debug(f"Race {race_id}: モンテカルロシミュレーションエラー: {e}")
+
+        return predictions
+
+    def _apply_kimarite_flow_prediction(
+        self,
+        predictions: List[Dict],
+        race_id: int
+    ) -> List[Dict]:
+        """
+        P-3: 決まり手別展開予測によるスコア調整
+
+        決まり手（逃げ、差し、まくり等）のパターンから
+        2着・3着展開を予測し、スコアを調整する。
+
+        Args:
+            predictions: 予測結果リスト（スコア順）
+            race_id: レースID
+
+        Returns:
+            決まり手予測適用後の予測結果
+        """
+        logger = logging.getLogger(__name__)
+
+        if self.kimarite_flow_predictor is None:
+            return predictions
+
+        if len(predictions) < 6:
+            return predictions
+
+        try:
+            # 1着予測艇の決まり手を予測
+            predicted_first = predictions[0]['pit_number']
+
+            # 決まり手別の2着・3着候補を取得
+            flow_result = self.kimarite_flow_predictor.predict_flow(
+                race_id=race_id,
+                predicted_first=predicted_first
+            )
+
+            if flow_result and 'scenarios' in flow_result:
+                # 最も確率の高いシナリオを取得
+                top_scenario = flow_result['scenarios'][0] if flow_result['scenarios'] else None
+
+                if top_scenario:
+                    # 2着・3着候補のスコアを調整
+                    second_candidate = top_scenario.get('second_place')
+                    third_candidate = top_scenario.get('third_place')
+                    scenario_prob = top_scenario.get('probability', 0.0)
+
+                    # 調整幅を決定（シナリオ確率に応じて）
+                    adjustment_factor = min(scenario_prob * 0.1, 0.05)  # 最大5%調整
+
+                    for pred in predictions:
+                        pit = pred['pit_number']
+                        original_score = pred['total_score']
+
+                        if pit == second_candidate:
+                            # 2着候補はスコアを上げる
+                            pred['total_score'] = round(original_score * (1 + adjustment_factor), 1)
+                            pred['kimarite_flow_adjustment'] = round(adjustment_factor * 100, 2)
+                        elif pit == third_candidate:
+                            # 3着候補はスコアを上げる
+                            pred['total_score'] = round(original_score * (1 + adjustment_factor * 0.5), 1)
+                            pred['kimarite_flow_adjustment'] = round(adjustment_factor * 50, 2)
+
+                    logger.debug(
+                        f"Race {race_id}: 決まり手別展開予測適用 - "
+                        f"2着候補: {second_candidate}号艇, 3着候補: {third_candidate}号艇"
+                    )
+
+        except Exception as e:
+            logger.debug(f"Race {race_id}: 決まり手別展開予測エラー: {e}")
+
+        return predictions
+
+    def _apply_makuri_risk_adjustment(
+        self,
+        predictions: List[Dict],
+        race_id: int
+    ) -> List[Dict]:
+        """
+        P-6-2: まくりリスク評価によるスコア調整
+
+        1コース艇のまくられリスクを評価し、
+        リスクが高い場合は外コース艇のスコアを調整する。
+
+        Args:
+            predictions: 予測結果リスト（スコア順）
+            race_id: レースID
+
+        Returns:
+            まくりリスク調整後の予測結果
+        """
+        logger = logging.getLogger(__name__)
+
+        if self.makuri_risk_evaluator is None:
+            return predictions
+
+        if len(predictions) < 6:
+            return predictions
+
+        try:
+            # レースコンテキストを取得
+            import sqlite3
+            conn = get_connection(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            # レース情報取得
+            cursor.execute("""
+                SELECT r.venue_code, e.racer_rank as c1_rank, rd.st_time as c1_st
+                FROM races r
+                JOIN entries e ON r.id = e.race_id AND e.pit_number = 1
+                LEFT JOIN race_details rd ON r.id = rd.race_id AND rd.pit_number = 1
+                WHERE r.id = ?
+            """, (race_id,))
+            race_info = cursor.fetchone()
+
+            if not race_info:
+                return predictions
+
+            # エントリー情報取得
+            cursor.execute("""
+                SELECT e.pit_number, e.racer_rank, e.avg_st, rd.st_time
+                FROM entries e
+                LEFT JOIN race_details rd ON e.race_id = rd.race_id AND e.pit_number = rd.pit_number
+                WHERE e.race_id = ?
+                ORDER BY e.pit_number
+            """, (race_id,))
+            entries = [dict(row) for row in cursor.fetchall()]
+            cursor.close()
+
+            # レースコンテキスト作成
+            race_context = {
+                'venue_code': race_info['venue_code'],
+                'c1_rank': race_info['c1_rank'],
+                'c1_st': race_info['c1_st']
+            }
+
+            # まくりリスク評価
+            risk_assessment = self.makuri_risk_evaluator.evaluate_makuri_risk(
+                race_context, entries
+            )
+
+            if risk_assessment and risk_assessment.risk_level in ['high', 'medium']:
+                # リスクレベルに応じた調整
+                if risk_assessment.risk_level == 'high':
+                    adjustment = 0.05  # 5%調整
+                else:
+                    adjustment = 0.03  # 3%調整
+
+                # まくり候補のスコアを上げる
+                for course, prob, _ in risk_assessment.makuri_candidates[:2]:
+                    for pred in predictions:
+                        if pred['pit_number'] == course:
+                            original_score = pred['total_score']
+                            pred['total_score'] = round(original_score * (1 + adjustment), 1)
+                            pred['makuri_risk_adjustment'] = round(adjustment * 100, 2)
+                            break
+
+                # 1コースのスコアを下げる（リスクが高い場合）
+                if risk_assessment.risk_level == 'high':
+                    for pred in predictions:
+                        if pred['pit_number'] == 1:
+                            original_score = pred['total_score']
+                            pred['total_score'] = round(original_score * (1 - adjustment), 1)
+                            pred['makuri_risk_penalty'] = round(-adjustment * 100, 2)
+                            break
+
+                logger.debug(
+                    f"Race {race_id}: まくりリスク調整適用 - "
+                    f"リスク: {risk_assessment.risk_level}, "
+                    f"まくり確率: {risk_assessment.makuri_prob:.1%}"
+                )
+
+        except Exception as e:
+            logger.debug(f"Race {race_id}: まくりリスク評価エラー: {e}")
 
         return predictions
 

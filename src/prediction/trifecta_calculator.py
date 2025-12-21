@@ -3,6 +3,9 @@
 Phase 3: P(1=i) × P(2=j|1=i) × P(3=k|1=i,2=j) の計算
 
 ベイズの連鎖則に基づく条件付き確率の統合
+
+更新履歴:
+- 2025-12-20: ThirdPlaceSpecializedScorerを統合（P-6-1タスク）
 """
 import numpy as np
 import pandas as pd
@@ -11,6 +14,25 @@ from itertools import permutations
 import joblib
 import json
 import os
+import logging
+
+# ThirdPlaceSpecializedScorer（決まり手別3着予測）のインポート
+try:
+    from src.ml.third_place_specialized_model import ThirdPlaceSpecializedScorer
+    THIRD_PLACE_SCORER_AVAILABLE = True
+except ImportError:
+    THIRD_PLACE_SCORER_AVAILABLE = False
+
+# feature_flagsのインポート
+try:
+    from config.feature_flags import is_feature_enabled
+    FEATURE_FLAGS_AVAILABLE = True
+except ImportError:
+    FEATURE_FLAGS_AVAILABLE = False
+    def is_feature_enabled(name):
+        return False
+
+logger = logging.getLogger(__name__)
 
 
 class TrifectaCalculator:
@@ -18,15 +40,52 @@ class TrifectaCalculator:
     三連単確率計算クラス
 
     Stage1/2/3モデルを統合して120通りの三連単確率を計算
+
+    P-6-1: ThirdPlaceSpecializedScorer統合（2025-12-20）
+    - 決まり手別の3着予測を統合
+    - feature_flagsの'third_place_specialized_scorer'で有効/無効を制御
     """
 
-    def __init__(self, model_dir: str = 'models', model_name: str = 'conditional', use_v2: bool = False):
+    def __init__(self, model_dir: str = 'models', model_name: str = 'conditional', use_v2: bool = False,
+                 use_third_place_scorer: bool = None):
+        """
+        初期化
+
+        Args:
+            model_dir: モデルディレクトリ
+            model_name: モデル名プレフィックス
+            use_v2: v2モデルを使用するか
+            use_third_place_scorer: ThirdPlaceSpecializedScorerを使用するか
+                                    Noneの場合はfeature_flagsに従う
+        """
         self.model_dir = model_dir
         self.model_name = model_name
         self.use_v2 = use_v2
         self.models = {}
         self.feature_names = {}
         self._loaded = False
+
+        # ThirdPlaceSpecializedScorerの初期化
+        self.third_place_scorer = None
+        self.use_third_place_scorer = use_third_place_scorer
+
+        # feature_flagsから設定を取得（引数が指定されていない場合）
+        if self.use_third_place_scorer is None:
+            self.use_third_place_scorer = is_feature_enabled('third_place_specialized_scorer')
+
+        # スコアラーを初期化
+        if self.use_third_place_scorer and THIRD_PLACE_SCORER_AVAILABLE:
+            try:
+                self.third_place_scorer = ThirdPlaceSpecializedScorer()
+                logger.info("ThirdPlaceSpecializedScorer を初期化しました")
+            except Exception as e:
+                logger.warning(f"ThirdPlaceSpecializedScorer の初期化に失敗: {e}")
+                self.third_place_scorer = None
+
+        # 決まり手情報のキャッシュ（calculate()で設定）
+        self._current_kimarite = None
+        self._current_first_course = None
+        self._current_second_course = None
 
     def load_models(self):
         """Stage1/2/3モデルを読み込み"""
@@ -90,13 +149,18 @@ class TrifectaCalculator:
             self.feature_names = meta.get('features', {})
 
     def calculate(self, race_features: pd.DataFrame,
-                  pit_column: str = 'pit_number') -> Dict[str, float]:
+                  pit_column: str = 'pit_number',
+                  winner_kimarite: Optional[str] = None,
+                  course_scores: Optional[Dict[int, float]] = None) -> Dict[str, float]:
         """
         三連単の全120通りの確率を計算
 
         Args:
             race_features: 6艇分の特徴量DataFrame
             pit_column: ピット番号のカラム名
+            winner_kimarite: 1着の決まり手（ThirdPlaceSpecializedScorer使用時）
+                            Noneの場合は1着コースから推定
+            course_scores: 各コースの基本スコア（ThirdPlaceSpecializedScorer使用時）
 
         Returns:
             {'1-2-3': 0.15, '1-3-2': 0.12, ...} 形式の確率辞書
@@ -109,14 +173,31 @@ class TrifectaCalculator:
 
         pit_numbers = race_features[pit_column].values.astype(int)
 
+        # コース番号とインデックスのマッピングを作成
+        pit_to_idx = {int(pit): idx for idx, pit in enumerate(pit_numbers)}
+
         # Stage1: 1着確率を計算
         first_probs = self._predict_first_place(race_features)
+
+        # 決まり手情報を保存（ThirdPlaceSpecializedScorer用）
+        self._current_kimarite = winner_kimarite
+        self._course_scores = course_scores
 
         # 全120通りの確率を計算
         trifecta_probs = {}
 
         for i in range(6):  # 1着候補
             p_first = first_probs[i]
+            first_course = int(pit_numbers[i])
+
+            # 決まり手を推定（指定がない場合）
+            kimarite = winner_kimarite
+            if kimarite is None:
+                kimarite = self._estimate_kimarite(first_course, first_probs, pit_numbers)
+
+            # ThirdPlaceSpecializedScorer用に1着コースと決まり手を保存
+            self._current_first_course = first_course
+            self._current_kimarite = kimarite
 
             # Stage2: この艇が1着の場合の2着確率
             second_probs = self._predict_second_place(race_features, i)
@@ -126,9 +207,13 @@ class TrifectaCalculator:
                     continue
 
                 p_second = second_probs[j]
+                second_course = int(pit_numbers[j])
+
+                # ThirdPlaceSpecializedScorer用に2着コースを保存
+                self._current_second_course = second_course
 
                 # Stage3: この艇が1着、j番が2着の場合の3着確率
-                third_probs = self._predict_third_place(race_features, i, j)
+                third_probs = self._predict_third_place(race_features, i, j, pit_numbers)
 
                 for k in range(6):  # 3着候補
                     if k == i or k == j:
@@ -207,8 +292,53 @@ class TrifectaCalculator:
         return probs
 
     def _predict_third_place(self, race_features: pd.DataFrame,
-                              first_idx: int, second_idx: int) -> np.ndarray:
-        """1着・2着が確定した場合の3着確率を予測（バッチ最適化版）"""
+                              first_idx: int, second_idx: int,
+                              pit_numbers: Optional[np.ndarray] = None) -> np.ndarray:
+        """
+        1着・2着が確定した場合の3着確率を予測（バッチ最適化版）
+
+        P-6-1: ThirdPlaceSpecializedScorerを統合
+        - Stage3モデルの確率とThirdPlaceSpecializedScorerの確率を重み付け統合
+        - 統合重みは0.5:0.5（検証後に調整可能）
+
+        Args:
+            race_features: 6艇分の特徴量DataFrame
+            first_idx: 1着艇のインデックス
+            second_idx: 2着艇のインデックス
+            pit_numbers: コース番号の配列（ThirdPlaceSpecializedScorer用）
+
+        Returns:
+            6艇分の3着確率配列（正規化済み）
+        """
+        candidate_indices = [k for k in range(6) if k != first_idx and k != second_idx]
+
+        # Stage3モデルによる確率
+        stage3_probs = self._predict_third_place_stage3(race_features, first_idx, second_idx, candidate_indices)
+
+        # ThirdPlaceSpecializedScorerによる確率
+        if self.third_place_scorer is not None and pit_numbers is not None:
+            kimarite_probs = self._predict_third_place_kimarite(pit_numbers, first_idx, second_idx, candidate_indices)
+
+            # 統合（Stage3モデルとThirdPlaceSpecializedScorerを重み付け統合）
+            # 統合重み: Stage3モデル 0.5, ThirdPlaceSpecializedScorer 0.5
+            integration_weight = 0.5
+            probs = np.zeros(6)
+            for k in candidate_indices:
+                probs[k] = (1 - integration_weight) * stage3_probs[k] + integration_weight * kimarite_probs[k]
+
+            # 正規化
+            total = probs.sum()
+            if total > 0:
+                probs = probs / total
+        else:
+            probs = stage3_probs
+
+        return probs
+
+    def _predict_third_place_stage3(self, race_features: pd.DataFrame,
+                                     first_idx: int, second_idx: int,
+                                     candidate_indices: List[int]) -> np.ndarray:
+        """Stage3モデルによる3着確率予測"""
         if 'stage3' not in self.models or self.models['stage3'] is None:
             # モデルがない場合は残り4艇で均等確率
             probs = np.ones(6) / 4
@@ -223,7 +353,6 @@ class TrifectaCalculator:
         second_features = race_features.iloc[second_idx]
 
         # 候補艇の特徴量を一括作成（バッチ処理）
-        candidate_indices = [k for k in range(6) if k != first_idx and k != second_idx]
         feature_batch = []
 
         for k in candidate_indices:
@@ -246,6 +375,117 @@ class TrifectaCalculator:
             probs = probs / total
 
         return probs
+
+    def _predict_third_place_kimarite(self, pit_numbers: np.ndarray,
+                                       first_idx: int, second_idx: int,
+                                       candidate_indices: List[int]) -> np.ndarray:
+        """
+        ThirdPlaceSpecializedScorerによる3着確率予測
+
+        決まり手別の展開パターンを活用した3着予測
+        """
+        probs = np.zeros(6)
+
+        # コース番号を取得
+        first_course = int(pit_numbers[first_idx])
+        second_course = int(pit_numbers[second_idx])
+
+        # 残りコースのリスト
+        remaining_courses = [int(pit_numbers[k]) for k in candidate_indices]
+
+        # 決まり手を取得（calculate()で設定済み、なければ推定）
+        kimarite = self._current_kimarite
+        if kimarite is None:
+            kimarite = self._estimate_kimarite_simple(first_course)
+
+        # ThirdPlaceSpecializedScorerで3着確率を計算
+        scores = self.third_place_scorer.calculate_third_scores(
+            winner_course=first_course,
+            winner_kimarite=kimarite,
+            second_course=second_course,
+            remaining_courses=remaining_courses,
+            base_scores=self._course_scores
+        )
+
+        # コース番号からインデックスへのマッピング
+        course_to_idx = {int(pit_numbers[k]): k for k in candidate_indices}
+
+        # 確率を配列に変換
+        for course, prob in scores.items():
+            if course in course_to_idx:
+                probs[course_to_idx[course]] = prob
+
+        # 正規化
+        total = probs.sum()
+        if total > 0:
+            probs = probs / total
+
+        return probs
+
+    def _estimate_kimarite(self, first_course: int, first_probs: np.ndarray,
+                           pit_numbers: np.ndarray) -> str:
+        """
+        1着コースと確率分布から決まり手を推定
+
+        Args:
+            first_course: 1着予測コース
+            first_probs: 1着確率分布
+            pit_numbers: コース番号配列
+
+        Returns:
+            推定された決まり手
+        """
+        if first_course == 1:
+            return '逃げ'
+
+        # 1着の確率優位度を計算
+        first_idx = list(pit_numbers).index(first_course)
+        first_prob = first_probs[first_idx]
+
+        # 内側コースの合計確率
+        inner_prob = sum(first_probs[i] for i, pit in enumerate(pit_numbers) if pit < first_course)
+
+        # 優位度（高いほど独走、低いほど激戦）
+        dominance = first_prob / (first_prob + inner_prob + 0.01)
+
+        if first_course == 2:
+            if dominance > 0.7:
+                return 'まくり'  # 2コースからの強いまくり
+            else:
+                return '差し'   # 1コースとの接戦
+
+        if first_course in [3, 4]:
+            if dominance > 0.6:
+                return 'まくり'
+            else:
+                return 'まくり差し'
+
+        if first_course in [5, 6]:
+            if dominance > 0.5:
+                return 'まくり'
+            else:
+                return 'まくり差し'
+
+        return 'まくり差し'  # デフォルト
+
+    def _estimate_kimarite_simple(self, first_course: int) -> str:
+        """
+        コース番号から単純に決まり手を推定
+
+        Args:
+            first_course: 1着予測コース
+
+        Returns:
+            推定された決まり手
+        """
+        if first_course == 1:
+            return '逃げ'
+        elif first_course == 2:
+            return '差し'
+        elif first_course in [3, 4]:
+            return 'まくり'
+        else:
+            return 'まくり差し'
 
     def _prepare_features(self, df: pd.DataFrame, feature_cols: List[str]) -> pd.DataFrame:
         """特徴量を準備"""

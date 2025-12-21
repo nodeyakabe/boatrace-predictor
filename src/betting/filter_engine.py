@@ -3,9 +3,14 @@
 レース選別エンジン（除外条件強化版）
 
 Phase A-⑤: 買わない条件の明文化
+P-1タスク: 前付け常習者除外フィルター追加（2025-12-20）
+P-2タスク: 4年間パターン分析に基づくネガティブフィルタ追加（2025-12-21）
+P-2追加: ポジティブフィルタ（穴狙い条件）追加（2025-12-21）
 """
 
-from typing import Dict, Any, Tuple, List, Optional
+import json
+from pathlib import Path
+from typing import Dict, Any, Tuple, List, Optional, Set
 from dataclasses import dataclass
 
 from .config import (
@@ -21,6 +26,28 @@ from .config import (
     get_feature,
 )
 
+# 機能フラグ（config/feature_flags.pyから取得）
+try:
+    from config.feature_flags import is_feature_enabled
+except ImportError:
+    def is_feature_enabled(name: str) -> bool:
+        return False
+
+
+def load_forward_movers() -> Set[str]:
+    """前付け常習者リストを読み込む"""
+    forward_movers_path = Path(__file__).parent.parent.parent / "config" / "forward_movers.json"
+    try:
+        with open(forward_movers_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            return set(str(rn) for rn in data.get('racer_numbers', []))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return set()
+
+
+# 前付け常習者リスト（モジュール読み込み時に一度だけロード）
+FORWARD_MOVERS = load_forward_movers()
+
 
 @dataclass
 class FilterResult:
@@ -28,6 +55,8 @@ class FilterResult:
     is_target: bool          # 購入対象か
     exclusion_reason: str    # 除外理由（対象の場合は空文字）
     applied_rules: List[str] # 適用したルール名
+    is_upset_pattern: bool = False  # 穴狙いパターンで復活したか
+    upset_reason: str = ''   # 穴狙い理由
 
 
 class FilterEngine:
@@ -63,6 +92,43 @@ class FilterEngine:
                 'always_apply': True,
             },
         ])
+
+        # 前付け常習者フィルター（P-1タスク: 2025-12-20追加）
+        if is_feature_enabled('forward_mover_filter'):
+            self.exclusion_rules.append({
+                'name': 'forward_mover',
+                'description': '前付け常習者フィルター',
+                'check': self._check_forward_mover,
+                'message': self._get_forward_mover_message,
+                'always_apply': True,
+            })
+
+        # ネガティブパターンフィルター（P-2タスク: 2025-12-21追加）
+        # 4年間パターン分析（Opus）で発見された安定マイナスROIパターンを除外
+        if is_feature_enabled('negative_pattern_filter'):
+            self.exclusion_rules.extend([
+                {
+                    'name': 'mid_odds_outer_course',
+                    'description': 'オッズ10-30倍×予測1着3/4コース除外',
+                    'check': self._check_mid_odds_outer_course,
+                    'message': lambda r: f'オッズ{r.get("odds", 0):.1f}倍×予測1着{r.get("predicted_1st_course")}コース（ROI-40%パターン）',
+                    'always_apply': True,
+                },
+                {
+                    'name': 'high_odds_6th_course',
+                    'description': 'オッズ100倍以上×予測1着6コース除外',
+                    'check': self._check_high_odds_6th_course,
+                    'message': lambda r: 'オッズ100倍以上×予測1着6コース（的中率0%）',
+                    'always_apply': True,
+                },
+                {
+                    'name': 'chaotic_venue_1st_course',
+                    'description': '荒れ会場×予測1着1コース除外',
+                    'check': self._check_chaotic_venue_1st_course,
+                    'message': lambda r: f'荒れ会場（{r.get("venue_code")}）×予測1着1コース（的中率1.5-2%）',
+                    'always_apply': True,
+                },
+            ])
 
         # 強化除外条件（use_exclusion_rulesがTrueの時のみ）
         if get_feature('use_exclusion_rules'):
@@ -105,6 +171,81 @@ class FilterEngine:
                     'always_apply': False,
                 },
             ])
+
+    def _check_forward_mover(self, race_data: Dict[str, Any]) -> bool:
+        """前付け常習者がいるかチェック"""
+        racer_numbers = race_data.get('racer_numbers', [])
+        if not racer_numbers:
+            return False
+
+        # レース出走者の中に前付け常習者がいるか
+        for rn in racer_numbers:
+            if str(rn) in FORWARD_MOVERS:
+                return True
+        return False
+
+    def _get_forward_mover_message(self, race_data: Dict[str, Any]) -> str:
+        """前付け常習者フィルターのメッセージ"""
+        racer_numbers = race_data.get('racer_numbers', [])
+        found_movers = [str(rn) for rn in racer_numbers if str(rn) in FORWARD_MOVERS]
+        return f'前付け常習者あり（選手番号: {", ".join(found_movers)}）'
+
+    def _check_mid_odds_outer_course(self, race_data: Dict[str, Any]) -> bool:
+        """オッズ10-30倍×予測1着3/4コースをチェック（ROI-40%パターン）"""
+        odds = race_data.get('odds')
+        predicted_1st_course = race_data.get('predicted_1st_course')
+
+        if odds is None or predicted_1st_course is None:
+            return False
+
+        # オッズ10-30倍かつ予測1着が3コースまたは4コース
+        if 10 <= odds < 30 and predicted_1st_course in [3, 4]:
+            return True
+        return False
+
+    def _check_high_odds_6th_course(self, race_data: Dict[str, Any]) -> bool:
+        """オッズ100倍以上×予測1着6コースをチェック（的中率0%パターン）"""
+        odds = race_data.get('odds')
+        predicted_1st_course = race_data.get('predicted_1st_course')
+
+        if odds is None or predicted_1st_course is None:
+            return False
+
+        # オッズ100倍以上かつ予測1着が6コース
+        if odds >= 100 and predicted_1st_course == 6:
+            return True
+        return False
+
+    def _check_chaotic_venue_1st_course(self, race_data: Dict[str, Any]) -> bool:
+        """荒れ会場（江戸川/戸田/平和島）×予測1着1コースをチェック（的中率1.5-2%）"""
+        venue_code = race_data.get('venue_code')
+        predicted_1st_course = race_data.get('predicted_1st_course')
+
+        if venue_code is None or predicted_1st_course is None:
+            return False
+
+        # venue_codeを文字列に統一
+        venue_str = str(venue_code).zfill(2)
+
+        # 荒れ会場: 江戸川(03), 戸田(02), 平和島(04)
+        chaotic_venues = {'02', '03', '04'}
+
+        if venue_str in chaotic_venues and predicted_1st_course == 1:
+            return True
+        return False
+
+    def _check_upset_pattern_5th_course(self, race_data: Dict[str, Any]) -> bool:
+        """穴狙いパターン: オッズ30-100倍×予測1着5コース（安定ROI +10%以上）"""
+        odds = race_data.get('odds')
+        predicted_1st_course = race_data.get('predicted_1st_course')
+
+        if odds is None or predicted_1st_course is None:
+            return False
+
+        # オッズ30-100倍かつ予測1着が5コース
+        if 30 <= odds < 100 and predicted_1st_course == 5:
+            return True
+        return False
 
     def _check_odds_range(self, race_data: Dict[str, Any]) -> bool:
         """オッズが範囲外かチェック"""
@@ -150,6 +291,7 @@ class FilterEngine:
                     'wind_actual': 4,
                     'entry_confidence': 0.85,
                     'edge': 0.12,
+                    'predicted_1st_course': 5,  # 穴狙い判定用
                     ...
                 }
 
@@ -157,15 +299,40 @@ class FilterEngine:
             FilterResult: フィルタ結果
         """
         applied_rules = []
+        exclusion_reason = ''
+        excluded_by_rule = None
 
         for rule in self.exclusion_rules:
             if rule['check'](race_data):
-                return FilterResult(
-                    is_target=False,
-                    exclusion_reason=rule['message'](race_data),
-                    applied_rules=[rule['name']]
-                )
+                exclusion_reason = rule['message'](race_data)
+                excluded_by_rule = rule['name']
+                break
             applied_rules.append(rule['name'])
+
+        # 除外された場合でも、ポジティブフィルタ（穴狙い条件）をチェック
+        if excluded_by_rule and is_feature_enabled('upset_pattern_filter'):
+            # オッズ30-100倍×予測1着5コース → 安定ROI +10%以上
+            if self._check_upset_pattern_5th_course(race_data):
+                return FilterResult(
+                    is_target=True,
+                    exclusion_reason='',
+                    applied_rules=applied_rules + ['upset_pattern_5th_course'],
+                    is_upset_pattern=True,
+                    upset_reason='オッズ30-100倍×予測1着5コース（安定ROI+10%以上）で復活'
+                )
+            # 除外を適用
+            return FilterResult(
+                is_target=False,
+                exclusion_reason=exclusion_reason,
+                applied_rules=[excluded_by_rule]
+            )
+
+        if excluded_by_rule:
+            return FilterResult(
+                is_target=False,
+                exclusion_reason=exclusion_reason,
+                applied_rules=[excluded_by_rule]
+            )
 
         return FilterResult(
             is_target=True,

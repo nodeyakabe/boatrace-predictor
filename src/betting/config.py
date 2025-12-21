@@ -244,47 +244,58 @@ SAFETY_CONFIG = {
 }
 
 # ============================================================
-# 購入条件定義（MODERATE戦略ベース）
+# 購入条件定義（2025年12月20日更新 - 年度間最適化）
 # ============================================================
+# Opus分析: 2024年・2025年両方でROI 100%以上の条件のみ採用
+# 参照: docs/YEAR_CONDITION_OPTIMIZATION_ANALYSIS.md
 BET_CONDITIONS = {
-    'C': [
-        {
-            'method': '従来',
-            'odds_min': 30, 'odds_max': 60,
-            'c1_rank': ['A1'],
-            'expected_roi': 127.2,
-            'bet_amount': 500,
-            'sample_count': 363,
-            'priority': 1,
-        },
-        {
-            'method': '従来',
-            'odds_min': 20, 'odds_max': 40,
-            'c1_rank': ['A1'],
-            'expected_roi': 122.8,
-            'bet_amount': 400,
-            'sample_count': 451,
-            'priority': 2,
-        },
-    ],
+    # 信頼度C: 廃止（2024年ROI 11.2%と壊滅的）
+    'C': [],
+    # 信頼度D: 両年度で安定
     'D': [
         {
-            'method': '新方式',
-            'odds_min': 25, 'odds_max': 50,
-            'c1_rank': ['A1'],
-            'expected_roi': 251.5,
-            'bet_amount': 300,
-            'sample_count': 75,
+            'method': '両方式',
+            'odds_min': 40, 'odds_max': 50,
+            'c1_rank': ['B1'],
+            'expected_roi': 198.1,
+            'bet_amount': 100,
             'priority': 1,
+            'description': 'D×B1級×40-50倍（両年度黒字・最安定）',
         },
         {
-            'method': '従来',
-            'odds_min': 20, 'odds_max': 50,
-            'c1_rank': ['A1'],
-            'expected_roi': 215.7,
-            'bet_amount': 300,
-            'sample_count': 173,
+            'method': '両方式',
+            'odds_min': 30, 'odds_max': 60,
+            'c1_rank': ['A1', 'A2', 'B1'],
+            'expected_roi': 104.1,
+            'bet_amount': 100,
             'priority': 2,
+            'description': 'D×A1/A2/B1級×30-60倍（安定・広域）',
+        },
+    ],
+}
+
+# A・Bランク特別条件
+AB_RANK_SPECIAL_CONDITIONS = {
+    'B': [
+        {
+            'method': '両方式',
+            'odds_min': 50, 'odds_max': 100,
+            'c1_rank': ['A1', 'A2', 'B1'],
+            'expected_roi': 182.2,
+            'bet_amount': 100,
+            'priority': 1,
+            'description': 'B×50-100倍（両年度黒字）',
+        },
+    ],
+    'A': [
+        {
+            'method': '両方式',
+            'odds_min': 10, 'odds_max': 20,
+            'c1_rank': ['A1'],
+            'expected_roi': 113.5,
+            'bet_amount': 100,
+            'priority': 1,
+            'description': 'A×A1級×10-20倍（両年度黒字・最安定）',
         },
     ],
 }
@@ -294,7 +305,7 @@ EXACTA_CONDITIONS = {
     'D': {
         'c1_rank': ['A1'],
         'expected_roi': 106.7,
-        'bet_amount': 200,
+        'bet_amount': 100,
         'sample_count': 907,
         'hit_rate': 14.6,
     },

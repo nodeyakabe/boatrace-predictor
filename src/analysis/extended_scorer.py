@@ -100,6 +100,118 @@ class ExtendedScorer:
             'description': descriptions.get(racer_rank.upper(), '不明')
         }
 
+    def calculate_condition_factor(
+        self,
+        racer_number: str,
+        target_date: str,
+        recent_races: int = 20
+    ) -> Dict:
+        """
+        選手の調子係数を計算（P-2タスク: 2025-12-20追加）
+
+        直近N走の着順平均から調子を判定し、級別スコアに適用する係数を算出。
+        平均着順3.5を基準とし、好調なら係数>1.0、不調なら係数<1.0。
+
+        Args:
+            racer_number: 選手登録番号
+            target_date: 対象日付（YYYY-MM-DD）- この日より前のレースを集計
+            recent_races: 直近レース数（デフォルト20走）
+
+        Returns:
+            {
+                'factor': float,          # 調子係数（0.8〜1.2）
+                'avg_rank': float,        # 平均着順
+                'race_count': int,        # 集計レース数
+                'trend': str,             # 'hot'/'normal'/'cold'
+                'description': str
+            }
+        """
+        if not racer_number:
+            return {
+                'factor': 1.0,
+                'avg_rank': None,
+                'race_count': 0,
+                'trend': 'unknown',
+                'description': '選手番号不明'
+            }
+
+        try:
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+
+            # 直近N走の着順を取得
+            cursor.execute('''
+                SELECT CAST(r.rank AS INTEGER) as rank_int
+                FROM results r
+                JOIN races ra ON r.race_id = ra.id
+                JOIN entries e ON r.race_id = e.race_id AND r.pit_number = e.pit_number
+                WHERE e.racer_number = ?
+                  AND ra.race_date < ?
+                  AND r.rank IS NOT NULL
+                  AND r.rank BETWEEN 1 AND 6
+                ORDER BY ra.race_date DESC, ra.race_number DESC
+                LIMIT ?
+            ''', (str(racer_number), target_date, recent_races))
+
+            ranks = [row[0] for row in cursor.fetchall()]
+            cursor.close()
+
+            if len(ranks) < 5:
+                # データ不足時は中立
+                return {
+                    'factor': 1.0,
+                    'avg_rank': None,
+                    'race_count': len(ranks),
+                    'trend': 'unknown',
+                    'description': f'データ不足（{len(ranks)}走）'
+                }
+
+            avg_rank = sum(ranks) / len(ranks)
+
+            # 調子係数の計算
+            # 基準: 平均3.5着 → 係数1.0
+            # 平均2.0着 → 係数1.15（好調）
+            # 平均5.0着 → 係数0.85（不調）
+            # 係数 = 1.0 + (3.5 - avg_rank) × 0.1
+            factor = 1.0 + (3.5 - avg_rank) * 0.1
+
+            # 係数の範囲制限（0.8〜1.2）
+            factor = max(0.8, min(1.2, factor))
+
+            # トレンド判定
+            if avg_rank <= 2.5:
+                trend = 'hot'
+                desc = f'絶好調（平均{avg_rank:.1f}着/{len(ranks)}走）'
+            elif avg_rank <= 3.0:
+                trend = 'good'
+                desc = f'好調（平均{avg_rank:.1f}着/{len(ranks)}走）'
+            elif avg_rank <= 4.0:
+                trend = 'normal'
+                desc = f'普通（平均{avg_rank:.1f}着/{len(ranks)}走）'
+            elif avg_rank <= 4.5:
+                trend = 'cold'
+                desc = f'不調（平均{avg_rank:.1f}着/{len(ranks)}走）'
+            else:
+                trend = 'slump'
+                desc = f'低迷（平均{avg_rank:.1f}着/{len(ranks)}走）'
+
+            return {
+                'factor': round(factor, 3),
+                'avg_rank': round(avg_rank, 2),
+                'race_count': len(ranks),
+                'trend': trend,
+                'description': desc
+            }
+
+        except Exception as e:
+            return {
+                'factor': 1.0,
+                'avg_rank': None,
+                'race_count': 0,
+                'trend': 'error',
+                'description': f'計算エラー: {str(e)}'
+            }
+
     def calculate_start_timing_score(
         self,
         avg_st: float,

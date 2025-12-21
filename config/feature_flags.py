@@ -38,10 +38,17 @@ FEATURE_FLAGS = {
     'pairwise_scoring': True,                 # ペアワイズ相対スコアリング（アプローチ3）2着+7.3pt, 3着+3.9pt
     'monte_carlo_simulation': False,          # モンテカルロシミュレーション（アプローチ5）不採用: 1着-8.5pt
     'motor_capsizing_penalty': True,           # モーター転覆履歴ペナルティ（2025-12-19追加）
+    'kimarite_flow_prediction': True,          # 決まり手別展開予測 - 有効化（5%調整で+4.1pt効果、2025-12-20全件検証確認）
+    'forward_mover_filter': False,             # 前付け常習者除外フィルター - 無効化（ab_rank ONで-7.6pt悪化のため）
+    'negative_pattern_filter': True,           # ネガティブパターンフィルター（Opus分析 2025-12-21）4年間安定マイナスROIパターン除外
+    'upset_pattern_filter': True,              # ポジティブフィルター（穴狙い）オッズ30-100倍×予測1着5コース（安定ROI+10%以上）
+    'third_place_specialized_scorer': False,   # 3着専用スコアラー - 無効化（RacePredictor未統合、効果なし）
+    'condition_factor': False,                 # 選手調子係数（直近20走）不採用: -9.5pt悪化（2025-12-20検証）
+    'makuri_risk_adjustment': True,            # まくりリスク評価 - 有効化（5%調整で+4.1pt効果、2025-12-20全件検証確認）
 
     # === A・Bランク特別条件（2025-12-19追加） ===
     # サンプル数増加により統計的に有効と判断された条件
-    'ab_rank_special_betting': True,           # A・Bランク特別条件での購入を有効化
+    'ab_rank_special_betting': True,           # A・Bランク特別条件での購入を有効化（+17.2pt効果確認済み）
     # 有効条件:
     # 1. Bランク × 50-100倍帯: ROI 512% (n=14)
     # 2. A+Bランク × 1コースB1級: ROI 154% (n=82)
@@ -283,6 +290,68 @@ FEATURE_RISKS = {
         'expected_effect': 'モーター性能低下の反映による予測精度向上',
         'test_result': '検証中',
         'enabled_date': '2025-12-19'
+    },
+    'forward_mover_filter': {
+        'risk_level': 'low',
+        'main_risks': ['購入機会損失（約5.4%のレースが除外）', '前付け常習者リストの陳腐化'],
+        'mitigation': '定期的なリスト更新（scripts/extract_forward_movers.py）、機能フラグでON/OFF可能',
+        'expected_effect': '+4pt（予測精度向上）- 前付けレースの不安定性回避',
+        'test_result': '前付けありレース: 予測精度-4pt低下を確認。除外により精度向上見込み',
+        'enabled_date': '2025-12-20'
+    },
+    'condition_factor': {
+        'risk_level': 'low',
+        'main_risks': ['DB負荷増加（選手毎に直近20走取得）', '短期変動への過剰反応'],
+        'mitigation': '係数範囲制限（0.8〜1.2）、データ不足時は中立（1.0）',
+        'expected_effect': '+1-2pt（好調選手の評価向上、不調選手の評価低下）',
+        'test_result': '検証中',
+        'enabled_date': '2025-12-20'
+    },
+    'third_place_specialized_scorer': {
+        'risk_level': 'low',
+        'main_risks': ['統計データ不足時の予測変動', 'Stage3モデルとの統合バランス'],
+        'mitigation': 'integration_weight=0.5で緩やかな統合、統計なし時はStage3モデルのみ使用',
+        'expected_effect': '+2-3pt（3着的中率改善）',
+        'test_result': '検証中（P-6-1タスク）',
+        'enabled_date': '2025-12-20'
+    },
+    'makuri_risk_adjustment': {
+        'risk_level': 'low',
+        'main_risks': ['まくりリスク過大評価による1コース過小評価', '外コース過大評価'],
+        'mitigation': 'adjustment_strength=1.0で段階的調整、最大調整幅-8%制限',
+        'expected_effect': '+2-4pt（まくり展開時の2着・3着精度向上）',
+        'test_result': '検証中（P-6-2タスク）',
+        'analysis_basis': '''
+            - 1コースB2: 敗北率65.1%, B1: 54.1% (A1は28.1%)
+            - 1コースST 0.25秒以上: まくられ率51.6%
+            - 会場別まくり率: 戸田36.1% vs 三国22.8%
+            - まくり成功者平均ST: 4コース0.138秒（最速）
+        ''',
+        'enabled_date': '2025-12-20'
+    },
+    'negative_pattern_filter': {
+        'risk_level': 'low',
+        'main_risks': ['購入機会損失（条件に該当するレースを除外）', 'オッズ情報欠損時の除外漏れ'],
+        'mitigation': '機能フラグでON/OFF可能、オッズなし時は除外しない',
+        'expected_effect': '+2-3pt（4年間安定マイナスROIパターン除外による損失回避）',
+        'test_result': '''
+            Opus分析結果（2022-2025年4年間）:
+            - オッズ10-30倍 × 予測1着3/4コース: 訓練ROI -48%、検証ROI -37%（安定マイナス）
+            - オッズ100倍以上 × 予測1着6コース: 的中率0%（絶対除外）
+        ''',
+        'enabled_date': '2025-12-21'
+    },
+    'upset_pattern_filter': {
+        'risk_level': 'low',
+        'main_risks': ['サンプル数少（年間約300レース）', '予測1着5コースの不安定性'],
+        'mitigation': '機能フラグでON/OFF可能、除外条件を満たすレースのみ対象',
+        'expected_effect': '+1-2pt（穴狙いパターンによる高期待値レースの復活）',
+        'test_result': '''
+            Opus分析結果（2022-2025年4年間）:
+            - オッズ30-100倍 × 予測1着5コース: 訓練ROI +1.6%、検証ROI +18.3%（安定プラス）
+            - サンプル: 訓練N=185、検証N=137
+        ''',
+        'enabled_date': '2025-12-21'
     }
 }
 

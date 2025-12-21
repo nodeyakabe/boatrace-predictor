@@ -1,0 +1,141 @@
+{
+  "generated_at": "2025-12-20 01:09:53",
+  "criteria": {
+    "min_forward_rate": 40.0,
+    "min_races": 30,
+    "period_days": 365
+  },
+  "count": 16,
+  "racer_numbers": [
+    "3159",
+    "3265",
+    "3473",
+    "3024",
+    "3072",
+    "3542",
+    "3623",
+    "3574",
+    "3946",
+    "3582",
+    "4874",
+    "3362",
+    "4199",
+    "3532",
+    "3554",
+    "3933"
+  ],
+  "details": [
+    {
+      "racer_number": "3159",
+      "racer_name": "江口　　晃生",
+      "total_races": 44,
+      "forward_moves": 37,
+      "forward_rate": 84.1
+    },
+    {
+      "racer_number": "3265",
+      "racer_name": "今村　　暢孝",
+      "total_races": 52,
+      "forward_moves": 43,
+      "forward_rate": 82.7
+    },
+    {
+      "racer_number": "3473",
+      "racer_name": "石川　　真二",
+      "total_races": 63,
+      "forward_moves": 50,
+      "forward_rate": 79.4
+    },
+    {
+      "racer_number": "3024",
+      "racer_name": "西島　　義則",
+      "total_races": 51,
+      "forward_moves": 37,
+      "forward_rate": 72.5
+    },
+    {
+      "racer_number": "3072",
+      "racer_name": "西田　　　靖",
+      "total_races": 58,
+      "forward_moves": 41,
+      "forward_rate": 70.7
+    },
+    {
+      "racer_number": "3542",
+      "racer_name": "清水　　紀克",
+      "total_races": 48,
+      "forward_moves": 33,
+      "forward_rate": 68.8
+    },
+    {
+      "racer_number": "3623",
+      "racer_name": "深川　　真二",
+      "total_races": 52,
+      "forward_moves": 34,
+      "forward_rate": 65.4
+    },
+    {
+      "racer_number": "3574",
+      "racer_name": "大神　　康司",
+      "total_races": 50,
+      "forward_moves": 32,
+      "forward_rate": 64.0
+    },
+    {
+      "racer_number": "3946",
+      "racer_name": "赤岩　　善生",
+      "total_races": 61,
+      "forward_moves": 35,
+      "forward_rate": 57.4
+    },
+    {
+      "racer_number": "3582",
+      "racer_name": "吉川　　昭男",
+      "total_races": 64,
+      "forward_moves": 35,
+      "forward_rate": 54.7
+    },
+    {
+      "racer_number": "4874",
+      "racer_name": "池田　奈津美",
+      "total_races": 37,
+      "forward_moves": 19,
+      "forward_rate": 51.4
+    },
+    {
+      "racer_number": "3362",
+      "racer_name": "間嶋　　仁志",
+      "total_races": 63,
+      "forward_moves": 29,
+      "forward_rate": 46.0
+    },
+    {
+      "racer_number": "4199",
+      "racer_name": "北川　　潤二",
+      "total_races": 68,
+      "forward_moves": 31,
+      "forward_rate": 45.6
+    },
+    {
+      "racer_number": "3532",
+      "racer_name": "柴田　　　光",
+      "total_races": 51,
+      "forward_moves": 22,
+      "forward_rate": 43.1
+    },
+    {
+      "racer_number": "3554",
+      "racer_name": "仲口　　博崇",
+      "total_races": 65,
+      "forward_moves": 27,
+      "forward_rate": 41.5
+    },
+    {
+      "racer_number": "3933",
+      "racer_name": "山地　　正樹",
+      "total_races": 71,
+      "forward_moves": 29,
+      "forward_rate": 40.8
+    }
+  ]
+}
