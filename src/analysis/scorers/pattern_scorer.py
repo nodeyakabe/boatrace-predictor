@@ -13,7 +13,7 @@ import logging
 from typing import Dict, List, Optional
 
 from config.feature_flags import is_feature_enabled
-from config.optimized_pattern_multipliers import get_optimized_multiplier
+# from config.optimized_pattern_multipliers import get_optimized_multiplier  # アーカイブ削除（2025-12-22）
 from config.presets.loader import get_pattern_multiplier
 from src.utils.db_connection_pool import get_connection
 
@@ -526,8 +526,7 @@ class PatternScorer:
 
     def _get_pattern_multiplier(self, pattern: Dict) -> float:
         """パターン倍率を取得（最適化考慮）"""
-        if is_feature_enabled('optimized_pattern_multipliers'):
-            return get_optimized_multiplier(pattern['name'], pattern['multiplier'])
+        # optimized_pattern_multipliers アーカイブ削除（2025-12-22）
         return pattern['multiplier']
 
     def _determine_multiplier(

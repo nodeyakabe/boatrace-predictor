@@ -1,0 +1,253 @@
+{
+  "priority_1": [
+    {
+      "type": "venue",
+      "condition": "会場=鳴門(14)",
+      "roi": 357.42424242424244,
+      "balance": 16990.0,
+      "sample": 18,
+      "recommendation": "会場鳴門は積極的に狙う（ROI 357.4%）"
+    },
+    {
+      "type": "venue",
+      "condition": "会場=丸亀(15)",
+      "roi": 312.36842105263156,
+      "balance": 16140.0,
+      "sample": 19,
+      "recommendation": "会場丸亀は積極的に狙う（ROI 312.4%）"
+    },
+    {
+      "type": "venue",
+      "condition": "会場=蒲郡(07)",
+      "roi": 296.59090909090907,
+      "balance": 8650.0,
+      "sample": 11,
+      "recommendation": "会場蒲郡は積極的に狙う（ROI 296.6%）"
+    },
+    {
+      "type": "venue",
+      "condition": "会場=三国(10)",
+      "roi": 266.875,
+      "balance": 8010.0,
+      "sample": 12,
+      "recommendation": "会場三国は積極的に狙う（ROI 266.9%）"
+    },
+    {
+      "type": "venue",
+      "condition": "会場=平和島(04)",
+      "roi": 264.875,
+      "balance": 13190.0,
+      "sample": 21,
+      "recommendation": "会場平和島は積極的に狙う（ROI 264.9%）"
+    },
+    {
+      "type": "venue",
+      "condition": "会場=びわこ(11)",
+      "roi": 235.95238095238096,
+      "balance": 5710.0,
+      "sample": 11,
+      "recommendation": "会場びわこは積極的に狙う（ROI 236.0%）"
+    },
+    {
+      "type": "venue",
+      "condition": "会場=多摩川(05)",
+      "roi": 233.7313432835821,
+      "balance": 8960.0,
+      "sample": 19,
+      "recommendation": "会場多摩川は積極的に狙う（ROI 233.7%）"
+    },
+    {
+      "type": "venue",
+      "condition": "会場=浜名湖(06)",
+      "roi": 215.75757575757578,
+      "balance": 7640.0,
+      "sample": 17,
+      "recommendation": "会場浜名湖は積極的に狙う（ROI 215.8%）"
+    },
+    {
+      "type": "venue",
+      "condition": "会場=江戸川(03)",
+      "roi": 210.64102564102564,
+      "balance": 8630.0,
+      "sample": 21,
+      "recommendation": "会場江戸川は積極的に狙う（ROI 210.6%）"
+    },
+    {
+      "type": "venue",
+      "condition": "会場=宮島(17)",
+      "roi": 176.00000000000003,
+      "balance": 3040.000000000001,
+      "sample": 10,
+      "recommendation": "会場宮島は積極的に狙う（ROI 176.0%）"
+    },
+    {
+      "type": "venue",
+      "condition": "会場=桐生(01)",
+      "roi": 163.71134020618555,
+      "balance": 6180.0,
+      "sample": 27,
+      "recommendation": "会場桐生は積極的に狙う（ROI 163.7%）"
+    },
+    {
+      "type": "venue",
+      "condition": "会場=福岡(22)",
+      "roi": 158.31932773109244,
+      "balance": 6940.0,
+      "sample": 33,
+      "recommendation": "会場福岡は積極的に狙う（ROI 158.3%）"
+    },
+    {
+      "type": "cross_condition",
+      "condition": "C x B1 x 30-40倍",
+      "confidence": "C",
+      "c1_rank": "B1",
+      "odds_range": "30-40",
+      "roi": 162.829417773238,
+      "balance": 61510.0,
+      "sample": 249,
+      "recommendation": "条件「C x B1 x 30-40倍」は最優先で狙う（収支 +61,510.0円）"
+    },
+    {
+      "type": "cross_condition",
+      "condition": "D x B1 x 40-50倍",
+      "confidence": "D",
+      "c1_rank": "B1",
+      "odds_range": "40-50",
+      "roi": 241.75,
+      "balance": 28350.0,
+      "sample": 52,
+      "recommendation": "条件「D x B1 x 40-50倍」は最優先で狙う（収支 +28,350.0円）"
+    },
+    {
+      "type": "cross_condition",
+      "condition": "C x A1 x 30-40倍",
+      "confidence": "C",
+      "c1_rank": "A1",
+      "odds_range": "30-40",
+      "roi": 240.7831325301205,
+      "balance": 23370.0,
+      "sample": 50,
+      "recommendation": "条件「C x A1 x 30-40倍」は最優先で狙う（収支 +23,370.0円）"
+    },
+    {
+      "type": "odds_range",
+      "condition": "オッズ範囲=30-40倍",
+      "roi": 174.13100436681225,
+      "balance": 84880.0,
+      "sample": 299,
+      "recommendation": "オッズ30-40倍は高ROI（174.1%）"
+    },
+    {
+      "type": "odds_range",
+      "condition": "オッズ範囲=40-50倍",
+      "roi": 232.4519230769231,
+      "balance": 27550.0,
+      "sample": 54,
+      "recommendation": "オッズ40-50倍は高ROI（232.5%）"
+    }
+  ],
+  "priority_2": [
+    {
+      "type": "venue",
+      "condition": "会場=大村(24)",
+      "roi": 478.57142857142856,
+      "balance": 10600.0,
+      "sample": 7
+    },
+    {
+      "type": "venue",
+      "condition": "会場=住之江(12)",
+      "roi": 359.44444444444446,
+      "balance": 9340.0,
+      "sample": 9
+    },
+    {
+      "type": "wind",
+      "condition": "風速=4-6m",
+      "roi": 211.56756756756758,
+      "balance": 20640.0,
+      "sample": 50,
+      "recommendation": "風速4-6mの条件は優先的に狙う"
+    },
+    {
+      "type": "weekday",
+      "condition": "曜日=Mon",
+      "roi": 250.82901554404145,
+      "balance": 29110.0,
+      "sample": 51
+    },
+    {
+      "type": "weekday",
+      "condition": "曜日=Sat",
+      "roi": 237.46666666666667,
+      "balance": 20620.0,
+      "sample": 39
+    },
+    {
+      "type": "weekday",
+      "condition": "曜日=Thu",
+      "roi": 208.71951219512198,
+      "balance": 17830.0,
+      "sample": 42
+    },
+    {
+      "type": "weekday",
+      "condition": "曜日=Wed",
+      "roi": 187.421875,
+      "balance": 22380.0,
+      "sample": 66
+    },
+    {
+      "type": "weekday",
+      "condition": "曜日=Fri",
+      "roi": 154.27927927927928,
+      "balance": 12050.0,
+      "sample": 60
+    }
+  ],
+  "priority_3": [],
+  "avoid": [
+    {
+      "type": "venue",
+      "condition": "会場=常滑(08)",
+      "roi": 79.46428571428571,
+      "reason": "プラス月でもROI低い（79.5%）"
+    },
+    {
+      "type": "venue",
+      "condition": "会場=唐津(23)",
+      "roi": 66.30434782608695,
+      "reason": "プラス月でもROI低い（66.3%）"
+    },
+    {
+      "type": "venue",
+      "condition": "会場=戸田(02)",
+      "roi": 45.27777777777778,
+      "reason": "プラス月でもROI低い（45.3%）"
+    },
+    {
+      "type": "venue",
+      "condition": "会場=下関(19)",
+      "roi": 25.833333333333336,
+      "reason": "プラス月でもROI低い（25.8%）"
+    },
+    {
+      "type": "venue",
+      "condition": "会場=児島(16)",
+      "roi": 0.0,
+      "reason": "プラス月でもROI低い（0.0%）"
+    },
+    {
+      "type": "venue",
+      "condition": "会場=徳山(18)",
+      "roi": 0.0,
+      "reason": "プラス月でもROI低い（0.0%）"
+    },
+    {
+      "type": "race_number",
+      "condition": "レース番号=R8",
+      "roi": 53.714285714285715,
+      "reason": "プラス月でもROI低い（53.7%）"
+    }
+  ]
+}

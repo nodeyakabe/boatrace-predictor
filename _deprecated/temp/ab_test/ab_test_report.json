@@ -1,0 +1,24 @@
+{
+  "test_date": "2025-12-02 14:31:36",
+  "test_period": [
+    "",
+    ""
+  ],
+  "total_races": 0,
+  "dynamic_mode": {
+    "hit_rate_1st": 0.0,
+    "hit_rate_top3": 0.0,
+    "avg_score_accuracy": 0.0
+  },
+  "legacy_mode": {
+    "hit_rate_1st": 0.0,
+    "hit_rate_top3": 0.0,
+    "avg_score_accuracy": 0.0
+  },
+  "improvement": {
+    "hit_rate_1st": 0,
+    "hit_rate_top3": 0,
+    "score_accuracy": 0
+  },
+  "conclusion": "中立 - 動的統合の効果は限定的"
+}

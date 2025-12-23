@@ -1,0 +1,25 @@
+{
+  "total_races": 1321,
+  "date_range": [
+    "2025-10-18",
+    "2025-11-17"
+  ],
+  "hit_rate_1st": 0.5693,
+  "hit_rate_top3": 0.2324,
+  "avg_score_accuracy": 0.5272,
+  "mode_stats": {
+    "legacy_adjusted": {
+      "count": 628,
+      "hit_rate_1st": 0.7325,
+      "hit_rate_top3": 0.2277,
+      "avg_score_accuracy": 0.5414
+    },
+    "legacy": {
+      "count": 693,
+      "hit_rate_1st": 0.4214,
+      "hit_rate_top3": 0.2367,
+      "avg_score_accuracy": 0.5144
+    }
+  },
+  "condition_stats": {}
+}

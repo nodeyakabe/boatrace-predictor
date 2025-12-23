@@ -54,7 +54,8 @@ else:
 # 天気API設定（OpenWeatherMap）
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
 if not WEATHER_API_KEY:
-    raise ValueError("WEATHER_API_KEY is not set in environment variables. Please check your .env file.")
+    import warnings
+    warnings.warn("WEATHER_API_KEY is not set in environment variables. Weather API features will be disabled.")
 WEATHER_API_URL = "https://api.openweathermap.org/data/2.5/weather"
 
 # スクレイピング設定

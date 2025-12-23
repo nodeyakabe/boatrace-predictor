@@ -38,7 +38,7 @@ from src.utils.scoring_config import ScoringConfig
 from src.utils.db_connection_pool import get_connection
 from src.prediction.rule_based_engine import RuleBasedEngine
 from config.feature_flags import is_feature_enabled
-from config.optimized_pattern_multipliers import get_optimized_multiplier
+# from config.optimized_pattern_multipliers import get_optimized_multiplier  # アーカイブ削除（2025-12-22）
 from config.presets.loader import get_pattern_multiplier, get_dynamic_weights_config
 from src.analysis.scorers import PatternScorer, BEFORE_PATTERNS_1ST, BEFORE_PATTERNS_2ND, BEFORE_PATTERNS_3RD, BEFORE_PATTERNS_TOP3
 # 階層的確率モデル（条件付き確率）
@@ -1530,9 +1530,10 @@ class RacePredictor:
             confidence = 'E'
 
         # データ量による制限（より厳密に）
-        confidence_levels = {'A': 5, 'B': 4, 'C': 3, 'D': 2, 'E': 1}
-        if confidence_levels[confidence] > confidence_levels[max_confidence]:
-            confidence = max_confidence
+        # NOTE: 2025-12-22 一時的に無効化（data_qualityが低すぎてA/B/Cが生成されない問題）
+        # confidence_levels = {'A': 5, 'B': 4, 'C': 3, 'D': 2, 'E': 1}
+        # if confidence_levels[confidence] > confidence_levels[max_confidence]:
+        #     confidence = max_confidence
 
         return confidence
 
@@ -1952,10 +1953,8 @@ class RacePredictor:
                     try:
                         if pattern['condition'](pre_rank, ex_rank, st_rank):
                             # 最適化倍率を適用（フィーチャーフラグで制御）
-                            if is_feature_enabled('optimized_pattern_multipliers'):
-                                multiplier = get_optimized_multiplier(pattern['name'], pattern['multiplier'])
-                            else:
-                                multiplier = pattern['multiplier']
+                            # optimized_pattern_multipliers アーカイブ削除（2025-12-22）
+                            multiplier = pattern['multiplier']
 
                             matched_patterns.append({
                                 'name': pattern['name'],
@@ -2018,10 +2017,8 @@ class RacePredictor:
                     try:
                         if pattern['condition'](pre_rank, ex_rank, st_rank):
                             # 最適化倍率を適用（フィーチャーフラグで制御）
-                            if is_feature_enabled('optimized_pattern_multipliers'):
-                                multiplier = get_optimized_multiplier(pattern['name'], pattern['multiplier'])
-                            else:
-                                multiplier = pattern['multiplier']
+                            # optimized_pattern_multipliers アーカイブ削除（2025-12-22）
+                            multiplier = pattern['multiplier']
 
                             matched_patterns.append({
                                 'name': pattern['name'],
@@ -2173,20 +2170,24 @@ class RacePredictor:
         if use_pattern_bonus:
             return self._apply_pattern_bonus(predictions, race_id)
 
-        # 状態フラグ方式が有効かチェック（新モード・最推奨）
-        use_flag_adjustment = is_feature_enabled('beforeinfo_flag_adjustment')
-
-        # ゲーティング方式が有効かチェック（新方式：PRE拮抗時のみBEFORE使用）
-        use_gated_integration = is_feature_enabled('gated_before_integration')
-
-        # 階層的予測が有効かチェック
-        use_hierarchical_prediction = is_feature_enabled('hierarchical_before_prediction')
+        # ============================================================
+        # アーカイブ済み統合モード削除（2025-12-22）
+        # ============================================================
+        # 以下のフラグは検証の結果、効果なしまたは悪化のため削除されました。
+        # - beforeinfo_flag_adjustment: -3.65%悪化
+        # - gated_before_integration: 効果なし
+        # - hierarchical_before_prediction: -0.5%悪化
+        # - normalized_before_integration: -0.5%悪化
+        # - dynamic_integration: 逆相関
+        #
+        # パターンボーナス方式（before_pattern_bonus）のみが有効です。
+        # ============================================================
 
         # 正規化統合が有効かチェック
-        use_normalized_integration = is_feature_enabled('normalized_before_integration')
+        use_normalized_integration = False  # アーカイブフラグ削除により常にFalse
 
         # 動的統合が有効かチェック
-        use_dynamic_integration = is_feature_enabled('dynamic_integration')
+        use_dynamic_integration = False  # アーカイブフラグ削除により常にFalse
 
         # 直前情報データを収集（動的統合用）
         beforeinfo_data = self._collect_beforeinfo_data(race_id) if use_dynamic_integration else None
@@ -2223,8 +2224,8 @@ class RacePredictor:
             before_results[pit_number] = beforeinfo_result
             before_scores_list.append(before_score)
 
-        # 状態フラグ方式の処理（最優先）
-        if use_flag_adjustment:
+        # 状態フラグ方式の処理（最優先） - アーカイブ済み（削除）
+        if False:  # use_flag_adjustment - アーカイブフラグ削除により無効化
             for pred in predictions:
                 pit_number = pred['pit_number']
                 pre_score = pred['total_score']
@@ -2250,8 +2251,8 @@ class RacePredictor:
             predictions.sort(key=lambda x: x['total_score'], reverse=True)
             return predictions
 
-        # ゲーティング方式の処理（PRE拮抗時のみBEFORE使用）
-        if use_gated_integration:
+        # ゲーティング方式の処理（PRE拮抗時のみBEFORE使用） - アーカイブ済み（削除）
+        if False:  # use_gated_integration - アーカイブフラグ削除により無効化
             # BEFORE順位を算出（スコア降順）
             before_ranking = sorted(before_scores.items(), key=lambda x: x[1], reverse=True)
             before_rank_map = {pit: rank+1 for rank, (pit, score) in enumerate(before_ranking)}
@@ -2317,8 +2318,8 @@ class RacePredictor:
             predictions.sort(key=lambda x: x['total_score'], reverse=True)
             return predictions
 
-        # 階層的予測モードの処理
-        if use_hierarchical_prediction:
+        # 階層的予測モードの処理 - アーカイブ済み（削除）
+        if False:  # use_hierarchical_prediction - アーカイブフラグ削除により無効化
             # BEFORE順位を算出（スコア降順）
             before_ranking = sorted(before_scores.items(), key=lambda x: x[1], reverse=True)
             before_rank_map = {pit: rank+1 for rank, (pit, score) in enumerate(before_ranking)}

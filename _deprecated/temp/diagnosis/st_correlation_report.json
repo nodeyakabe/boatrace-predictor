@@ -1,0 +1,392 @@
+{
+  "timestamp": "2025-12-05T11:28:32.503113",
+  "min_races": 100,
+  "st_correlation": {
+    "01": {
+      "correlation": -0.04249496503477168,
+      "p_value": 0.01,
+      "sample_size": 32453,
+      "winner_mean_st": 0.16257412134301982,
+      "loser_mean_st": 0.1965387426900585,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "02": {
+      "correlation": -0.059251070347195484,
+      "p_value": 0.01,
+      "sample_size": 35054,
+      "winner_mean_st": 0.1481107903284013,
+      "loser_mean_st": 0.1838486039577121,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "03": {
+      "correlation": -0.05064102389312686,
+      "p_value": 0.01,
+      "sample_size": 29035,
+      "winner_mean_st": 0.1693215916503588,
+      "loser_mean_st": 0.20636888197741038,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "12": {
+      "correlation": -0.045079970581331,
+      "p_value": 0.01,
+      "sample_size": 29150,
+      "winner_mean_st": 0.14757502206531334,
+      "loser_mean_st": 0.1800978958485661,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "21": {
+      "correlation": -0.038116358102814454,
+      "p_value": 0.01,
+      "sample_size": 31118,
+      "winner_mean_st": 0.15526870817278443,
+      "loser_mean_st": 0.180889754458319,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "22": {
+      "correlation": -0.04134917218303473,
+      "p_value": 0.01,
+      "sample_size": 29994,
+      "winner_mean_st": 0.17014219015280135,
+      "loser_mean_st": 0.21812791709516652,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "04": {
+      "correlation": -0.03303972634388943,
+      "p_value": 0.01,
+      "sample_size": 30281,
+      "winner_mean_st": 0.16504454112285064,
+      "loser_mean_st": 0.20010293077708807,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "10": {
+      "correlation": -0.04114877765577488,
+      "p_value": 0.01,
+      "sample_size": 31831,
+      "winner_mean_st": 0.16304066356463687,
+      "loser_mean_st": 0.20839593870871767,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "05": {
+      "correlation": -0.03888810119358344,
+      "p_value": 0.01,
+      "sample_size": 31359,
+      "winner_mean_st": 0.15771445831655256,
+      "loser_mean_st": 0.1886041753495245,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "06": {
+      "correlation": -0.05337717117718114,
+      "p_value": 0.01,
+      "sample_size": 33760,
+      "winner_mean_st": 0.15799586776859503,
+      "loser_mean_st": 0.2108960472640315,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "07": {
+      "correlation": -0.039985613694014016,
+      "p_value": 0.01,
+      "sample_size": 29856,
+      "winner_mean_st": 0.16583423267860997,
+      "loser_mean_st": 0.2060472584545851,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "08": {
+      "correlation": -0.08617649079302935,
+      "p_value": 0.01,
+      "sample_size": 36960,
+      "winner_mean_st": 0.1426991452991453,
+      "loser_mean_st": 0.1841767920282867,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "11": {
+      "correlation": -0.042755930876532205,
+      "p_value": 0.01,
+      "sample_size": 27698,
+      "winner_mean_st": 0.21813969571230982,
+      "loser_mean_st": 0.2987748287671233,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "13": {
+      "correlation": -0.03168051909221408,
+      "p_value": 0.01,
+      "sample_size": 27845,
+      "winner_mean_st": 0.17158903498997102,
+      "loser_mean_st": 0.1988299511944516,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "14": {
+      "correlation": -0.05778187027889036,
+      "p_value": 0.01,
+      "sample_size": 30197,
+      "winner_mean_st": 0.13975871313672925,
+      "loser_mean_st": 0.17284164431118823,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "15": {
+      "correlation": -0.055559069463160485,
+      "p_value": 0.01,
+      "sample_size": 31519,
+      "winner_mean_st": 0.146052,
+      "loser_mean_st": 0.1816497605490403,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "16": {
+      "correlation": -0.044399320308650965,
+      "p_value": 0.01,
+      "sample_size": 30028,
+      "winner_mean_st": 0.15475693720008346,
+      "loser_mean_st": 0.19677511392906677,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "17": {
+      "correlation": -0.07246497304909133,
+      "p_value": 0.01,
+      "sample_size": 31364,
+      "winner_mean_st": 0.14830003995205754,
+      "loser_mean_st": 0.18331739889217696,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "18": {
+      "correlation": -0.043321785537398926,
+      "p_value": 0.01,
+      "sample_size": 30630,
+      "winner_mean_st": 0.15796150662251654,
+      "loser_mean_st": 0.19456740832622682,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "19": {
+      "correlation": -0.03799003239503976,
+      "p_value": 0.01,
+      "sample_size": 29478,
+      "winner_mean_st": 0.16600296861747244,
+      "loser_mean_st": 0.20677166626282206,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "20": {
+      "correlation": -0.05081000622832075,
+      "p_value": 0.01,
+      "sample_size": 30477,
+      "winner_mean_st": 0.15065738275650215,
+      "loser_mean_st": 0.191229194342424,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "23": {
+      "correlation": -0.04523334919167285,
+      "p_value": 0.01,
+      "sample_size": 30836,
+      "winner_mean_st": 0.1637118886842644,
+      "loser_mean_st": 0.21464295348568346,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "24": {
+      "correlation": -0.04802885741067574,
+      "p_value": 0.01,
+      "sample_size": 32656,
+      "winner_mean_st": 0.14867222329908897,
+      "loser_mean_st": 0.195122013310543,
+      "sign_interpretation": "負（速いSTが有利）"
+    },
+    "09": {
+      "correlation": -0.042109238807084094,
+      "p_value": 0.01,
+      "sample_size": 31117,
+      "winner_mean_st": 0.177441716525686,
+      "loser_mean_st": 0.23291244765892652,
+      "sign_interpretation": "負（速いSTが有利）"
+    }
+  },
+  "exhibition_correlation": {
+    "01": {
+      "correlation": -0.07355431259762192,
+      "p_value": 0.01,
+      "sample_size": 27046,
+      "winner_mean_time": 6.784459045116075,
+      "loser_mean_time": 6.805864323843416,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "02": {
+      "correlation": -0.09535129765208117,
+      "p_value": 0.01,
+      "sample_size": 29550,
+      "winner_mean_time": 6.761852593631083,
+      "loser_mean_time": 6.787941116585902,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "03": {
+      "correlation": -0.03687723900974436,
+      "p_value": 0.01,
+      "sample_size": 24736,
+      "winner_mean_time": 6.841566809320019,
+      "loser_mean_time": 6.8616098392596205,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "04": {
+      "correlation": -0.05988802084396869,
+      "p_value": 0.01,
+      "sample_size": 25188,
+      "winner_mean_time": 6.80651255573809,
+      "loser_mean_time": 6.826391742724709,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "05": {
+      "correlation": -0.09441161424302023,
+      "p_value": 0.01,
+      "sample_size": 25651,
+      "winner_mean_time": 6.755206840767275,
+      "loser_mean_time": 6.774128212342901,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "06": {
+      "correlation": -0.07782176568531649,
+      "p_value": 0.01,
+      "sample_size": 28185,
+      "winner_mean_time": 6.704918032786885,
+      "loser_mean_time": 6.721943057156272,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "07": {
+      "correlation": -0.11291461535852151,
+      "p_value": 0.01,
+      "sample_size": 25932,
+      "winner_mean_time": 6.739217609489051,
+      "loser_mean_time": 6.76133887135697,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "08": {
+      "correlation": -0.08590650418918187,
+      "p_value": 0.01,
+      "sample_size": 31514,
+      "winner_mean_time": 6.751116961263634,
+      "loser_mean_time": 6.767473278363109,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "09": {
+      "correlation": -0.07594088857969848,
+      "p_value": 0.01,
+      "sample_size": 25867,
+      "winner_mean_time": 6.7393545433737705,
+      "loser_mean_time": 6.759324123174249,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "10": {
+      "correlation": -0.07682068064157804,
+      "p_value": 0.01,
+      "sample_size": 26617,
+      "winner_mean_time": 6.75722098710538,
+      "loser_mean_time": 6.776783760567837,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "11": {
+      "correlation": -0.09590828838603803,
+      "p_value": 0.01,
+      "sample_size": 23740,
+      "winner_mean_time": 6.745857249812828,
+      "loser_mean_time": 6.76945928140678,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "12": {
+      "correlation": -0.11400533847559344,
+      "p_value": 0.01,
+      "sample_size": 23509,
+      "winner_mean_time": 6.8448268941294526,
+      "loser_mean_time": 6.870413358602673,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "13": {
+      "correlation": -0.05939885596216723,
+      "p_value": 0.01,
+      "sample_size": 21527,
+      "winner_mean_time": 6.775403248004404,
+      "loser_mean_time": 6.792935620878507,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "14": {
+      "correlation": -0.07604279763878978,
+      "p_value": 0.01,
+      "sample_size": 24869,
+      "winner_mean_time": 6.83473934777434,
+      "loser_mean_time": 6.855303851364429,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "15": {
+      "correlation": -0.11463578266174533,
+      "p_value": 0.01,
+      "sample_size": 26019,
+      "winner_mean_time": 6.796432149362477,
+      "loser_mean_time": 6.823275535210617,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "16": {
+      "correlation": -0.08648707033534618,
+      "p_value": 0.01,
+      "sample_size": 24934,
+      "winner_mean_time": 6.775188791260983,
+      "loser_mean_time": 6.79672344737731,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "17": {
+      "correlation": -0.08434992424618082,
+      "p_value": 0.01,
+      "sample_size": 25623,
+      "winner_mean_time": 6.706550611021444,
+      "loser_mean_time": 6.722189232359296,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "18": {
+      "correlation": -0.12164800000137321,
+      "p_value": 0.01,
+      "sample_size": 25223,
+      "winner_mean_time": 6.961680771039022,
+      "loser_mean_time": 6.987686584958748,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "19": {
+      "correlation": -0.08786015241724074,
+      "p_value": 0.01,
+      "sample_size": 24815,
+      "winner_mean_time": 6.779882803157139,
+      "loser_mean_time": 6.798484055442474,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "20": {
+      "correlation": -0.07462448795239984,
+      "p_value": 0.01,
+      "sample_size": 25081,
+      "winner_mean_time": 6.865600377447511,
+      "loser_mean_time": 6.8839214086939835,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "21": {
+      "correlation": -0.07950227868855263,
+      "p_value": 0.01,
+      "sample_size": 25574,
+      "winner_mean_time": 6.793349514563107,
+      "loser_mean_time": 6.810300734186747,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "22": {
+      "correlation": -0.09522437956997856,
+      "p_value": 0.01,
+      "sample_size": 25246,
+      "winner_mean_time": 6.879779911027862,
+      "loser_mean_time": 6.899121334922527,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "23": {
+      "correlation": -0.07258058194257204,
+      "p_value": 0.01,
+      "sample_size": 25468,
+      "winner_mean_time": 6.7646477563357355,
+      "loser_mean_time": 6.782647044928427,
+      "sign_interpretation": "負（速い展示が有利）"
+    },
+    "24": {
+      "correlation": -0.06518720540563916,
+      "p_value": 0.01,
+      "sample_size": 27856,
+      "winner_mean_time": 6.863729029517944,
+      "loser_mean_time": 6.881277919384802,
+      "sign_interpretation": "負（速い展示が有利）"
+    }
+  }
+}

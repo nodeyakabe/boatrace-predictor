@@ -1,0 +1,82 @@
+{
+    "version": "1.0",
+    "description": "Phase 2.5 自動モニタリング設定",
+    "created_at": "2025-12-11",
+
+    "monitoring": {
+        "monitoring_days": 7,
+        "max_races": 200,
+        "min_races_threshold": 20,
+        "accuracy_threshold": 0.45,
+        "pattern_apply_rate_min": 0.5,
+        "pattern_apply_rate_max": 0.95,
+        "schedule": {
+            "daily_report_hour": 23,
+            "weekly_report_day": "sunday"
+        }
+    },
+
+    "alerts": {
+        "thresholds": {
+            "hit_rate_1st_min": 0.15,
+            "hit_rate_top3_min": 0.05,
+            "score_accuracy_min": 0.6,
+            "pattern_apply_rate_min": 0.5
+        },
+        "levels": {
+            "critical": {
+                "hit_rate_1st_below": 0.10,
+                "description": "1着的中率が10%未満で緊急事態"
+            },
+            "high": {
+                "hit_rate_1st_below": 0.15,
+                "description": "1着的中率が15%未満で要注意"
+            },
+            "medium": {
+                "pattern_apply_rate_below": 0.5,
+                "description": "パターン適用率が低い"
+            },
+            "low": {
+                "race_count_below": 20,
+                "description": "評価レース数が少ない"
+            }
+        }
+    },
+
+    "notifications": {
+        "enable_notifications": false,
+        "email": {
+            "enabled": false,
+            "smtp_host": "smtp.gmail.com",
+            "smtp_port": 587,
+            "use_tls": true,
+            "username": "",
+            "password": "",
+            "from": "boatrace-monitor@local",
+            "to": []
+        },
+        "slack": {
+            "enabled": false,
+            "webhook_url": "",
+            "channel": "#boatrace-alerts"
+        }
+    },
+
+    "reports": {
+        "output_directory": "output/monitoring",
+        "daily_report_format": "monitoring_daily_{date}.json",
+        "weekly_report_format": "monitoring_weekly_{date}.md",
+        "keep_days": 30
+    },
+
+    "feature_flags_monitoring": {
+        "track_changes": true,
+        "alert_on_change": true,
+        "watched_flags": [
+            "negative_patterns",
+            "before_pattern_bonus",
+            "lightgbm_ranking",
+            "hierarchical_predictor"
+        ]
+    }
+}

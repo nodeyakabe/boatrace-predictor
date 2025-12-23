@@ -1,9 +1,0 @@
-{
-  "status": "running",
-  "step": "Step 5/6",
-  "message": "予測を生成中...",
-  "progress": 60,
-  "updated_at": "2025-12-18T15:36:55.802526",
-  "completed_at": "2025-12-16T14:37:05.620754",
-  "started_at": "2025-12-18T15:27:56.559170"
-}

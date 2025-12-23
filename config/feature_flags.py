@@ -59,33 +59,31 @@ FEATURE_FLAGS = {
 }
 
 # ============================================================
-# アーカイブ済みフラグ（削除予定・参照用に残す）
+# アーカイブ済みフラグ - 削除完了（2025-12-22）
 # ============================================================
-ARCHIVED_FLAGS = {
-    # 以下は検証の結果、効果なしまたは悪化のため無効化済み
-    # コード内での参照がなくなり次第削除予定
-    'beforeinfo_flag_adjustment': False,      # -3.65%悪化
-    'hierarchical_before_prediction': False,  # -0.5%悪化
-    'normalized_before_integration': False,   # -0.5%悪化
-    'dynamic_integration': False,             # 逆相関
-    'gated_before_integration': False,        # 効果なし
-    'before_safe_integration': False,         # 効果なし
-    'before_safe_st_exhibition': False,       # 悪化
-    'optimized_pattern_multipliers': False,   # 効果なし
-    'confidence_refinement': False,           # 未実装
-    'kelly_betting': False,                   # 未実装
-    'optuna_optimization': False,             # 予測時不要
-    'auto_buff_learning': False,              # 未実装
-    'probability_calibration': False,         # 未実装
-    'venue_specific_models': False,           # 未実装
-    'shap_explainability': False,             # 予測時不要
-    'bayesian_hierarchical': False,           # 未実装
-    'reinforcement_learning': False,          # 未実装
-    'prediction_engine_v2': False,            # 実験的
-    'preset_based_adjustment': False,         # 実験的
-    'adjustment_tracing': False,              # 実験的
-    'validation_mode': False,                 # デバッグ用
-}
+# 以下のフラグは検証の結果、効果なしまたは悪化のため削除されました。
+# 詳細は docs/CONFIG_CLEANUP_PLAN_20251222.md 参照
+# - beforeinfo_flag_adjustment: -3.65%悪化
+# - hierarchical_before_prediction: -0.5%悪化
+# - normalized_before_integration: -0.5%悪化
+# - dynamic_integration: 逆相関
+# - gated_before_integration: 効果なし
+# - before_safe_integration: 効果なし
+# - before_safe_st_exhibition: 悪化
+# - optimized_pattern_multipliers: 効果なし
+# - confidence_refinement: 未実装
+# - kelly_betting: 未実装
+# - optuna_optimization: 予測時不要
+# - auto_buff_learning: 未実装
+# - probability_calibration: 未実装
+# - venue_specific_models: 未実装
+# - shap_explainability: 予測時不要
+# - bayesian_hierarchical: 未実装
+# - reinforcement_learning: 未実装
+# - prediction_engine_v2: 実験的
+# - preset_based_adjustment: 実験的
+# - adjustment_tracing: 実験的
+# - validation_mode: デバッグ用
 
 
 def is_feature_enabled(feature_name: str) -> bool:
@@ -98,10 +96,7 @@ def is_feature_enabled(feature_name: str) -> bool:
     Returns:
         機能が有効な場合True
     """
-    # メインフラグを優先、なければアーカイブを参照（後方互換性維持）
-    if feature_name in FEATURE_FLAGS:
-        return FEATURE_FLAGS[feature_name]
-    return ARCHIVED_FLAGS.get(feature_name, False)
+    return FEATURE_FLAGS.get(feature_name, False)
 
 
 def enable_feature(feature_name: str):

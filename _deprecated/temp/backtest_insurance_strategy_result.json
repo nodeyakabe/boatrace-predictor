@@ -1,0 +1,17 @@
+{
+  "test_date": "2025-12-05 14:54:04",
+  "total_time_seconds": 88.78261303901672,
+  "strategy": "3連単5点(500円) + 3連複1点(100円)",
+  "total_races": 997,
+  "total_bet": 598200,
+  "total_return": 498650,
+  "profit": -99550,
+  "recovery_rate": 83.35840855901037,
+  "trifecta_hits": 160,
+  "trio_hits": 170,
+  "both_hits": 160,
+  "insurance_saves": 10,
+  "both_miss": 827,
+  "trifecta_only_recovery": 99.07121364092278,
+  "insurance_improvement": -94920
+}

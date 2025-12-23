@@ -1,0 +1,43 @@
+{
+  "test_date": "2025-12-05 13:55:00",
+  "total_time_seconds": 98.73429799079895,
+  "avg_speed_per_race": 10.128192738993192,
+  "strategies": [
+    {
+      "strategy": "堅実型(1点)",
+      "points": 1,
+      "races": 997,
+      "hits": 170,
+      "hit_rate": 17.051153460381144,
+      "total_bet": 99700,
+      "total_return": 72550,
+      "profit": -27150,
+      "recovery_rate": 72.76830491474423,
+      "avg_payout": 426.7647058823529
+    },
+    {
+      "strategy": "バランス型(4点)",
+      "points": 4,
+      "races": 997,
+      "hits": 457,
+      "hit_rate": 45.83751253761284,
+      "total_bet": 398800,
+      "total_return": 305280,
+      "profit": -93520,
+      "recovery_rate": 76.54964894684052,
+      "avg_payout": 668.0087527352298
+    },
+    {
+      "strategy": "広めカバー型(10点)",
+      "points": 10,
+      "races": 997,
+      "hits": 752,
+      "hit_rate": 75.42627883650952,
+      "total_bet": 997000,
+      "total_return": 729380,
+      "profit": -267620,
+      "recovery_rate": 73.15747241725175,
+      "avg_payout": 969.9202127659574
+    }
+  ]
+}
