@@ -27,7 +27,7 @@ from typing import Dict, List, Tuple
 from collections import defaultdict
 
 # プロジェクトルートをパスに追加
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, PROJECT_ROOT)
 
 from src.analysis.race_predictor import RacePredictor

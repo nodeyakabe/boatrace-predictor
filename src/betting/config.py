@@ -286,6 +286,20 @@ AB_RANK_SPECIAL_CONDITIONS = {
             'priority': 1,
             'description': 'B×50-100倍（両年度黒字）',
         },
+        # 2025-12-23追加: B-30-50-B1条件（6年ROI 101.4%、年間約190件）
+        # 分離検証: 学習期間180% → 検証期間356%で過剰適合なし確認済み
+        {
+            'method': '両方式',
+            'odds_min': 30, 'odds_max': 50,
+            'c1_rank': ['B1'],  # B1級限定
+            'expected_roi': 101.4,
+            'bet_amount': 100,
+            'priority': 2,
+            'description': 'B×30-50倍×B1級（6年安定ROI 101%）',
+            # 会場フィルター: 高ROI会場のみに限定するとROI 211%→356%に改善
+            'venue_filter': [20, 12, 11, 18, 16],  # 若松, 住之江, びわこ, 徳山, 児島
+            'venue_filter_enabled': True,  # 会場フィルターを有効化
+        },
     ],
     'A': [
         {
@@ -296,6 +310,24 @@ AB_RANK_SPECIAL_CONDITIONS = {
             'bet_amount': 100,
             'priority': 1,
             'description': 'A×A1級×10-20倍（両年度黒字・最安定）',
+        },
+    ],
+}
+
+# C信頼度ペーパートレード条件（2025-12-23追加）
+# 信頼度Cは通常除外だが、特定条件で復活検討中
+# 2-3ヶ月のペーパートレード後に本格導入判断
+C_RANK_PAPER_TRADE_CONDITIONS = {
+    'C': [
+        {
+            'method': '両方式',
+            'odds_min': 30, 'odds_max': 50,
+            'c1_rank': ['A2'],  # A2級限定
+            'expected_roi': 119.2,
+            'bet_amount': 100,
+            'priority': 1,
+            'description': 'C×30-50倍×A2級（6年ROI 119%、ペーパートレード）',
+            'paper_trade': True,  # ペーパートレードフラグ
         },
     ],
 }
