@@ -16,7 +16,7 @@ import argparse
 from datetime import datetime, timedelta
 
 # プロジェクトルートをパスに追加
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, PROJECT_ROOT)
 
 from src.workflow.missing_data_fetch_parallel import MissingDataFetchWorkflowParallel

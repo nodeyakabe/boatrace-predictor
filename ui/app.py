@@ -375,7 +375,7 @@ def _start_data_collection(collection_type: str, start_date=None, end_date=None)
         start_date = yesterday - timedelta(days=6)
         end_date = yesterday
 
-    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'bulk_missing_data_fetch_parallel.py')
+    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'data_collection', 'bulk_missing_data_fetch_parallel.py')
     args = ['--start-date', str(start_date), '--end-date', str(end_date)]
 
     result = start_job(JOB_MISSING_DATA, script_path, args=args)

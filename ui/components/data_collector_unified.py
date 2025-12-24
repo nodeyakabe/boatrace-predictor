@@ -453,7 +453,7 @@ def _start_complete_data_collection(collection_type: str, start_date=None, end_d
     # period の場合は引数の start_date, end_date をそのまま使用
 
     # bulk_missing_data_fetch_parallel.pyを使用（並列化版で高速）
-    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'bulk_missing_data_fetch_parallel.py')
+    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'data_collection', 'bulk_missing_data_fetch_parallel.py')
 
     args = [
         '--start-date', str(start_date),
@@ -505,7 +505,7 @@ def _start_complement_data_collection(collection_type: str, start_date=None, end
     # period の場合は引数の start_date, end_date をそのまま使用
 
     # 並列化版スクリプトを使用（自動的に不足データのみ取得）
-    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'bulk_missing_data_fetch_parallel.py')
+    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'data_collection', 'bulk_missing_data_fetch_parallel.py')
 
     args = [
         '--start-date', str(start_date),
@@ -632,7 +632,7 @@ def _start_missing_data_job(missing_dates: List[Dict], check_types: List[str]):
     end_date = max(dates)
 
     # 並列化版スクリプトを使用
-    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'bulk_missing_data_fetch_parallel.py')
+    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'data_collection', 'bulk_missing_data_fetch_parallel.py')
 
     args = [
         '--start-date', start_date,

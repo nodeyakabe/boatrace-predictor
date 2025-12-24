@@ -286,18 +286,18 @@ AB_RANK_SPECIAL_CONDITIONS = {
             'priority': 1,
             'description': 'B×50-100倍（両年度黒字）',
         },
-        # 2025-12-23追加: B-30-50-B1条件（6年ROI 101.4%、年間約190件）
-        # 分離検証: 学習期間180% → 検証期間356%で過剰適合なし確認済み
+        # 2025-12-24更新: B-30-50-B1条件（before予測で再検証済み）
+        # before予測ROI: 194.7% → 会場フィルター追加で 333.6%
         {
             'method': '両方式',
             'odds_min': 30, 'odds_max': 50,
             'c1_rank': ['B1'],  # B1級限定
-            'expected_roi': 101.4,
+            'expected_roi': 333.6,  # before予測での実績ROI
             'bet_amount': 100,
             'priority': 2,
-            'description': 'B×30-50倍×B1級（6年安定ROI 101%）',
-            # 会場フィルター: 高ROI会場のみに限定するとROI 211%→356%に改善
-            'venue_filter': [20, 12, 11, 18, 16],  # 若松, 住之江, びわこ, 徳山, 児島
+            'description': 'B×30-50倍×B1級（before予測ROI 333.6%）',
+            # 会場フィルター: before予測分析による高ROI会場（2020-2025年）
+            'venue_filter': [10, 6, 16, 21, 9, 13, 20, 24, 7, 8],  # 三国,浜名湖,児島,芦屋,津,尼崎,若松,大村,蒲郡,常滑
             'venue_filter_enabled': True,  # 会場フィルターを有効化
         },
     ],
@@ -314,20 +314,25 @@ AB_RANK_SPECIAL_CONDITIONS = {
     ],
 }
 
-# C信頼度ペーパートレード条件（2025-12-23追加）
-# 信頼度Cは通常除外だが、特定条件で復活検討中
-# 2-3ヶ月のペーパートレード後に本格導入判断
+# C信頼度ペーパートレード条件（2025-12-24更新）
+# C×30-50×A2は削除: advance予測119% → before予測80.6%で赤字確定
+# 新条件: C×20-30×B1 + 会場フィルター（before予測ROI 144.8%）
 C_RANK_PAPER_TRADE_CONDITIONS = {
     'C': [
+        # C×30-50×A2は削除（before予測で80.6%、不採用確定）
+        # 新条件: C×20-30×B1 + 会場フィルター
         {
             'method': '両方式',
-            'odds_min': 30, 'odds_max': 50,
-            'c1_rank': ['A2'],  # A2級限定
-            'expected_roi': 119.2,
+            'odds_min': 20, 'odds_max': 30,
+            'c1_rank': ['B1'],  # B1級限定
+            'expected_roi': 144.8,
             'bet_amount': 100,
             'priority': 1,
-            'description': 'C×30-50倍×A2級（6年ROI 119%、ペーパートレード）',
+            'description': 'C×20-30倍×B1級（before予測ROI 144.8%、ペーパートレード）',
             'paper_trade': True,  # ペーパートレードフラグ
+            # 会場フィルター: 唐津,徳山,多摩川,平和島,津,丸亀,常滑,大村,若松,宮島
+            'venue_filter': [23, 18, 5, 4, 9, 15, 8, 24, 20, 17],
+            'venue_filter_enabled': True,
         },
     ],
 }

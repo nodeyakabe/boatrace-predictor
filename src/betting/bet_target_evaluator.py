@@ -73,10 +73,27 @@ class BetTargetEvaluator:
     # 参照: docs/YEAR_CONDITION_OPTIMIZATION_ANALYSIS.md
     # ============================================================
     BET_CONDITIONS = {
-        # 信頼度C: 2024年で壊滅的（ROI 11.2%）のため廃止
-        # C × 30-40倍帯は2024年ROI 14-25%と壊滅的
-        'C': [],
+        # 信頼度C: C×20-30×B1+会場フィルター（6年間ROI 144.8%）
+        # ※ 本番運用開始（2025-12-24承認）
+        # ※ 6年間ROI 146.9%、5/6年黒字で安定性確認済み
+        'C': [
+            {
+                'method': '両方式',
+                'odds_min': 20, 'odds_max': 30,
+                'c1_rank': ['B1'],  # B1級限定
+                'expected_roi': 144.8,
+                'bet_amount': 100,
+                'priority': 1,
+                'description': 'C×20-30倍×B1級（6年間ROI 144.8%）',
+                'paper_trade': False,  # 本番運用（2025-12-24承認）
+                # 会場フィルター: 唐津,徳山,多摩川,平和島,津,丸亀,常滑,大村,若松,宮島
+                'venue_filter': [23, 18, 5, 4, 9, 15, 8, 24, 20, 17],
+            },
+        ],
         # 信頼度D: 両年度で安定した条件のみ採用
+        # 【2025-12-24追加】モーター40%+条件（6年間安定性検証済み）
+        # - D × A1 × モーター40%+: 6年間ROI 1925%, 6/6年プラス
+        # - D × A2 × モーター40%+: 6年間でも安定
         'D': [
             # 優先度1: D × B1 × 40-50倍（両年度黒字、最安定）
             # 2024年: ROI 204.1%（109件）、2025年: ROI 191.0%（93件）
@@ -102,43 +119,98 @@ class BetTargetEvaluator:
                 'priority': 2,
                 'description': 'D×A1/A2/B1級×30-60倍（安定・広域）',
             },
+            # 【保留】D × A1 × モーター40%+
+            # 2025年バックテスト: 32件, 1的中, ROI 125.6% → サンプル少なすぎ
+            # 6年間データでは高ROIだが、オッズフィルター適用後は効果が不明確
+            # 既存のD×A1/A2/B1×30-60条件で十分カバーされている
+            #
+            # 【保留】D × A2 × モーター40%+
+            # 2025年バックテスト: 32件, 1的中, ROI 150.9% → サンプル少なすぎ
+            # 統計的に信頼できるサンプル数(100件以上)になるまで保留
         ],
     }
 
     # ============================================================
-    # A・Bランク特別条件（2025年12月20日更新 - 年度間最適化）
+    # A・Bランク特別条件（2025年12月24日更新 - 最適化版 + モーター条件追加）
     # ============================================================
-    # Opus分析: 2024年・2025年両方でROI 100%以上の条件のみ採用
-    # B × 50-100倍: 2024年ROI 170.2%、2025年ROI 187.8% → 合計182.2%
-    # A × A1 × 10-20倍: 2024年ROI 112.8%、2025年ROI 114.1% → 最安定（差1pt）
+    # before予測での6年間バックテスト結果を反映
+    # B × 30-50 × B1 + 会場フィルター: ROI 333.6%（最有力）
+    # B × 50-100: ROI 201.1%（安定）
+    # A × A1 × 10-12倍: ROI 115.1%（黒字帯のみ採用）
+    # A × A1 × 14-16倍: ROI 137.0%（黒字帯のみ採用）
+    # ※ A×10-20全体はROI 89.0%で赤字のため、黒字オッズ帯のみに限定
+    #
+    # 【2025-12-24追加】モーター40%+条件（6年間安定性検証済み）
+    # - A × B1 × モーター40%+: 6年間ROI 2044%, 6/6年プラス → 新規追加
+    # - A × A2 × モーター40%+: 6年間ROI 1644%, 6/6年プラス → 新規追加
+    # ※ 既存A条件（A1級）との干渉なし、新規セグメント
     # ============================================================
     AB_RANK_SPECIAL_CONDITIONS = {
-        # Bランク × 50-100倍帯（両年度黒字）
-        # 2024年: ROI 170.2%（106件）、2025年: ROI 187.8%（196件）
+        # Bランク条件
         'B': [
+            # 優先度1: B × 50-100倍（安定）
             {
                 'method': '両方式',
                 'odds_min': 50, 'odds_max': 100,
                 'c1_rank': ['A1', 'A2', 'B1'],  # B2除外
-                'expected_roi': 182.2,
+                'expected_roi': 201.1,
                 'bet_amount': 100,
                 'priority': 1,
-                'description': 'B×50-100倍（両年度黒字）',
+                'description': 'B×50-100倍（before予測ROI 201%）',
             },
-        ],
-        # Aランク × A1 × 10-20倍（両年度黒字・最安定）
-        # 2024年: ROI 112.8%（39件）、2025年: ROI 114.1%（213件）
-        # 年度差: わずか1.3pt → 非常に安定
-        'A': [
+            # 優先度2: B × 30-50 × B1 + 会場フィルター（before予測ROI 333.6%）
             {
                 'method': '両方式',
-                'odds_min': 10, 'odds_max': 20,
+                'odds_min': 30, 'odds_max': 50,
+                'c1_rank': ['B1'],  # B1級限定
+                'expected_roi': 333.6,
+                'bet_amount': 100,
+                'priority': 2,
+                'description': 'B×30-50倍×B1級（before予測ROI 333.6%）',
+                # 会場フィルター: 三国,浜名湖,児島,芦屋,津,尼崎,若松,大村,蒲郡,常滑
+                'venue_filter': [10, 6, 16, 21, 9, 13, 20, 24, 7, 8],
+            },
+        ],
+        # Aランク条件
+        # 既存: A1 × 黒字オッズ帯
+        # 新規: A2/B1 × モーター40%+（6年間安定性検証済み）
+        'A': [
+            # A × A1 × 10-12倍（6年間ROI 115.1%）
+            {
+                'method': '両方式',
+                'odds_min': 10, 'odds_max': 12,
                 'c1_rank': ['A1'],
-                'expected_roi': 113.5,
+                'expected_roi': 115.1,
                 'bet_amount': 100,
                 'priority': 1,
-                'description': 'A×A1級×10-20倍（両年度黒字・最安定）',
+                'description': 'A×A1級×10-12倍（黒字帯・ROI 115%）',
             },
+            # A × A1 × 14-16倍（6年間ROI 137.0%）
+            {
+                'method': '両方式',
+                'odds_min': 14, 'odds_max': 16,
+                'c1_rank': ['A1'],
+                'expected_roi': 137.0,
+                'bet_amount': 100,
+                'priority': 2,
+                'description': 'A×A1級×14-16倍（黒字帯・ROI 137%）',
+            },
+            # 【新規】A × B1 × モーター40%+（6年間ROI 2044%, 6/6年プラス）
+            # ※ 既存A条件（A1級）との干渉なし
+            # 2025年バックテスト結果: ROI 196.6%, +7,730円 → 有効
+            {
+                'method': '両方式',
+                'odds_min': 10, 'odds_max': 100,  # オッズ帯は広めに設定
+                'c1_rank': ['B1'],
+                'motor_min': 40,  # モーター2連率40%以上必須
+                'expected_roi': 196.6,  # 2025年実績ベース
+                'bet_amount': 100,
+                'priority': 3,
+                'description': 'A×B1級×モーター40%+（2025年ROI 196.6%）',
+            },
+            # 【削除】A × A2 × モーター40%+
+            # 2025年バックテスト結果: ROI 70.3%で赤字 → 不採用
+            # 6年間データでは高ROIだったが、オッズフィルター適用後は逆効果
         ],
     }
 
@@ -202,7 +274,8 @@ class BetTargetEvaluator:
         old_odds: Optional[float] = None,
         new_odds: Optional[float] = None,
         has_beforeinfo: bool = False,
-        venue_code: Optional[int] = None
+        venue_code: Optional[int] = None,
+        motor_second_rate: Optional[float] = None
     ) -> BetTarget:
         """
         購入対象を判定する
@@ -216,6 +289,7 @@ class BetTargetEvaluator:
             new_odds: 新方式買い目のオッズ
             has_beforeinfo: 直前情報が取得済みか
             venue_code: 会場コード（イン強会場条件チェック用）
+            motor_second_rate: 1コース選手のモーター2連率（%）
 
         Returns:
             BetTarget: 購入対象情報
@@ -289,6 +363,16 @@ class BetTargetEvaluator:
                 if venue_code is None or venue_code not in cond['venue_codes']:
                     continue
 
+            # 会場フィルターチェック（venue_filter が指定されている場合）
+            if 'venue_filter' in cond:
+                if venue_code is None or venue_code not in cond['venue_filter']:
+                    continue
+
+            # モーター2連率チェック（motor_min が指定されている場合）
+            if 'motor_min' in cond:
+                if motor_second_rate is None or motor_second_rate < cond['motor_min']:
+                    continue
+
             # 方式と買い目の決定
             if cond['method'] == '従来':
                 combo = old_combo
@@ -346,6 +430,10 @@ class BetTargetEvaluator:
                 reason_parts = [f'信頼度{confidence}', cond['method'], odds_range, f'1コース{c1_rank}']
                 if 'venue_codes' in cond:
                     reason_parts.append('イン強会場')
+                if 'venue_filter' in cond:
+                    reason_parts.append('高ROI会場')
+                if 'motor_min' in cond:
+                    reason_parts.append(f'モーター{motor_second_rate:.1f}%')
                 reason = ' + '.join(reason_parts)
 
                 return BetTarget(
@@ -418,10 +506,11 @@ class BetTargetEvaluator:
         Returns:
             BetTarget: 購入対象情報
         """
-        # 1コース選手の級別を取得
+        # 1コース選手の級別とモーター2連率を取得
         entries = race_data.get('entries', [])
         c1_entry = next((e for e in entries if e.get('pit_number') == 1), None)
         c1_rank = c1_entry.get('racer_rank', 'B1') if c1_entry else 'B1'
+        motor_second_rate = c1_entry.get('motor_second_rate') if c1_entry else None
 
         # 会場コードを取得
         venue_code = race_data.get('venue_code')
@@ -477,7 +566,8 @@ class BetTargetEvaluator:
             old_odds=old_odds,
             new_odds=new_odds,
             has_beforeinfo=has_beforeinfo,
-            venue_code=venue_code
+            venue_code=venue_code,
+            motor_second_rate=motor_second_rate
         )
 
         # 会場×コース別調整を適用
