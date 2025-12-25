@@ -4,12 +4,24 @@
 
 - 日本語でコミュニケーション
 
-## 参照すべきドキュメント（3つだけ）
+## 参照すべきドキュメント
+
+### 作業開始時（必須）
 
 | 質問 | ドキュメント |
 |------|------------|
 | **現在の状態** | [docs/残タスク一覧.md](docs/残タスク一覧.md) |
 | **前回の作業** | [docs/HANDOVER.md](docs/HANDOVER.md) |
+
+### 技術情報（必要に応じて）
+
+| カテゴリ | ドキュメント |
+|---------|------------|
+| **予測ロジック** | [docs/architecture/PREDICTION_LOGIC.md](docs/architecture/PREDICTION_LOGIC.md) |
+| **年度別成績** | [docs/performance/YEARLY_PERFORMANCE.md](docs/performance/YEARLY_PERFORMANCE.md) |
+| **テスト構成** | [docs/performance/TEST_RESULTS.md](docs/performance/TEST_RESULTS.md) |
+| **不採用案** | [docs/improvement_attempts/REJECTED_IDEAS.md](docs/improvement_attempts/REJECTED_IDEAS.md) |
+| **購入条件** | [docs/presets/BET_CONDITIONS.md](docs/presets/BET_CONDITIONS.md) |
 | **DB構造** | [docs/architecture/DATABASE_SCHEMA.md](docs/architecture/DATABASE_SCHEMA.md) |
 
 **注意**:
@@ -54,10 +66,12 @@ python scripts/register_experiment.py \
 │   └── maintenance/    # メンテナンス
 ├── config/        # 設定
 ├── docs/          # ドキュメント
-│   ├── architecture/   # システム設計
-│   ├── implementation/ # 実装状況
-│   ├── guides/         # ガイド
-│   └── knowledge/      # 知見
+│   ├── architecture/        # システム設計・予測ロジック
+│   ├── performance/         # 年度別成績・テスト結果
+│   ├── presets/             # 購入条件・プリセット
+│   ├── improvement_attempts/ # 不採用案・検証履歴
+│   ├── guides/              # ガイド
+│   └── analysis/            # 分析レポート（過去ログ）
 ├── ui/            # Streamlit UI
 ├── tests/         # テスト
 ├── data/          # データ（Git管理外）

@@ -42,9 +42,11 @@ CONDITIONS = [
     # A条件: A1級 × 黒字オッズ帯のみ
     {'name': 'A×A1×10-12', 'confidence': 'A', 'c1_rank': ['A1'], 'odds_min': 10, 'odds_max': 12, 'venue_filter': None},
     {'name': 'A×A1×14-16', 'confidence': 'A', 'c1_rank': ['A1'], 'odds_min': 14, 'odds_max': 16, 'venue_filter': None},
+    # A条件: B1級 × モーター40%+（2025-12-24追加）
+    {'name': 'A×B1×Motor40%+', 'confidence': 'A', 'c1_rank': ['B1'], 'odds_min': 10, 'odds_max': 100, 'venue_filter': None, 'motor_min': 40},
 
-    # B条件: 50-100倍 + 30-50倍×B1+会場フィルター
-    {'name': 'B×50-100', 'confidence': 'B', 'c1_rank': ['A1', 'A2', 'B1'], 'odds_min': 50, 'odds_max': 100, 'venue_filter': None},
+    # B条件: 50-100倍（A2級除外 - 6年間+5,900円改善）+ 30-50倍×B1+会場フィルター
+    {'name': 'B×50-100', 'confidence': 'B', 'c1_rank': ['A1', 'B1'], 'odds_min': 50, 'odds_max': 100, 'venue_filter': None},  # A2除外
     {'name': 'B×30-50×B1+会場', 'confidence': 'B', 'c1_rank': ['B1'], 'odds_min': 30, 'odds_max': 50,
      'venue_filter': [10, 6, 16, 21, 9, 13, 20, 24, 7, 8]},  # 三国,浜名湖,児島,芦屋,津,尼崎,若松,大村,蒲郡,常滑
 
@@ -52,9 +54,16 @@ CONDITIONS = [
     {'name': 'C×20-30×B1+会場', 'confidence': 'C', 'c1_rank': ['B1'], 'odds_min': 20, 'odds_max': 30,
      'venue_filter': [23, 18, 5, 4, 9, 15, 8, 24, 20, 17]},  # 唐津,徳山,多摩川,平和島,津,丸亀,常滑,大村,若松,宮島
 
-    # D条件: 40-50倍×B1 + 30-60倍×A1/A2/B1
+    # C条件: 鳴門×A2×30-80倍（2025-12-25追加）
+    {'name': '鳴門×C×A2×30-80', 'confidence': 'C', 'c1_rank': ['A2'], 'odds_min': 30, 'odds_max': 80,
+     'venue_filter': [14]},  # 鳴門のみ
+
+    # D条件: 40-50倍×B1
     {'name': 'D×40-50×B1', 'confidence': 'D', 'c1_rank': ['B1'], 'odds_min': 40, 'odds_max': 50, 'venue_filter': None},
-    {'name': 'D×30-60', 'confidence': 'D', 'c1_rank': ['A1', 'A2', 'B1'], 'odds_min': 30, 'odds_max': 60, 'venue_filter': None},
+    # D条件: 35-60倍（30-35倍除外で+29,950円改善）+ 9R除外 + 三国除外
+    # ※ 9R除外と三国除外はanalyze_conditionで処理
+    {'name': 'D×35-60', 'confidence': 'D', 'c1_rank': ['A1', 'A2', 'B1'], 'odds_min': 35, 'odds_max': 60, 'venue_filter': None,
+     'race_exclude': [9], 'venue_exclude': [10]},  # 9R除外, 三国除外
 ]
 
 VENUE_NAMES = {
@@ -69,8 +78,23 @@ def analyze_condition(cursor, cond, year_start, year_end):
     """条件別のROIを計算"""
     c1_rank_str = "','".join(cond['c1_rank'])
     venue_clause = ""
-    if cond['venue_filter']:
+    if cond.get('venue_filter'):
         venue_clause = f"AND r.venue_code IN ({','.join(map(str, cond['venue_filter']))})"
+
+    # モーター条件
+    motor_clause = ""
+    if cond.get('motor_min'):
+        motor_clause = f"AND e1.motor_second_rate >= {cond['motor_min']}"
+
+    # レース番号除外条件（2025-12-25追加）
+    race_exclude_clause = ""
+    if cond.get('race_exclude'):
+        race_exclude_clause = f"AND r.race_number NOT IN ({','.join(map(str, cond['race_exclude']))})"
+
+    # 会場除外条件（2025-12-25追加）
+    venue_exclude_clause = ""
+    if cond.get('venue_exclude'):
+        venue_exclude_clause = f"AND r.venue_code NOT IN ({','.join(map(str, cond['venue_exclude']))})"
 
     query = f'''
     WITH race_base AS (
@@ -94,6 +118,9 @@ def analyze_condition(cursor, cond, year_start, year_end):
         AND r.race_date >= '{year_start}-01-01'
         AND r.race_date < '{year_end}-12-01'
         {venue_clause}
+        {motor_clause}
+        {race_exclude_clause}
+        {venue_exclude_clause}
     ),
     race_bets AS (
         SELECT
