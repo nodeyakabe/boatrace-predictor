@@ -25,7 +25,7 @@ from multiprocessing import cpu_count
 
 warnings.filterwarnings('ignore')
 
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 

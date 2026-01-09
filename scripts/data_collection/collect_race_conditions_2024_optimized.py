@@ -26,26 +26,32 @@ from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.scraper.beforeinfo_scraper import BeforeInfoScraper
 
 
-def get_races_needing_conditions(db_path):
+def get_races_needing_conditions(db_path, start_date=None, end_date=None):
     """race_conditionsが欠けているレースを取得"""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
+
+    # デフォルトは2024年
+    if start_date is None:
+        start_date = '2024-01-01'
+    if end_date is None:
+        end_date = '2025-01-01'
 
     # race_conditionsがないレースを取得
     cursor.execute("""
         SELECT r.id, r.venue_code, r.race_date, r.race_number
         FROM races r
         LEFT JOIN race_conditions rc ON r.id = rc.race_id
-        WHERE r.race_date >= '2024-01-01' AND r.race_date < '2025-01-01'
+        WHERE r.race_date >= ? AND r.race_date < ?
           AND rc.race_id IS NULL
         ORDER BY r.race_date, r.venue_code, r.race_number
-    """)
+    """, (start_date, end_date))
 
     races = cursor.fetchall()
     conn.close()
@@ -125,16 +131,24 @@ def save_race_conditions(db_path, race_id, weather):
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description='race_conditions一括収集')
+    parser.add_argument('--start-date', type=str, help='開始日 (YYYY-MM-DD)')
+    parser.add_argument('--end-date', type=str, help='終了日 (YYYY-MM-DD)')
+    args = parser.parse_args()
+
     print("=" * 80)
-    print("2024年 race_conditions 一括収集（最適化版）")
+    print("race_conditions 一括収集（最適化版）")
     print("=" * 80)
     print(f"開始時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    if args.start_date or args.end_date:
+        print(f"期間: {args.start_date or '指定なし'} ～ {args.end_date or '指定なし'}")
     print()
 
     db_path = PROJECT_ROOT / "data" / "boatrace.db"
 
     # race_conditionsが欠けているレースを取得
-    races = get_races_needing_conditions(str(db_path))
+    races = get_races_needing_conditions(str(db_path), args.start_date, args.end_date)
 
     if not races:
         print("全てのレースにrace_conditionsがあります。処理不要です。")

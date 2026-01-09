@@ -6,6 +6,14 @@
 
 ## 🔄 最新の変更履歴
 
+### 2026-01-08: 指標データテーブル追加
+
+**新規テーブル:**
+- `player_escape_stats` (104,757件) - 選手別逃げ率
+- `stadium_attack_stats` (168件) - 会場別まくり率・差し率
+
+**詳細:** [INDICATOR_STATS_SPEC.md](INDICATOR_STATS_SPEC.md)
+
 ### 2025-12-12: Phase 1 DB最適化完了
 
 **削除されたカラム:**
@@ -32,6 +40,10 @@
 - [venue_rules](#venue_rules) (308 件)
 - [venue_strategies](#venue_strategies) (24 件)
 - [venues](#venues) (24 件)
+
+#### 指標データ (2テーブル) ★NEW
+- [player_escape_stats](#player_escape_stats) (104,757 件) - 選手別逃げ率
+- [stadium_attack_stats](#stadium_attack_stats) (168 件) - 会場別まくり率・差し率
 
 #### レース基本情報 (8テーブル)
 - [race_conditions](#race_conditions) (130,792 件)

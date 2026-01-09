@@ -1083,6 +1083,13 @@ class RacePredictor:
         predictions.sort(key=lambda x: x['total_score'], reverse=True)
 
         # ========================================
+        # スコア差ベースの信頼度再計算（機能フラグで制御）
+        # C,D予想精度向上: 混戦レースを適切に分類
+        # ========================================
+        if is_feature_enabled('score_gap_confidence'):
+            predictions = self._recalculate_race_confidence(predictions)
+
+        # ========================================
         # 2着・3着オッズ校正適用（機能フラグで制御）
         # 市場の2着・3着条件付き確率とML予測を統合
         # 期待効果: 三連単的中率 +2.0pt
@@ -1536,6 +1543,58 @@ class RacePredictor:
         #     confidence = max_confidence
 
         return confidence
+
+    def _recalculate_race_confidence(self, predictions: List[Dict]) -> List[Dict]:
+        """
+        レース全体の信頼度をスコア差ベースで再計算（改良版）
+
+        従来: 各選手のスコアのみで信頼度を判定
+        改良: 1位と2位のスコア差で「予測の確実性」を判定
+
+        Args:
+            predictions: ソート済みの予測リスト（スコア降順）
+
+        Returns:
+            信頼度が再計算された予測リスト
+        """
+        if len(predictions) < 2:
+            return predictions
+
+        # 上位2艇のスコア差を計算
+        top1_score = predictions[0]['total_score']
+        top2_score = predictions[1]['total_score']
+        score_gap = top1_score - top2_score
+
+        # 1コース予測かどうか（ボートレースでは1コースが圧倒的に有利）
+        is_course1_prediction = predictions[0].get('pit_number', 0) == 1
+
+        # スコア差ベースの信頼度判定
+        # - スコア差が大きい = 予測が明確 = 高信頼度
+        # - スコア差が小さい = 混戦 = 低信頼度
+        if score_gap >= 15 and top1_score >= 70:
+            race_confidence = 'A'  # 明確な本命（スコア差15点以上）
+        elif score_gap >= 10 and top1_score >= 60:
+            race_confidence = 'B'  # 本命優位（スコア差10-14点）
+        elif score_gap >= 5 or (is_course1_prediction and top1_score >= 55):
+            race_confidence = 'C'  # 混戦だが予測可能（スコア差5-9点）
+        elif score_gap >= 2:
+            race_confidence = 'D'  # 超混戦（スコア差2-4点）
+        else:
+            race_confidence = 'E'  # 予測困難（スコア差2点未満）
+
+        # 1位選手の信頼度を更新（これがレース全体の信頼度として使用される）
+        # 従来のスコアベース信頼度より低くなる場合のみ更新（安全側に倒す）
+        confidence_order = {'A': 5, 'B': 4, 'C': 3, 'D': 2, 'E': 1}
+        original_confidence = predictions[0]['confidence']
+
+        if confidence_order[race_confidence] < confidence_order[original_confidence]:
+            # スコア差ベースの方が低い → 混戦と判断
+            predictions[0]['confidence'] = race_confidence
+            predictions[0]['confidence_reason'] = f'score_gap:{score_gap:.1f}'
+        else:
+            predictions[0]['confidence_reason'] = 'original'
+
+        return predictions
 
     # ========================================
     # 買い目推奨

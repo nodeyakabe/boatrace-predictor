@@ -61,9 +61,328 @@ class ExtendedScorer:
         6: {5: 0.08, 6: 0.92},
     }
 
+    # 逃げ率スコア基準（1コース艇のみ適用）
+    # 全国平均逃げ率は約55%
+    ESCAPE_RATE_THRESHOLDS = {
+        'excellent': 0.70,  # 70%以上: 優秀 (+3pt)
+        'good': 0.60,       # 60-70%: 良好 (+1.5pt)
+        'average': 0.50,    # 50-60%: 平均 (±0pt)
+        'poor': 0.45,       # 45-50%: やや低い (-1pt)
+        # 45%未満: 低い (-2pt)
+    }
+
+    # 会場攻撃率スコア基準（コース3-5に適用）
+    # 全国平均: まくり率約21.5%, 差し率約18.8%
+    VENUE_ATTACK_THRESHOLDS = {
+        'makuri': {
+            'high': 0.25,       # 25%以上: まくり有利場 (+2pt for 3-4C)
+            'average': 0.20,    # 20-25%: 平均 (±0pt)
+            # 20%未満: まくり不利場 (-1pt for 3-4C)
+        },
+        'sashi': {
+            'high': 0.22,       # 22%以上: 差し有利場 (+2pt for 2,5C)
+            'average': 0.17,    # 17-22%: 平均 (±0pt)
+            # 17%未満: 差し不利場 (-1pt for 2,5C)
+        }
+    }
+
     def __init__(self, db_path: str = None, batch_loader=None):
         self.db_path = db_path or DATABASE_PATH
         self.batch_loader = batch_loader
+        # 逃げ率キャッシュ（レース毎にリセット不要、選手IDでキャッシュ）
+        self._escape_rate_cache = {}
+        # 会場攻撃率キャッシュ（会場コードでキャッシュ）
+        self._venue_attack_cache = {}
+
+    def calculate_escape_rate_score(
+        self,
+        racer_number: str,
+        pit_number: int,
+        venue_code: str = None,
+        max_score: float = 5.0
+    ) -> Dict:
+        """
+        逃げ率スコアを計算（1コース艇のみ）
+
+        Args:
+            racer_number: 選手番号
+            pit_number: 枠番（1のみ適用）
+            venue_code: 会場コード（当地逃げ率を優先する場合）
+            max_score: 最大スコア（デフォルト5.0点）
+
+        Returns:
+            {
+                'score': float,           # スコア（-2.0 〜 +3.0）
+                'escape_rate': float,     # 逃げ率（0.0-1.0）
+                'is_local': bool,         # 当地逃げ率を使用したか
+                'races_count': int,       # 母数
+                'level': str,             # excellent/good/average/poor/low
+                'description': str
+            }
+        """
+        # 1コース以外は適用しない
+        if pit_number != 1:
+            return {
+                'score': 0.0,
+                'escape_rate': None,
+                'is_local': False,
+                'races_count': 0,
+                'level': 'not_applicable',
+                'description': '1コース以外は逃げ率スコア適用外'
+            }
+
+        # キャッシュチェック
+        cache_key = f"{racer_number}_{venue_code or 'national'}"
+        if cache_key in self._escape_rate_cache:
+            return self._escape_rate_cache[cache_key]
+
+        # DBから逃げ率を取得
+        escape_rate = None
+        is_local = False
+        races_count = 0
+
+        try:
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+
+            # 当地逃げ率を優先（venue_codeが指定されている場合）
+            if venue_code:
+                cursor.execute("""
+                    SELECT escape_rate, races_1course
+                    FROM player_escape_stats
+                    WHERE player_id = ? AND stadium_id = ?
+                    ORDER BY updated_at DESC LIMIT 1
+                """, (str(racer_number), venue_code))
+                row = cursor.fetchone()
+                if row and row[0] is not None:
+                    escape_rate = row[0]
+                    races_count = row[1]
+                    is_local = True
+
+            # 当地がない場合は全国逃げ率
+            if escape_rate is None:
+                cursor.execute("""
+                    SELECT escape_rate, races_1course
+                    FROM player_escape_stats
+                    WHERE player_id = ? AND stadium_id IS NULL
+                    ORDER BY updated_at DESC LIMIT 1
+                """, (str(racer_number),))
+                row = cursor.fetchone()
+                if row and row[0] is not None:
+                    escape_rate = row[0]
+                    races_count = row[1]
+                    is_local = False
+
+            cursor.close()
+        except Exception as e:
+            # エラー時はデフォルト値
+            pass
+
+        # 逃げ率が取得できない場合
+        if escape_rate is None:
+            result = {
+                'score': 0.0,
+                'escape_rate': None,
+                'is_local': False,
+                'races_count': 0,
+                'level': 'unknown',
+                'description': '逃げ率データなし（中立）'
+            }
+            self._escape_rate_cache[cache_key] = result
+            return result
+
+        # スコア計算
+        thresholds = self.ESCAPE_RATE_THRESHOLDS
+        if escape_rate >= thresholds['excellent']:
+            score = 3.0
+            level = 'excellent'
+            desc = f'逃げ率{escape_rate:.1%}（優秀）'
+        elif escape_rate >= thresholds['good']:
+            score = 1.5
+            level = 'good'
+            desc = f'逃げ率{escape_rate:.1%}（良好）'
+        elif escape_rate >= thresholds['average']:
+            score = 0.0
+            level = 'average'
+            desc = f'逃げ率{escape_rate:.1%}（平均）'
+        elif escape_rate >= thresholds['poor']:
+            score = -1.0
+            level = 'poor'
+            desc = f'逃げ率{escape_rate:.1%}（やや低い）'
+        else:
+            score = -2.0
+            level = 'low'
+            desc = f'逃げ率{escape_rate:.1%}（低い）'
+
+        # 当地データの場合は補足
+        if is_local:
+            desc += f'【当地/{races_count}走】'
+        else:
+            desc += f'【全国/{races_count}走】'
+
+        result = {
+            'score': score,
+            'escape_rate': escape_rate,
+            'is_local': is_local,
+            'races_count': races_count,
+            'level': level,
+            'description': desc
+        }
+        self._escape_rate_cache[cache_key] = result
+        return result
+
+    def calculate_venue_attack_score(
+        self,
+        pit_number: int,
+        venue_code: str
+    ) -> Dict:
+        """
+        会場攻撃率スコアを計算（コース2-5に適用）
+
+        - 3-4コース: まくり率の高い会場で+2pt、低い会場で-1pt
+        - 2,5コース: 差し率の高い会場で+2pt、低い会場で-1pt
+        - 1,6コース: 適用なし（0pt）
+
+        Args:
+            pit_number: 枠番（2-5のみ適用）
+            venue_code: 会場コード
+
+        Returns:
+            {
+                'score': float,           # スコア（-1.0 〜 +2.0）
+                'makuri_rate': float,     # 会場まくり率
+                'sashi_rate': float,      # 会場差し率
+                'attack_type': str,       # 適用した攻撃タイプ（'makuri'/'sashi'/None）
+                'venue_level': str,       # 会場レベル（'high'/'average'/'low'）
+                'description': str
+            }
+        """
+        # デフォルト結果（1コース/6コースまたはデータなし）
+        default_result = {
+            'score': 0.0,
+            'makuri_rate': None,
+            'sashi_rate': None,
+            'attack_type': None,
+            'venue_level': 'not_applicable',
+            'description': '会場攻撃率スコア対象外'
+        }
+
+        # 1コースと6コースは対象外
+        if pit_number == 1 or pit_number == 6:
+            return default_result
+
+        if not venue_code:
+            return default_result
+
+        # キャッシュチェック
+        cache_key = venue_code
+        if cache_key in self._venue_attack_cache:
+            cached = self._venue_attack_cache[cache_key]
+            return self._apply_venue_attack_to_course(cached, pit_number)
+
+        # DBから会場攻撃率を取得
+        try:
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT makuri_rate, sashi_rate, total_races
+                FROM stadium_attack_stats
+                WHERE stadium_id = ?
+                ORDER BY updated_at DESC
+                LIMIT 1
+            ''', (venue_code,))
+            row = cursor.fetchone()
+
+            if not row:
+                self._venue_attack_cache[cache_key] = None
+                return default_result
+
+            makuri_rate, sashi_rate, total_races = row
+
+            # キャッシュに保存
+            cached_data = {
+                'makuri_rate': makuri_rate,
+                'sashi_rate': sashi_rate,
+                'total_races': total_races
+            }
+            self._venue_attack_cache[cache_key] = cached_data
+
+            return self._apply_venue_attack_to_course(cached_data, pit_number)
+
+        except Exception as e:
+            return default_result
+
+    def _apply_venue_attack_to_course(self, venue_data: Dict, pit_number: int) -> Dict:
+        """
+        会場攻撃率をコースに適用してスコアを計算
+
+        Args:
+            venue_data: {'makuri_rate', 'sashi_rate', 'total_races'}
+            pit_number: 枠番
+
+        Returns:
+            スコア結果
+        """
+        if venue_data is None:
+            return {
+                'score': 0.0,
+                'makuri_rate': None,
+                'sashi_rate': None,
+                'attack_type': None,
+                'venue_level': 'not_applicable',
+                'description': '会場データなし'
+            }
+
+        makuri_rate = venue_data['makuri_rate']
+        sashi_rate = venue_data['sashi_rate']
+        thresholds = self.VENUE_ATTACK_THRESHOLDS
+
+        score = 0.0
+        attack_type = None
+        venue_level = 'average'
+        desc = ''
+
+        # 3-4コース: まくり率を適用
+        if pit_number in [3, 4]:
+            attack_type = 'makuri'
+            if makuri_rate >= thresholds['makuri']['high']:
+                score = 2.0
+                venue_level = 'high'
+                desc = f'まくり有利場{makuri_rate:.1%}（{pit_number}C+2pt）'
+            elif makuri_rate >= thresholds['makuri']['average']:
+                score = 0.0
+                venue_level = 'average'
+                desc = f'まくり平均場{makuri_rate:.1%}（{pit_number}C±0pt）'
+            else:
+                score = -1.0
+                venue_level = 'low'
+                desc = f'まくり不利場{makuri_rate:.1%}（{pit_number}C-1pt）'
+
+        # 2,5コース: 差し率を適用
+        elif pit_number in [2, 5]:
+            attack_type = 'sashi'
+            if sashi_rate >= thresholds['sashi']['high']:
+                score = 2.0
+                venue_level = 'high'
+                desc = f'差し有利場{sashi_rate:.1%}（{pit_number}C+2pt）'
+            elif sashi_rate >= thresholds['sashi']['average']:
+                score = 0.0
+                venue_level = 'average'
+                desc = f'差し平均場{sashi_rate:.1%}（{pit_number}C±0pt）'
+            else:
+                score = -1.0
+                venue_level = 'low'
+                desc = f'差し不利場{sashi_rate:.1%}（{pit_number}C-1pt）'
+
+        return {
+            'score': score,
+            'makuri_rate': makuri_rate,
+            'sashi_rate': sashi_rate,
+            'attack_type': attack_type,
+            'venue_level': venue_level,
+            'description': desc
+        }
 
     def calculate_class_score(self, racer_rank: str, max_score: float = 10.0) -> Dict:
         """
@@ -1485,20 +1804,41 @@ class ExtendedScorer:
                 target_date
             )
 
+        # 逃げ率スコア計算（フラグが有効な場合のみ、1コース艇のみ）
+        escape_rate_result = {'score': 0.0, 'escape_rate': None, 'is_local': False, 'races_count': 0, 'level': 'not_applicable', 'description': '逃げ率スコア無効'}
+        if is_feature_enabled('escape_rate_scoring'):
+            escape_rate_result = self.calculate_escape_rate_score(
+                entry.get('racer_number'),
+                pit_number,
+                venue_code
+            )
+
+        # 会場攻撃率スコア計算（フラグが有効な場合のみ、2-5コース艇のみ）
+        venue_attack_result = {'score': 0.0, 'makuri_rate': None, 'sashi_rate': None, 'attack_type': None, 'venue_level': 'not_applicable', 'description': '会場攻撃率スコア無効'}
+        if is_feature_enabled('venue_attack_scoring'):
+            venue_attack_result = self.calculate_venue_attack_score(
+                pit_number,
+                venue_code
+            )
+
         # 全てのDBアクセスメソッドをデフォルト値に置き換え
         total_score = (
             class_result['score'] + fl_result['penalty'] + st_result['score'] +
             capsizing_result['penalty'] +  # 転覆ペナルティを追加
+            escape_rate_result['score'] +  # 逃げ率スコアを追加（1コースのみ有効）
+            venue_attack_result['score'] +  # 会場攻撃率スコアを追加（2-5コースのみ有効）
             2.5 + 2.5 + 2.5 + 2.5 + 2.5 + 4.0 + 1.0 + 4.0 + 3.0 + 2.5
         )
 
         return {
             'total_extended_score': total_score,
-            'max_possible_score': sum(v for k, v in weights.items() if k != 'fl_penalty'),
+            'max_possible_score': sum(v for k, v in weights.items() if k != 'fl_penalty') + 3.0 + 2.0,  # 逃げ率+3.0, 会場攻撃率+2.0
             'weights_used': weights,
             'class': class_result,
             'fl_penalty': fl_result,
             'capsizing_penalty': capsizing_result,  # 転覆ペナルティを追加
+            'escape_rate': escape_rate_result,  # 逃げ率スコアを追加
+            'venue_attack': venue_attack_result,  # 会場攻撃率スコアを追加
             'session': {'score': 2.5, 'description': 'バイパス中'},
             'prev_race': {'score': 2.5, 'description': 'バイパス中'},
             'course_entry': {'score': 2.5, 'description': 'バイパス中'},

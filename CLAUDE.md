@@ -33,8 +33,28 @@
 | 操作 | コマンド |
 |------|---------|
 | UI起動 | `cd ui && python -m streamlit run app.py` |
+| **標準テスト** | `python scripts/backtest/standard_backtest.py --full` |
 | 知見検索 | `python scripts/search_knowledge.py "キーワード"` |
 | 知見DB統計 | `python scripts/query_knowledge_db.py --stats` |
+
+## 標準テスト（重要）
+
+**「標準テストして」と言われたら必ずこのコマンドを実行:**
+```bash
+python scripts/backtest/standard_backtest.py --full
+```
+
+**出力内容:**
+- 6年間（2020-2025年）の全体サマリー（ROI、収支、的中率）
+- 条件別パフォーマンス（パターンH/1点買い区分付き）
+- 年度別パフォーマンス（黒字年数判定）
+- 2025年月別パフォーマンス（黒字月数判定）
+- 条件別の年度詳細
+
+**その他のオプション:**
+- `--year 2024`: 特定年度の詳細テスト
+- `--save-baseline`: ベースライン保存
+- `--compare`: ベースラインと比較
 
 ## セッション開始時
 
