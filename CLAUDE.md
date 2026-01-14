@@ -70,6 +70,42 @@ python scripts/register_experiment.py \
     --result "accepted/rejected" --effect "効果値" --keywords "キーワード"
 ```
 
+## 新規購入条件の検証プロセス【重要】
+
+**分析スクリプトで有望な条件を発見した場合の必須手順:**
+
+### 1. 分析スクリプトでの注意点
+
+```sql
+-- ❌ 誤り: 枠番固定オッズ（1-2-3固定）
+JOIN trifecta_odds t ON rp.race_id = t.race_id
+    AND t.combination = '1-2-3'
+
+-- ✅ 正しい: 予測順位ベースのオッズ（実際の買い目）
+JOIN trifecta_odds t ON rp.race_id = t.race_id
+    AND t.combination = CAST(rp1.pit_number AS TEXT) || '-'
+                     || CAST(rp2.pit_number AS TEXT) || '-'
+                     || CAST(rp3.pit_number AS TEXT)
+```
+
+### 2. 採用前の必須検証
+
+1. `standard_backtest.py` に条件を追加
+2. 必ず `python scripts/backtest/standard_backtest.py --full` を実行
+3. 以下の基準を確認:
+   - **黒字年数 4/6年以上**
+   - **累計収支がプラス**
+   - **ROI 100%以上**
+
+### 3. 異常に良い結果への対応
+
+- ROI 200%超え、6/6年黒字 → **計算ミスを疑う**
+- 分析と実テストの乖離が大きい → **JOIN条件を確認**
+
+### 4. 不採用時の記録
+
+不採用案は `docs/improvement_attempts/REJECTED_IDEAS.md` に追記
+
 ## 残タスクへの追記
 
 「残タスクに追記して」等のリクエスト → `docs/残タスク一覧.md` に追加

@@ -23,7 +23,7 @@ class BaseScraperV2:
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'
     ]
 
-    def __init__(self, min_delay=0.3, max_delay=0.8):
+    def __init__(self, min_delay=0.05, max_delay=0.15):
         """
         初期化
 
@@ -76,7 +76,7 @@ class BaseScraperV2:
                     url,
                     params=params,
                     headers=self._get_headers(),
-                    timeout=15  # タイムアウトを15秒に延長
+                    timeout=15  # タイムアウト15秒
                 )
 
                 if response.status_code == 200:

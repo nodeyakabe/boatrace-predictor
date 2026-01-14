@@ -602,7 +602,7 @@ def _render_race_card_enhanced(t: Dict, key_prefix: str, is_candidate: bool = Fa
                            f"<span style='font-weight:bold;'>¥{bet.bet_amount}</span>"
                            f"</div>")
         bet_html = "".join(bet_lines)
-        total_bet = multi_bet.total_bet_amount
+        total_bet = multi_bet.total_investment
         multi_bet_badge = f"<span style='background:#1976d2;color:white;padding:2px 6px;border-radius:4px;font-size:0.7em;margin-left:8px;'>パターンH</span>"
     else:
         # 1点買い表示

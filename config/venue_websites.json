@@ -1,0 +1,155 @@
+{
+  "venues": [
+    {
+      "id": 1,
+      "name": "桐生",
+      "url": "https://www.kiryu-kyotei.com/",
+      "region": "関東"
+    },
+    {
+      "id": 2,
+      "name": "戸田",
+      "url": "http://www.boatrace-toda.jp/",
+      "region": "関東"
+    },
+    {
+      "id": 3,
+      "name": "江戸川",
+      "url": "http://www.boatrace-edogawa.com/",
+      "region": "関東"
+    },
+    {
+      "id": 4,
+      "name": "平和島",
+      "url": "https://www.heiwajima.gr.jp/",
+      "region": "関東"
+    },
+    {
+      "id": 5,
+      "name": "多摩川",
+      "url": "http://www.boatrace-tamagawa.com/",
+      "region": "関東"
+    },
+    {
+      "id": 6,
+      "name": "浜名湖",
+      "url": "",
+      "region": "東海",
+      "note": "公式サイトでリンク未確認"
+    },
+    {
+      "id": 7,
+      "name": "蒲郡",
+      "url": "http://www.gamagori-kyotei.com/",
+      "region": "東海"
+    },
+    {
+      "id": 8,
+      "name": "常滑",
+      "url": "http://www.boatrace-tokoname.jp/",
+      "region": "東海"
+    },
+    {
+      "id": 9,
+      "name": "津",
+      "url": "http://www.boatrace-tsu.com/",
+      "region": "東海"
+    },
+    {
+      "id": 10,
+      "name": "三国",
+      "url": "https://www.boatrace-mikuni.jp/",
+      "region": "北陸"
+    },
+    {
+      "id": 11,
+      "name": "びわこ",
+      "url": "https://www.boatrace-biwako.jp/",
+      "region": "近畿"
+    },
+    {
+      "id": 12,
+      "name": "住之江",
+      "url": "https://www.boatrace-suminoe.jp/",
+      "region": "近畿"
+    },
+    {
+      "id": 13,
+      "name": "尼崎",
+      "url": "https://www.boatrace-amagasaki.jp/",
+      "region": "近畿"
+    },
+    {
+      "id": 14,
+      "name": "鳴門",
+      "url": "http://www.n14.jp/",
+      "region": "四国"
+    },
+    {
+      "id": 15,
+      "name": "丸亀",
+      "url": "https://www.marugameboat.jp/",
+      "region": "四国"
+    },
+    {
+      "id": 16,
+      "name": "児島",
+      "url": "https://www.kojimaboat.jp/",
+      "region": "中国"
+    },
+    {
+      "id": 17,
+      "name": "宮島",
+      "url": "https://www.boatrace-miyajima.com/",
+      "region": "中国"
+    },
+    {
+      "id": 18,
+      "name": "徳山",
+      "url": "http://www.boatrace-tokuyama.jp/",
+      "region": "中国"
+    },
+    {
+      "id": 19,
+      "name": "下関",
+      "url": "https://www.boatrace-shimonoseki.jp/",
+      "region": "中国"
+    },
+    {
+      "id": 20,
+      "name": "若松",
+      "url": "https://www.wmb.jp/",
+      "region": "九州"
+    },
+    {
+      "id": 21,
+      "name": "芦屋",
+      "url": "https://www.boatrace-ashiya.com/",
+      "region": "九州"
+    },
+    {
+      "id": 22,
+      "name": "福岡",
+      "url": "http://www.boatrace-fukuoka.com/",
+      "region": "九州"
+    },
+    {
+      "id": 23,
+      "name": "唐津",
+      "url": "http://www.boatrace-karatsu.jp/",
+      "region": "九州"
+    },
+    {
+      "id": 24,
+      "name": "大村",
+      "url": "http://omurakyotei.jp/index.php",
+      "region": "九州"
+    }
+  ],
+  "metadata": {
+    "last_updated": "2026-01-14",
+    "total_venues": 24,
+    "source": "https://www.boatrace.jp/",
+    "note": "各競艇場の独自情報（水面特性、モーター情報、選手コメント等）収集用"
+  }
+}

@@ -510,7 +510,7 @@ class TodayPredictionWorkflow:
         target_date = to_iso_format(list(today_schedule.values())[0])
 
         script_path = os.path.join(
-            self.project_root, 'scripts', 'fast_prediction_generator.py'
+            self.project_root, 'scripts', 'prediction', 'fast_prediction_generator.py'
         )
 
         if os.path.exists(script_path):

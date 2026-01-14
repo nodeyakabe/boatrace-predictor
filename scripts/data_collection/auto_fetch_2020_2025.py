@@ -20,6 +20,9 @@
 
     # 特定年から開始
     python scripts/data_collection/auto_fetch_2020_2025.py --start-year 2023
+
+    # 特定日付から再開（例: 2020年8月から）
+    python scripts/data_collection/auto_fetch_2020_2025.py --start-date 2020-08-01
 """
 
 import sys
@@ -46,6 +49,16 @@ LOG_DIR.mkdir(exist_ok=True)
 
 # ログファイル
 LOG_FILE = LOG_DIR / f"auto_fetch_2020_2025_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
+# 停止時刻（None = 無制限）
+STOP_TIME = None  # 無制限（必要に応じて設定）
+
+
+def should_stop():
+    """停止すべきかチェック"""
+    if STOP_TIME is None:
+        return False
+    return datetime.now() >= STOP_TIME
 
 
 def log(message):
@@ -95,8 +108,8 @@ def check_data_status(year: int) -> dict:
     }
 
 
-def run_fetch_script(start_date: str, end_date: str, workers: int = 12) -> bool:
-    """並列化版データ取得スクリプトを実行"""
+def run_fetch_script(start_date: str, end_date: str, workers: int = 12, max_retries: int = 3) -> bool:
+    """並列化版データ取得スクリプトを実行（リトライ機能付き）"""
     script_path = ROOT_DIR / 'scripts' / 'data_collection' / 'fetch_historical_data_parallel.py'
 
     log(f"実行: {start_date} - {end_date}")
@@ -107,56 +120,76 @@ def run_fetch_script(start_date: str, end_date: str, workers: int = 12) -> bool:
         str(script_path),
         '--start', start_date,
         '--end', end_date,
-        '--workers', str(workers),
-        '--skip-existing'
+        '--workers', str(workers)
     ]
 
     env = os.environ.copy()
     env['PYTHONUNBUFFERED'] = '1'
 
-    start_time = time.time()
+    for attempt in range(max_retries):
+        if attempt > 0:
+            wait_time = 60 * (2 ** (attempt - 1))  # 60秒, 120秒
+            log(f"リトライ {attempt + 1}/{max_retries}: {wait_time}秒後に再試行...")
+            time.sleep(wait_time)
 
-    try:
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            env=env,
-            encoding='utf-8',
-            errors='replace',
-            bufsize=1
-        )
+        start_time = time.time()
 
-        # リアルタイム出力
-        for line in process.stdout:
-            line = line.rstrip()
-            if line:
-                # 進捗行のみログに記録
-                if '進捗:' in line or '完了' in line or 'レース' in line:
-                    log(f"  {line}")
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                env=env,
+                encoding='utf-8',
+                errors='replace',
+                bufsize=1
+            )
 
-        return_code = process.wait()
-        elapsed = time.time() - start_time
+            # リアルタイム出力
+            for line in process.stdout:
+                line = line.rstrip()
+                if line:
+                    # 進捗行のみログに記録
+                    if '進捗:' in line or '完了' in line or 'レース' in line:
+                        log(f"  {line}")
 
-        if return_code == 0:
-            log(f"完了: {start_date} - {end_date} (所要時間: {elapsed/60:.1f}分)")
-            return True
-        else:
-            log(f"エラー: 終了コード {return_code}")
-            return False
+            return_code = process.wait()
+            elapsed = time.time() - start_time
 
-    except Exception as e:
-        log(f"例外: {e}")
-        return False
+            if return_code == 0:
+                log(f"完了: {start_date} - {end_date} (所要時間: {elapsed/60:.1f}分)")
+                return True
+            else:
+                log(f"エラー: 終了コード {return_code}")
+                if attempt == max_retries - 1:
+                    return False
+
+        except Exception as e:
+            log(f"例外: {e}")
+            if attempt == max_retries - 1:
+                return False
+
+    return False
 
 
 def main():
     parser = argparse.ArgumentParser(description='2020-2025年データ自動取得')
     parser.add_argument('--skip-2022', action='store_true', help='2022年8-12月をスキップ')
     parser.add_argument('--start-year', type=int, default=2020, help='開始年（デフォルト: 2020）')
+    parser.add_argument('--start-date', type=str, default=None, help='開始日付（例: 2020-08-01）指定すると--start-yearより優先')
     parser.add_argument('--workers', type=int, default=12, help='並列数（デフォルト: 12）')
     parser.add_argument('--check-only', action='store_true', help='状況確認のみ')
     args = parser.parse_args()
+
+    # --start-dateが指定された場合、--start-yearを上書き
+    start_date_override = None
+    if args.start_date:
+        try:
+            start_date_override = datetime.strptime(args.start_date, '%Y-%m-%d')
+            args.start_year = start_date_override.year
+        except ValueError:
+            print(f"エラー: --start-date の形式が不正です: {args.start_date} (正しい形式: YYYY-MM-DD)")
+            sys.exit(1)
 
     log("=" * 80)
     log("2020-2025年データ自動取得マスタースクリプト")
@@ -194,7 +227,15 @@ def main():
         else:
             end_date = f"{year}-12-31"
 
-        tasks.append((f"{year}-01-01", end_date, f"{year}年"))
+        # --start-dateが指定されている場合、その年の開始日を調整
+        if start_date_override and year == start_date_override.year:
+            start = args.start_date
+            name = f"{year}年（{start_date_override.month}月～）"
+        else:
+            start = f"{year}-01-01"
+            name = f"{year}年"
+
+        tasks.append((start, end_date, name))
 
     log(f"=== 取得タスク: {len(tasks)}件 ===")
     for start, end, name in tasks:
@@ -216,6 +257,14 @@ def main():
     failed = []
 
     for i, (start_date, end_date, name) in enumerate(tasks, 1):
+        # 停止時刻チェック
+        if should_stop():
+            log("")
+            log("=" * 80)
+            log(f"停止時刻({STOP_TIME})に達したため処理を中断します")
+            log("=" * 80)
+            break
+
         log("")
         log("=" * 80)
         log(f"タスク {i}/{len(tasks)}: {name}")

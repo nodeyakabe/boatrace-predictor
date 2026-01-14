@@ -84,6 +84,7 @@ class BetTargetEvaluator:
         # ※ 本番運用開始（2025-12-24承認）
         # ※ 6年間ROI 146.9%、5/6年黒字で安定性確認済み
         # ※ 1点買い推奨（ROI 143.2% vs パターンH 102.0%）
+        # 【2026-01-13更新】唐津(23)を除外（唐津×C×B1×20-30条件と完全重複のため）
         'C': [
             {
                 'method': '両方式',
@@ -94,8 +95,8 @@ class BetTargetEvaluator:
                 'priority': 1,
                 'description': 'C×20-30倍×B1級（6年間ROI 144.8%）',
                 'paper_trade': False,  # 本番運用（2025-12-24承認）
-                # 会場フィルター: 唐津,徳山,多摩川,平和島,津,丸亀,常滑,大村,若松,宮島
-                'venue_filter': [23, 18, 5, 4, 9, 15, 8, 24, 20, 17],
+                # 会場フィルター: 徳山,多摩川,平和島,津,丸亀,常滑,大村,若松,宮島（唐津除外）
+                'venue_filter': [18, 5, 4, 9, 15, 8, 24, 20, 17],  # 唐津(23)除外（2026-01-13）
                 'use_pattern_h': False,  # 1点買い推奨（ROI差: -41.2pt）
             },
             # 【2025-12-25追加】鳴門×C×A2×30-80倍（S-1グレードSパターン選定で発見）
@@ -182,22 +183,21 @@ class BetTargetEvaluator:
             #     'venue_exclude': [10],
             # },
             # 【2026-01-05追加】D × 5コース予測（6年連続黒字・最安定）
-            # 6年間: 1,992件, ROI 144.5%, 全年度110%以上
-            # 年度別: 2020:155%, 2021:170%, 2022:137%, 2023:220%, 2024:110%, 2025:136%
-            # 【2026-01-09検証】差し率フィルターは効果不明確のため不採用
-            # - 差し率>=20%: 295件, ROI 479%, 3/6年黒字
-            # - 差し率<20%: 114件, ROI 281%, 2/6年黒字（両方プラス）
-            # ※ パターンH推奨（収支+62,760円）
+            # 【2026-01-13更新】A2級を除外（6年間ROI 23.8%, -19,800円の大赤字）
+            # 変更前: 全級別, 493件, ROI 142.9%, 収支+50,530円, 5/6年黒字
+            # 変更後: A2除外, 379件, ROI 176.6%, 収支+70,330円, 5/6年黒字
+            # 効果: ROI +33.7pt, 収支+19,800円
+            # ※ パターンH推奨
             {
                 'method': '両方式',
                 'odds_min': 10, 'odds_max': 200,  # オッズ制限なし
-                'c1_rank': ['A1', 'A2', 'B1', 'B2'],  # 全級別
-                'expected_roi': 144.5,
+                'c1_rank': ['A1', 'B1', 'B2'],  # A2除外（2026-01-13）
+                'expected_roi': 176.6,  # 更新: 144.5%→176.6%（A2除外後）
                 'bet_amount': 100,
                 'priority': 3,
-                'description': 'D×5コース予測（6年連続黒字・ROI 144.5%）',
+                'description': 'D×5コース予測×A2除外（ROI 176.6%）',
                 'predicted_course': 5,  # 5コース予測限定
-                'use_pattern_h': True,  # パターンH推奨（収支+62,760円）
+                'use_pattern_h': True,  # パターンH推奨
             },
             # 【2026-01-05追加→削除】浜名湖(06)×D×50-100倍×B1
             # ※ standard_backtest検証で該当レース0件のため削除
@@ -229,38 +229,60 @@ class BetTargetEvaluator:
         'B': [
             # 優先度1: B × 50-100倍（安定）- A2級除外（6年間+5,900円改善）
             # 【2026-01-09追加】冬除外フィルター（12,1,2月除外）
-            # 効果: 1519件→1180件(-22%), ROI 140.1%→168.2%(+28.1pt), 収支+29,140円改善
-            # 理由: 冬季はROI 47.4%で大幅赤字（-29,140円）、専用ロジックも効果なし
+            # 【2026-01-13追加】4月除外フィルター（6年間的中0回の完全赤字月）
+            # 効果: 1180件→1082件(-8.3%), ROI 168.2%→183.6%(+15.4pt), 収支+15,300円改善
+            # 理由: 4月は6年間で的中0回、3月はROI 315%で黒字なので除外しない
             # ※ パターンH推奨
             {
                 'method': '両方式',
                 'odds_min': 50, 'odds_max': 100,
                 'c1_rank': ['A1', 'B1'],  # B2除外、A2除外（2025-12-25）
-                'expected_roi': 168.2,  # 更新: 140.1%→168.2%（冬除外後）
+                'expected_roi': 183.6,  # 更新: 168.2%→183.6%（4月除外後）
                 'bet_amount': 100,
                 'priority': 1,
-                'description': 'B×50-100倍×冬除外（ROI 168.2%）',
+                'description': 'B×50-100倍×冬+4月除外（ROI 183.6%）',
                 'use_pattern_h': True,  # パターンH推奨
-                'month_exclude': [12, 1, 2],  # 冬季除外（2026-01-09追加）
+                'month_exclude': [12, 1, 2, 4],  # 冬季+4月除外（2026-01-13追加）
             },
-            # 優先度2: B × 30-50 × B1 + 会場フィルター（before予測ROI 333.6%）
-            # ※ パターンH推奨（収支+28,060円）
+            # 優先度2: B × 30-50 × B1 + 会場フィルター
+            # 【2026-01-13更新】会場を高ROI上位4会場に限定（蒲郡,常滑,尼崎,児島,若松,大村を除外）
+            # 変更前: 10会場, ROI 130.7%, 4/6年黒字, 2025年-11,680円
+            # 変更後: 4会場, ROI 196.7%, 6/6年黒字, 2025年+1,220円
+            # 効果: ROI +66pt、全年黒字化
+            # ※ パターンH推奨
             {
                 'method': '両方式',
                 'odds_min': 30, 'odds_max': 50,
                 'c1_rank': ['B1'],  # B1級限定
-                'expected_roi': 333.6,
+                'expected_roi': 196.7,  # 更新: 333.6%→196.7%（4会場限定後）
                 'bet_amount': 100,
                 'priority': 2,
-                'description': 'B×30-50倍×B1級（before予測ROI 333.6%）',
-                # 会場フィルター: 三国,浜名湖,児島,芦屋,津,尼崎,若松,大村,蒲郡,常滑
-                'venue_filter': [10, 6, 16, 21, 9, 13, 20, 24, 7, 8],
-                'use_pattern_h': True,  # パターンH推奨（収支+28,060円）
+                'description': 'B×30-50倍×B1級×4会場（ROI 196.7%）',
+                # 会場フィルター: 津,三国,芦屋,浜名湖（高ROI上位4会場のみ）
+                'venue_filter': [9, 10, 21, 6],
+                'use_pattern_h': True,  # パターンH推奨
             },
             # 【2025-12-25検証→不採用】B × 10-30倍 × A1/A2 × モーター35%+
             # A-2調査結果: 6年間884件, ROI 104.2%だが、
             # 2025年単体バックテスト: 162件, ROI 59.0%, 収支 -6,640円 → 赤字
             # 年度安定性がないため不採用
+
+            # 【2026-01-13追加】B × 10-30倍 × 穴源(bias<-0.3) × 黒字会場
+            # バイアス指数分析で発見: 予想より上に来やすい選手（穴源）を狙う
+            # 検証結果: 202件, ROI 168.8%, +13,890円, 4/6年黒字
+            # 黒字会場: 浜名湖(06),蒲郡(07),常滑(08),三国(10),丸亀(15),下関(19)
+            {
+                'method': '両方式',
+                'odds_min': 10, 'odds_max': 30,
+                'c1_rank': ['A1', 'A2', 'B1'],
+                'expected_roi': 168.8,
+                'bet_amount': 100,
+                'priority': 3,
+                'description': 'B×10-30倍×穴源×会場（ROI 168.8%）',
+                'venue_filter': [6, 7, 8, 10, 15, 19],  # 黒字6会場限定
+                'bias_max': -0.3,  # バイアス指数<-0.3（穴源選手）
+                'use_pattern_h': False,  # 1点買い（低オッズ帯）
+            },
         ],
         # Aランク条件
         'A': [
@@ -372,6 +394,9 @@ class BetTargetEvaluator:
         # 会場別指標データのキャッシュ（2026-01-09追加）
         self._stadium_attack_stats_cache = None
 
+        # 選手バイアス指数キャッシュ（2026-01-13追加）
+        self._player_bias_stats_cache = None
+
     def _get_stadium_attack_stats(self, venue_code: str) -> Optional[Dict[str, float]]:
         """
         会場のまくり率・差し率を取得
@@ -435,6 +460,36 @@ class BetTargetEvaluator:
 
         return self._player_escape_stats_cache.get(player_id)
 
+    def _get_player_bias_index(self, player_id: str) -> Optional[float]:
+        """
+        選手のバイアス指数を取得
+
+        Args:
+            player_id: 選手登録番号
+
+        Returns:
+            バイアス指数（マイナス=予想より上に来やすい穴源）またはNone
+        """
+        # キャッシュがあれば使用
+        if self._player_bias_stats_cache is None:
+            try:
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT player_id, bias_index
+                    FROM player_bias_stats
+                    WHERE stadium_id IS NULL AND bias_index IS NOT NULL
+                ''')
+                self._player_bias_stats_cache = {
+                    row[0]: row[1]
+                    for row in cursor.fetchall()
+                }
+                conn.close()
+            except Exception:
+                self._player_bias_stats_cache = {}
+
+        return self._player_bias_stats_cache.get(player_id)
+
     def evaluate(
         self,
         confidence: str,
@@ -452,7 +507,8 @@ class BetTargetEvaluator:
         sashi_rate: Optional[float] = None,
         makuri_rate: Optional[float] = None,
         race_month: Optional[int] = None,  # レース月（1-12）- 2026-01-09追加
-        escape_rate: Optional[float] = None  # 1着予測選手の逃げ率（0-1）- 2026-01-09追加
+        escape_rate: Optional[float] = None,  # 1着予測選手の逃げ率（0-1）- 2026-01-09追加
+        bias_index: Optional[float] = None  # 1着予測選手のバイアス指数 - 2026-01-13追加
     ) -> BetTarget:
         """
         購入対象を判定する
@@ -474,6 +530,7 @@ class BetTargetEvaluator:
             makuri_rate: 会場のまくり率（0-1、2026-01-09追加）
             race_month: レース月（1-12、2026-01-09追加）
             escape_rate: 1着予測選手の逃げ率（0-1、2026-01-09追加）
+            bias_index: 1着予測選手のバイアス指数（2026-01-13追加）
 
         Returns:
             BetTarget: 購入対象情報
@@ -608,6 +665,14 @@ class BetTargetEvaluator:
                     continue  # 逃げ率データがない場合は除外
                 if escape_rate < cond['escape_rate_min']:
                     continue
+
+            # バイアス指数チェック（bias_max が指定されている場合）- 2026-01-13追加
+            # B×10-30×穴源条件で bias_index < -0.3 の選手のみ（予想より上に来やすい穴源）
+            if 'bias_max' in cond:
+                if bias_index is None:
+                    continue  # バイアスデータがない場合は除外
+                if bias_index >= cond['bias_max']:
+                    continue  # bias_index が閾値以上なら除外
 
             # 方式と買い目の決定
             if cond['method'] == '従来':

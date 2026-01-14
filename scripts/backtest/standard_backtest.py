@@ -108,40 +108,100 @@ CONDITIONS = [
     # ----------------------------------------------------------------
     # B条件（高オッズ帯→パターンH推奨）
     # ----------------------------------------------------------------
+    # 【2026-01-13更新】4月除外追加（6年間的中0回の完全赤字月）
+    # 効果: 1180件→1082件(-8.3%), ROI 168.2%→183.6%(+15.4pt), 収支+15,300円
     {
-        'name': 'B×50-100×冬除外',
+        'name': 'B×50-100×冬+4月除外',
         'confidence': 'B',
         'c1_rank': ['A1', 'B1'],  # A2除外
         'odds_min': 50,
         'odds_max': 100,
         'venue_filter': None,
-        'month_exclude': [12, 1, 2],  # 冬季除外（2026-01-09追加）
-        'description': 'B×50-100倍×冬除外（ROI 168.2%）',
+        'month_exclude': [12, 1, 2, 4],  # 冬季+4月除外（2026-01-13追加）
+        'description': 'B×50-100倍×冬+4月除外（ROI 183.6%）',
         'use_pattern_h': True,  # パターンH（高オッズ帯）
     },
+    # 【2026-01-13更新】会場を高ROI上位4会場に限定
+    # 変更前: 10会場, ROI 130.7%, 4/6年黒字, 2025年-11,680円
+    # 変更後: 4会場, ROI 196.7%, 6/6年黒字, 2025年+1,220円
     {
-        'name': 'B×30-50×B1+会場',
+        'name': 'B×30-50×B1+4会場',
         'confidence': 'B',
         'c1_rank': ['B1'],
         'odds_min': 30,
         'odds_max': 50,
-        # 三国,浜名湖,児島,芦屋,津,尼崎,若松,大村,蒲郡,常滑
-        'venue_filter': [10, 6, 16, 21, 9, 13, 20, 24, 7, 8],
-        'description': 'B×30-50倍×B1級（会場フィルター）',
+        # 津,三国,芦屋,浜名湖（高ROI上位4会場のみ）
+        'venue_filter': [9, 10, 21, 6],
+        'description': 'B×30-50倍×B1級×4会場（ROI 196.7%）',
         'use_pattern_h': True,  # パターンH（高オッズ帯）
     },
+    # 【2026-01-13追加】B×10-30倍×穴源×黒字会場
+    # バイアス指数分析で発見: 予想より上に来やすい選手（穴源）を狙う
+    # 検証結果: 202件, ROI 168.8%, +13,890円, 4/6年黒字
+    {
+        'name': 'B×10-30×穴源×会場',
+        'confidence': 'B',
+        'c1_rank': ['A1', 'A2', 'B1'],
+        'odds_min': 10,
+        'odds_max': 30,
+        # 黒字会場: 浜名湖,蒲郡,常滑,三国,丸亀,下関
+        'venue_filter': [6, 7, 8, 10, 15, 19],
+        'bias_max': -0.3,  # バイアス指数<-0.3（穴源選手）
+        'description': 'B×10-30倍×穴源(bias<-0.3)×会場',
+        'use_pattern_h': False,  # 1点買い（低オッズ帯）
+    },
+    # 【2026-01-13検証→不採用】B×A1×会場限定
+    # 検証結果: 341件, ROI 65.9%, -11,620円（全年赤字）
+    # 不採用理由: 分析時の計算ミス（1-2-3固定オッズで計算していた）
+    # {
+    #     'name': 'B×A1×会場限定',
+    #     'confidence': 'B',
+    #     'c1_rank': ['A1'],
+    #     'odds_min': 10,
+    #     'odds_max': 30,
+    #     'venue_filter': [6, 8, 10, 12, 17, 19, 20, 23],
+    #     'description': 'B×A1級×10-30倍×会場限定',
+    #     'use_pattern_h': False,
+    # },
+    # 【2026-01-13検証→不採用】A×50倍+
+    # 検証結果: 508件, ROI 58.4%, -21,130円
+    # 不採用理由: 分析時の計算ミス（1-2-3固定オッズで計算していた）
+    # {
+    #     'name': 'A×50倍+',
+    #     'confidence': 'A',
+    #     'c1_rank': ['A1', 'A2', 'B1', 'B2'],
+    #     'odds_min': 50,
+    #     'odds_max': 999,
+    #     'venue_filter': None,
+    #     'description': 'A×50倍+',
+    #     'use_pattern_h': False,
+    # },
+    # 【2026-01-13検証→不採用】A×(A1+A2)×50倍+
+    # 検証結果: 376件, ROI 78.9%, -7,930円
+    # 不採用理由: 分析時の計算ミス（1-2-3固定オッズで計算していた）
+    # {
+    #     'name': 'A×上位級×50倍+',
+    #     'confidence': 'A',
+    #     'c1_rank': ['A1', 'A2'],
+    #     'odds_min': 50,
+    #     'odds_max': 999,
+    #     'venue_filter': None,
+    #     'description': 'A×A1/A2級×50倍+',
+    #     'use_pattern_h': False,
+    # },
     # ----------------------------------------------------------------
     # C条件
     # ----------------------------------------------------------------
+    # 【2026-01-13更新】唐津(23)を除外（唐津×C×B1×20-30条件と完全重複のため）
     {
         'name': 'C×20-30×B1+会場',
         'confidence': 'C',
         'c1_rank': ['B1'],
         'odds_min': 20,
         'odds_max': 30,
-        # 唐津,徳山,多摩川,平和島,津,丸亀,常滑,大村,若松,宮島
-        'venue_filter': [23, 18, 5, 4, 9, 15, 8, 24, 20, 17],
-        'description': 'C×20-30倍×B1級（会場フィルター）',
+        # 徳山,多摩川,平和島,津,丸亀,常滑,大村,若松,宮島（唐津除外）
+        'venue_filter': [18, 5, 4, 9, 15, 8, 24, 20, 17],
+        'description': 'C×20-30倍×B1級（会場フィルター・唐津除外）',
         'use_pattern_h': False,  # 1点買い（低オッズ帯）
     },
     {
@@ -193,15 +253,18 @@ CONDITIONS = [
         'description': 'D×B1級×40-50倍×2連率20-30%',
         'use_pattern_h': False,  # 1点買い
     },
+    # 【2026-01-13更新】A2級を除外（6年間ROI 23.8%, -19,800円の大赤字）
+    # 変更前: 全級別, 493件, ROI 142.9%, 収支+50,530円, 5/6年黒字
+    # 変更後: A2除外, 379件, ROI 176.6%, 収支+70,330円, 5/6年黒字
     {
-        'name': 'D×5コース予測',
+        'name': 'D×5コース予測×A2除外',
         'confidence': 'D',
-        'c1_rank': ['A1', 'A2', 'B1', 'B2'],
+        'c1_rank': ['A1', 'B1', 'B2'],  # A2除外（2026-01-13）
         'odds_min': 10,
         'odds_max': 200,
         'venue_filter': None,
         'predicted_course': 5,
-        'description': 'D×5コース予測（6年連続黒字）',
+        'description': 'D×5コース予測×A2除外（ROI 176.6%）',
         'use_pattern_h': True,  # パターンH
     },
 ]
@@ -285,6 +348,17 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
         """
         escape_rate_clause = f"AND pes.escape_rate >= {cond['escape_rate_min']} "
 
+    # バイアス指数フィルター（2026-01-13追加：穴源選手抽出用）
+    bias_join = ""
+    bias_clause = ""
+    if cond.get('bias_max') is not None:
+        # 1着予測の選手のバイアス指数をチェック
+        bias_join = """
+        LEFT JOIN entries e_bias ON r.id = e_bias.race_id AND e_bias.pit_number = rp1.pit_number
+        LEFT JOIN player_bias_stats pbs ON e_bias.racer_number = pbs.player_id AND pbs.stadium_id IS NULL
+        """
+        bias_clause = f"AND pbs.bias_index IS NOT NULL AND pbs.bias_index < {cond['bias_max']} "
+
     if use_pattern_h:
         # パターンH: 3点買い（1-2-3: 200円, 1-2-4: 100円, 1-2-5: 100円）
         query = f'''
@@ -309,6 +383,7 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
             JOIN race_predictions rp5 ON r.id = rp5.race_id AND rp5.prediction_type = 'before' AND rp5.rank_prediction = 5
             JOIN entries e1 ON r.id = e1.race_id AND e1.pit_number = 1
             {escape_rate_join}
+            {bias_join}
             WHERE rp.rank_prediction = 1
             AND rp.confidence = '{cond["confidence"]}'
             AND e1.racer_rank IN ('{c1_rank_str}')
@@ -322,6 +397,7 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
             {c1_second_rate_clause}
             {month_exclude_clause}
             {escape_rate_clause}
+            {bias_clause}
         ),
         race_with_results AS (
             SELECT
@@ -409,6 +485,7 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
             JOIN race_predictions rp3 ON r.id = rp3.race_id AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
             JOIN entries e1 ON r.id = e1.race_id AND e1.pit_number = 1
             {escape_rate_join}
+            {bias_join}
             WHERE rp.rank_prediction = 1
             AND rp.confidence = '{cond["confidence"]}'
             AND e1.racer_rank IN ('{c1_rank_str}')
@@ -422,6 +499,7 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
             {c1_second_rate_clause}
             {month_exclude_clause}
             {escape_rate_clause}
+            {bias_clause}
         ),
         race_bets AS (
             SELECT

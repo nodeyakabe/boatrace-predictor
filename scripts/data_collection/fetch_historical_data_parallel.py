@@ -104,29 +104,34 @@ def fetch_venue_day_parallel(args):
     races_data = []
 
     for race_number in range(1, 13):
-        try:
-            # 出走表取得
-            race_data = race_scraper.get_race_card(venue_code, race_date_yyyymmdd, race_number)
-            if not race_data or not race_data.get('entries'):
-                continue
+        max_retries = 3
+        for retry in range(max_retries):
+            try:
+                # 出走表取得
+                race_data = race_scraper.get_race_card(venue_code, race_date_yyyymmdd, race_number)
+                if not race_data or not race_data.get('entries'):
+                    break  # データなしは正常終了
 
-            race_data['venue_code'] = venue_code
-            race_data['race_date'] = race_date_yyyymmdd
-            race_data['race_number'] = race_number
+                race_data['venue_code'] = venue_code
+                race_data['race_date'] = race_date_yyyymmdd
+                race_data['race_number'] = race_number
 
-            # 結果取得
-            result_data = result_scraper.get_race_result(venue_code, race_date_yyyymmdd, race_number)
+                # 結果取得
+                result_data = result_scraper.get_race_result(venue_code, race_date_yyyymmdd, race_number)
 
-            races_data.append({
-                'race': race_data,
-                'result': result_data
-            })
-            success_count += 1
+                races_data.append({
+                    'race': race_data,
+                    'result': result_data
+                })
+                success_count += 1
 
-            time.sleep(0.1)  # レート制限（並列なので短め）
+                time.sleep(0.1)  # レート制限（並列なので短め）
+                break  # 成功したらリトライループを抜ける
 
-        except Exception as e:
-            pass
+            except Exception as e:
+                if retry < max_retries - 1:
+                    time.sleep(2 ** retry)  # 指数バックオフ: 1秒, 2秒, 4秒
+                # 最終リトライでも失敗したらパス
 
     return venue_code, race_date, success_count, races_data
 
