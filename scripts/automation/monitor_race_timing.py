@@ -54,12 +54,12 @@ class RaceMonitor:
 
     def get_todays_target_races(self) -> List[Dict]:
         """
-        本日の購入対象レースを取得
+        本日の購入対象レースと候補レースを取得
 
         BetTargetEvaluatorを使用して実際の購入判定を行う
 
         Returns:
-            List[Dict]: レース情報リスト（購入対象のみ）
+            List[Dict]: レース情報リスト（購入対象+候補レース）
         """
         today = datetime.now().strftime('%Y-%m-%d')
 
@@ -105,8 +105,8 @@ class RaceMonitor:
                     has_beforeinfo=False
                 )
 
-                # 購入対象のみを追加
-                if bet_target.status in [BetStatus.TARGET_ADVANCE, BetStatus.TARGET_CONFIRMED]:
+                # 購入対象と候補レースを追加
+                if bet_target.status in [BetStatus.TARGET_ADVANCE, BetStatus.TARGET_CONFIRMED, BetStatus.CANDIDATE]:
                     race_info = {
                         'race_id': race_id,
                         'date': row['race_date'],
@@ -254,21 +254,21 @@ class RaceMonitor:
         deadline_datetime_str = f"{date_str} {deadline_str}"
         return datetime.strptime(deadline_datetime_str, '%Y-%m-%d %H:%M')
 
-    def check_and_fetch_direct_info(self, race: Dict) -> Optional[Dict]:
+    def check_and_fetch_direct_info(self, race: Dict) -> bool:
         """
-        直前情報取得が必要かチェックし、必要なら取得
+        直前情報取得が必要かチェックし、必要なら取得して再評価
 
         Args:
             race: レース情報
 
         Returns:
-            Optional[Dict]: 直前情報（取得しない場合はNone）
+            bool: 直前情報を取得して再評価したらTrue
         """
         race_id = race['race_id']
 
         # 既に取得済みならスキップ
         if race_id in self.fetched_direct_info:
-            return None
+            return False
 
         deadline = self.parse_deadline(race['date'], race['deadline'])
         now = datetime.now()
@@ -290,20 +290,100 @@ class RaceMonitor:
 
                 self.fetched_direct_info.add(race_id)
 
-                # TODO: 実際の直前情報を返す
-                # 現在はダミーデータ
-                return {
-                    'weather_change': '変化なし',
-                    'wind_change': '変化なし',
-                    'exhibition_notes': '特記事項なし'
-                }
+                # 直前情報取得後、購入判定を再評価
+                self._reevaluate_after_beforeinfo(race)
+
+                return True
 
             except Exception as e:
                 print(f"[ERROR] 直前情報取得エラー: {race_id} - {e}")
                 send_error_notification("直前情報取得失敗", f"レースID: {race_id}\nエラー: {str(e)}")
-                return None
+                return False
 
-        return None
+        return False
+
+    def _reevaluate_after_beforeinfo(self, race: Dict) -> None:
+        """
+        直前情報取得後に購入判定を再評価
+
+        Args:
+            race: レース情報
+        """
+        race_id = race['race_id']
+
+        try:
+            # 直前予測を取得
+            conn = self.get_connection()
+            try:
+                cursor = conn.cursor()
+
+                # 直前予測データを取得
+                predictions = self._get_predictions_with_beforeinfo(cursor, race_id)
+                if not predictions:
+                    return
+
+                # オッズデータを再取得
+                odds_data = self._get_odds_data(cursor, race_id, predictions)
+
+                # 購入判定を再評価（has_beforeinfo=True）
+                bet_target = self.bet_evaluator.evaluate_race(
+                    race_data=race['race_data'],
+                    predictions=predictions,
+                    odds_data=odds_data,
+                    has_beforeinfo=True
+                )
+
+                # 元のステータスと比較
+                old_status = race['bet_target'].status
+                new_status = bet_target.status
+
+                # ステータスが変化した場合
+                if old_status != new_status:
+                    print(f"  レース{race_id}: {old_status.value} → {new_status.value}")
+
+                    # 候補から購入対象に昇格した場合
+                    if old_status == BetStatus.CANDIDATE and new_status in [BetStatus.TARGET_CONFIRMED]:
+                        print(f"  候補レースが購入対象に昇格: {race_id}")
+                        # BetTarget情報を更新
+                        race['bet_target'] = bet_target
+
+            finally:
+                conn.close()
+
+        except Exception as e:
+            print(f"[ERROR] 再評価エラー: {race_id} - {e}")
+
+    def _get_predictions_with_beforeinfo(self, cursor, race_id: int) -> Optional[Dict]:
+        """直前予測を含む予測データを取得"""
+        # 事前予測
+        cursor.execute("""
+            SELECT pit_number, rank_prediction, confidence
+            FROM race_predictions
+            WHERE race_id = ? AND prediction_type = 'advance'
+            ORDER BY rank_prediction
+        """, (race_id,))
+        advance_preds = [dict(row) for row in cursor.fetchall()]
+
+        # 直前予測
+        cursor.execute("""
+            SELECT pit_number, rank_prediction
+            FROM race_predictions
+            WHERE race_id = ? AND prediction_type = 'before'
+            ORDER BY rank_prediction
+        """, (race_id,))
+        before_preds = [dict(row) for row in cursor.fetchall()]
+
+        if len(advance_preds) < 3:
+            return None
+
+        old_pred = [p['pit_number'] for p in advance_preds[:3]]
+        new_pred = [p['pit_number'] for p in before_preds[:3]] if len(before_preds) >= 3 else old_pred
+
+        return {
+            'confidence': advance_preds[0]['confidence'],
+            'old_prediction': old_pred,
+            'new_prediction': new_pred
+        }
 
     def check_and_notify(self, race: Dict) -> bool:
         """
@@ -321,6 +401,13 @@ class RaceMonitor:
         if race_id in self.notified_races:
             return False
 
+        # 最新のBetTargetステータスを確認
+        bet_target = race['bet_target']
+
+        # 購入対象（TARGET_ADVANCE または TARGET_CONFIRMED）のみ通知
+        if bet_target.status not in [BetStatus.TARGET_ADVANCE, BetStatus.TARGET_CONFIRMED]:
+            return False
+
         deadline = self.parse_deadline(race['date'], race['deadline'])
         now = datetime.now()
         time_until_deadline = (deadline - now).total_seconds() / 60  # 分
@@ -328,8 +415,6 @@ class RaceMonitor:
         # 締切10分前に通知
         if 8 <= time_until_deadline <= 12:
             print(f"通知送信: {race_id} (締切まであと{time_until_deadline:.0f}分)")
-
-            bet_target = race['bet_target']
 
             # レース情報整形
             race_info = {
@@ -407,12 +492,11 @@ class RaceMonitor:
             # 各レースをチェック
             for race in races:
                 try:
-                    # 直前情報取得チェック
-                    direct_info = self.check_and_fetch_direct_info(race)
-                    if direct_info:
+                    # 直前情報取得チェック（取得後に再評価も実行）
+                    if self.check_and_fetch_direct_info(race):
                         stats['direct_info_fetched'] += 1
 
-                    # 通知チェック
+                    # 通知チェック（再評価後のステータスで判定）
                     if self.check_and_notify(race):
                         stats['notifications_sent'] += 1
 

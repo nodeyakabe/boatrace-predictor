@@ -660,7 +660,9 @@ def _start_missing_data_job(missing_dates: List[Dict], check_types: List[str]):
 
 def _start_tenji_job(days_offset: int):
     """オリジナル展示収集をバックグラウンドで開始"""
-    worker_path = os.path.join(PROJECT_ROOT, 'scripts', 'worker_tenji_collection.py')
+    # 注: worker_tenji_collection.py はアーカイブ済み
+    # 代替: fetch_today_beforeinfo.py を使用
+    worker_path = os.path.join(PROJECT_ROOT, 'scripts', 'data_collection', 'fetch_today_beforeinfo.py')
 
     result = start_job(
         JOB_TENJI,

@@ -184,7 +184,7 @@ def send_race_notification(
     return send_discord_notification(message)
 
 
-def send_daily_summary(date: str, race_count: int, target_count: int) -> bool:
+def send_daily_summary(date: str, race_count: int, target_count: int, target_races: list = None, candidate_races: list = None) -> bool:
     """
     朝の予想生成完了通知
 
@@ -192,19 +192,45 @@ def send_daily_summary(date: str, race_count: int, target_count: int) -> bool:
         date: 日付（YYYY-MM-DD）
         race_count: 総レース数
         target_count: 購入対象レース数
+        target_races: 購入対象レースリスト [{'venue': str, 'race_num': int, 'combination': str, 'odds': float}, ...]
+        candidate_races: 候補レースリスト [{'venue': str, 'race_num': int, 'combination': str, 'reason': str}, ...]
 
     Returns:
         bool: 送信成功ならTrue
     """
-    message = f"""☀️ **本日の予想生成完了**
+    message = f"""**本日の予想生成完了**
 
-📅 日付: {date}
-🏁 総レース数: {race_count}レース
-🎯 購入対象: {target_count}レース
+日付: {date}
+総レース数: {race_count}レース
+購入対象: {target_count}レース
+候補: {len(candidate_races) if candidate_races else 0}レース
 
 システムは自動監視を開始しました。
 締切10分前に個別通知を送信します。
 """
+
+    # 購入対象レースの詳細（全件表示）
+    if target_races and len(target_races) > 0:
+        message += "\n**【購入対象レース】**\n"
+        for race in target_races:
+            venue = race.get('venue', '不明')
+            race_num = race.get('race_num', 0)
+            race_time = race.get('race_time', '??:??')
+            combination = race.get('combination', '?-?-?')
+            odds = race.get('odds', 0.0)
+            message += f"- {venue} {race_num}R ({race_time}): {combination} ({odds:.1f}倍)\n"
+
+    # 候補レースの詳細（全件表示）
+    if candidate_races and len(candidate_races) > 0:
+        message += "\n**【候補レース（直前情報次第）】**\n"
+        for race in candidate_races:
+            venue = race.get('venue', '不明')
+            race_num = race.get('race_num', 0)
+            race_time = race.get('race_time', '??:??')
+            combination = race.get('combination', '?-?-?')
+            reason = race.get('reason', '条件付き')
+            message += f"- {venue} {race_num}R ({race_time}): {combination} - {reason}\n"
+
     return send_discord_notification(message)
 
 
@@ -219,7 +245,7 @@ def send_error_notification(error_type: str, error_message: str) -> bool:
     Returns:
         bool: 送信成功ならTrue
     """
-    message = f"""⚠️ **システムエラー通知**
+    message = f"""WARNING️ **システムエラー通知**
 
 エラー種別: {error_type}
 時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}

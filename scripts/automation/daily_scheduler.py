@@ -69,7 +69,7 @@ def race_monitoring_job():
         db_path = project_root / "data" / "boatrace.db"
 
         if not db_path.exists():
-            print(f"⚠️ データベースが見つかりません: {db_path}")
+            print(f"WARNING️ データベースが見つかりません: {db_path}")
             return
 
         monitor = RaceMonitor(str(db_path))
@@ -86,7 +86,7 @@ def race_monitoring_job():
             print(f"  通知送信: {stats['notifications_sent']}")
 
             if stats['errors'] > 0:
-                print(f"  ⚠️ エラー: {stats['errors']}")
+                print(f"  WARNING️ エラー: {stats['errors']}")
 
     except Exception as e:
         error_msg = f"レース監視中にエラー: {str(e)}"
@@ -101,8 +101,8 @@ def startup_notification():
 起動時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 **スケジュール:**
-• テスト: 11:28 - 予想生成
-• 5分ごと - レース監視
+- 毎朝 8:30 - 予想生成
+- 5分ごと - レース監視
 
 システムは正常稼働中です。
 """
@@ -128,14 +128,14 @@ def print_status():
     global monitor
 
     print("\n" + "=" * 60)
-    print("ボートレース自動化システム（テストモード）")
+    print("ボートレース自動化システム")
     print("=" * 60)
     print(f"起動時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("\nスケジュール:")
-    print("  • テスト: 11:28 - 予想生成")
-    print("  • 5分ごと - レース監視")
+    print("  - 毎朝 8:30 - 予想生成")
+    print("  - 5分ごと - レース監視")
     print("\n操作:")
-    print("  • Ctrl+C で停止")
+    print("  - Ctrl+C で停止")
     print("=" * 60 + "\n")
 
     # 次回実行時刻を表示
@@ -164,9 +164,9 @@ def main():
     # スケジュール設定
     print("スケジュール設定中...")
 
-    # テスト用: 2分後に予想生成（本番は9:30）
-    schedule.every().day.at("11:28").do(morning_prediction_job)
-    print("[OK] テスト: 11:28 - 予想生成")
+    # 毎朝8:30に予想生成
+    schedule.every().day.at("08:30").do(morning_prediction_job)
+    print("[OK] 毎朝 8:30 - 予想生成")
 
     # 5分ごとにレース監視
     schedule.every(5).minutes.do(race_monitoring_job)

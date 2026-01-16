@@ -31,16 +31,16 @@ def test_basic_notification():
 通知テストメッセージです。
 このメッセージが届けば設定完了です！
 
-✓ Discord Webhook連携成功
+OK Discord Webhook連携成功
 """
 
     success = send_discord_notification(message)
 
     if success:
-        print("✓ 基本通知テスト成功")
+        print("OK 基本通知テスト成功")
         print("  Discordを確認してください")
     else:
-        print("✗ 基本通知テスト失敗")
+        print("NG 基本通知テスト失敗")
 
     return success
 
@@ -60,9 +60,9 @@ def test_daily_summary():
     )
 
     if success:
-        print("✓ 朝の予想生成完了通知テスト成功")
+        print("OK 朝の予想生成完了通知テスト成功")
     else:
-        print("✗ 朝の予想生成完了通知テスト失敗")
+        print("NG 朝の予想生成完了通知テスト失敗")
 
     return success
 
@@ -101,9 +101,9 @@ def test_race_notification():
     success = send_race_notification(race_info, prediction, odds_info, direct_info)
 
     if success:
-        print("✓ レース締切通知テスト成功")
+        print("OK レース締切通知テスト成功")
     else:
-        print("✗ レース締切通知テスト失敗")
+        print("NG レース締切通知テスト失敗")
 
     return success
 
@@ -120,9 +120,9 @@ def test_error_notification():
     )
 
     if success:
-        print("✓ エラー通知テスト成功")
+        print("OK エラー通知テスト成功")
     else:
-        print("✗ エラー通知テスト失敗")
+        print("NG エラー通知テスト失敗")
 
     return success
 
@@ -133,9 +133,9 @@ def main():
     print("Discord Webhook 通知テスト")
     print("=" * 60)
     print("\n注意:")
-    print("  • .env ファイルに DISCORD_WEBHOOK_URL を設定してください")
-    print("  • 設定方法: docs/guides/DISCORD_WEBHOOK_SETUP.md を参照")
-    print("  • テストを実行すると4つの通知がDiscordに届きます")
+    print("  - .env ファイルに DISCORD_WEBHOOK_URL を設定してください")
+    print("  - 設定方法: docs/guides/DISCORD_WEBHOOK_SETUP.md を参照")
+    print("  - テストを実行すると4つの通知がDiscordに届きます")
     print("\n" + "=" * 60)
 
     input("\nEnterキーを押すとテスト開始します...")
@@ -167,18 +167,18 @@ def main():
 
     all_success = True
     for test_name, success in results:
-        status = "✓ 成功" if success else "✗ 失敗"
+        status = "OK 成功" if success else "NG 失敗"
         print(f"  {test_name}: {status}")
         if not success:
             all_success = False
 
     print("\n" + "=" * 60)
     if all_success:
-        print("✓ すべてのテストが成功しました！")
+        print("OK すべてのテストが成功しました！")
         print("\n次のステップ:")
         print("  python scripts/automation/daily_scheduler.py")
     else:
-        print("✗ 一部のテストが失敗しました")
+        print("NG 一部のテストが失敗しました")
         print("\nトラブルシューティング:")
         print("  1. .env ファイルに DISCORD_WEBHOOK_URL が設定されているか確認")
         print("  2. URLが正しいか確認（余分なスペースがないか）")

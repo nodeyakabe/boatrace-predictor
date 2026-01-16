@@ -349,6 +349,7 @@ def main():
     all_results = []
     completed = 0
     total_races = 0
+    saved_total = 0
 
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
         futures = {executor.submit(fetch_venue_day_parallel, task): task for task in tasks}
@@ -365,16 +366,26 @@ def main():
                 })
                 total_races += success_count
 
+                # 50タスクごとにCSV保存（メモリ節約 & 途中保存）
+                if len(all_results) >= 50:
+                    saved = save_to_csv(output_dir, all_results)
+                    saved_total += saved
+                    all_results = []  # メモリ解放
+
             if completed % 50 == 0 or completed == len(tasks):
                 elapsed = time.time() - start_time
                 rate = completed / elapsed if elapsed > 0 else 0
                 remaining = (len(tasks) - completed) / rate if rate > 0 else 0
                 print(f"進捗: {completed}/{len(tasks)} ({completed/len(tasks)*100:.1f}%) - "
-                      f"取得レース: {total_races} - 残り約{remaining/60:.1f}分")
+                      f"取得レース: {total_races} - 保存済: {saved_total} - 残り約{remaining/60:.1f}分")
 
-    # CSV保存
-    print("\n=== CSV保存中 ===")
-    saved = save_to_csv(output_dir, all_results)
+    # 残りデータのCSV保存
+    if all_results:
+        print("\n=== 最終データ保存中 ===")
+        saved = save_to_csv(output_dir, all_results)
+        saved_total += saved
+
+    saved = saved_total  # 合計を設定
 
     elapsed = time.time() - start_time
 

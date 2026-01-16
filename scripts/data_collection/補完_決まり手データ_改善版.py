@@ -13,6 +13,7 @@ import sys
 import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
+import os
 import argparse
 import sqlite3
 import requests
@@ -20,6 +21,10 @@ from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import threading
+
+# プロジェクトルートを取得
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+DB_PATH = os.path.join(PROJECT_ROOT, 'data', 'boatrace.db')
 
 # スレッドローカルセッション
 thread_local = threading.local()
@@ -33,7 +38,7 @@ def get_session():
         })
     return thread_local.session
 
-def get_races_without_kimarite(db_path="data/boatrace.db", start_date=None, end_date=None):
+def get_races_without_kimarite(db_path=None, start_date=None, end_date=None):
     """
     決まり手が欠損しているレースを取得
 
@@ -45,6 +50,9 @@ def get_races_without_kimarite(db_path="data/boatrace.db", start_date=None, end_
     Returns:
         list: [(race_id, venue_code, race_date, race_number), ...]
     """
+    if db_path is None:
+        db_path = DB_PATH
+
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
@@ -100,7 +108,7 @@ def fetch_kimarite_fast(args, retry=3):
         retry: リトライ回数
 
     Returns:
-        dict: {'race_id': id, 'kimarite': '逃げ', 'winning_technique': 1}
+        dict: {'race_id': id, 'kimarite': '逃げ'}
     """
     race_id, venue_code, race_date, race_number = args
 
@@ -196,9 +204,9 @@ def update_kimarite_batch(conn, results):
     for result in results:
         cursor.execute("""
             UPDATE results
-            SET kimarite = ?, winning_technique = ?
+            SET kimarite = ?
             WHERE race_id = ? AND rank = '1'
-        """, (result['kimarite'], result['winning_technique'], result['race_id']))
+        """, (result['kimarite'], result['race_id']))
 
     conn.commit()
 
@@ -212,12 +220,15 @@ def main():
     print("="*80)
     print("決まり手データ補完スクリプト（改善版 - 期間フィルター対応）")
     print("="*80)
+    print(f"[DEBUG] DB接続開始: {DB_PATH}")
 
     # 1. 決まり手が欠損しているレースを取得
     races = get_races_without_kimarite(
         start_date=args.start_date,
         end_date=args.end_date
     )
+
+    print(f"[DEBUG] クエリ完了: {len(races)}件")
 
     if len(races) == 0:
         print("\n補完が必要なレースはありません。")
@@ -240,7 +251,7 @@ def main():
     batch = []
     batch_size = 100  # 100件ごとにDB書き込み
 
-    conn = sqlite3.connect("data/boatrace.db")
+    conn = sqlite3.connect(DB_PATH)
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(fetch_kimarite_fast, race): race for race in races}

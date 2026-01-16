@@ -8,7 +8,7 @@ import sys
 import warnings
 warnings.filterwarnings('ignore')
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, PROJECT_ROOT)
 
 from src.utils.job_manager import update_job_progress, complete_job

@@ -18,6 +18,7 @@ ROOT_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
 from src.betting.bet_target_evaluator import BetTargetEvaluator, BetStatus
+from src.betting.multi_bet_generator import MultiBetPattern
 
 
 def run_backtest(
@@ -50,8 +51,14 @@ def run_backtest(
     print(f"予測タイプ: {prediction_type}")
     print(f"{'='*100}\n")
 
-    # BetTargetEvaluatorインスタンス作成
-    evaluator = BetTargetEvaluator()
+    # BetTargetEvaluatorインスタンス作成（実運用と統一）
+    evaluator = BetTargetEvaluator(
+        use_multi_bet=True,
+        multi_bet_pattern=MultiBetPattern.PATTERN_H,
+        enable_venue_wind_filter=True,
+        enable_venue_course_adjustment=True,
+        db_path=db_path
+    )
 
     # 全BET_CONDITIONSを取得
     all_conditions = []

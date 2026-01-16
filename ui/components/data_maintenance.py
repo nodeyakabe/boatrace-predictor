@@ -376,7 +376,9 @@ def _start_missing_data_job(missing_dates: List[Dict], check_types: List[str]):
         json.dump(config, f, ensure_ascii=False, indent=2)
 
     # ワーカースクリプトを起動
-    worker_path = os.path.join(PROJECT_ROOT, 'scripts', 'worker_missing_data.py')
+    # 注: worker_missing_data.py はアーカイブ済み
+    # 代替: bulk_missing_data_fetch_parallel.py を使用
+    worker_path = os.path.join(PROJECT_ROOT, 'scripts', 'data_collection', 'bulk_missing_data_fetch_parallel.py')
 
     result = start_job(
         JOB_MISSING_DATA,
@@ -496,7 +498,9 @@ def _render_original_tenji():
 
 def _start_tenji_job(days_offset: int):
     """オリジナル展示収集をバックグラウンドで開始"""
-    worker_path = os.path.join(PROJECT_ROOT, 'scripts', 'worker_tenji_collection.py')
+    # 注: worker_tenji_collection.py はアーカイブ済み
+    # 代替: fetch_today_beforeinfo.py を使用
+    worker_path = os.path.join(PROJECT_ROOT, 'scripts', 'data_collection', 'fetch_today_beforeinfo.py')
 
     result = start_job(
         JOB_TENJI,

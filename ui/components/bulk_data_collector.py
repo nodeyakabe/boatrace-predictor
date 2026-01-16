@@ -102,22 +102,17 @@ def render_bulk_data_collector(target_date, selected_venues):
         "2. 決まり手データ": {
             "description": "決まり手情報を補完（改善版）",
             "default": True,
-            "script": "補完_決まり手データ_改善版.py"
+            "script": "scripts/data_collection/補完_決まり手データ_改善版.py"
         },
         "3. レース詳細データv4": {
             "description": "展示タイム、モーター・ボート情報等",
             "default": True,
-            "script": "補完_レース詳細データ_改善版v4.py"
+            "script": "scripts/data_collection/補完_レース詳細データ_改善版v4.py"
         },
-        "4. 天候データ": {
-            "description": "気温・水温・波高",
+        "4. 気象データ": {
+            "description": "気温・水温・波高・風速・風向",
             "default": True,
-            "script": "補完_天候データ_改善版.py"
-        },
-        "5. 風向データ": {
-            "description": "風速・風向",
-            "default": True,
-            "script": "補完_風向データ_改善版.py"
+            "script": "scripts/data_collection/fill_missing_weather_data.py"
         },
     }
 

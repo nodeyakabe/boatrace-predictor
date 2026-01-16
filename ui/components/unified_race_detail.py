@@ -12,8 +12,10 @@ from src.prediction.integrated_predictor import IntegratedPredictor
 from src.analysis.race_predictor import RacePredictor
 from src.betting.bet_generator import BetGenerator
 from src.betting.bet_target_evaluator import BetTargetEvaluator, BetTarget, BetStatus
+from src.betting.multi_bet_generator import MultiBetPattern
 from ui.components.common.widgets import render_confidence_badge
 from ui.components.common.db_utils import safe_query_to_df
+from config.settings import DATABASE_PATH
 
 
 def render_unified_race_detail(race_date=None, venue_code=None, race_number=None, predictions=None):
@@ -105,19 +107,6 @@ def _render_bet_target_summary(race_id, race_date_str, venue_code, race_number, 
     """総合タブ: 購入対象判定の表示"""
     st.subheader("📊 購入対象判定")
 
-    st.markdown("""
-    **最終運用戦略（13,413レース検証済み）に基づく購入判定**
-
-    | 状態 | 説明 |
-    |------|------|
-    | 🟢 対象（事前） | 事前情報のみで購入条件を満たす |
-    | 🟡 候補 | 直前情報次第で対象に入る可能性 |
-    | 🟢 対象（確定） | 直前情報取得後、最終的に購入対象 |
-    | ⚪ 対象外 | 購入条件を満たさない |
-    """)
-
-    st.markdown("---")
-
     # 1コース選手の情報を取得
     c1_entry = racers_df[racers_df['pit_number'] == 1].iloc[0] if len(racers_df[racers_df['pit_number'] == 1]) > 0 else None
 
@@ -201,8 +190,14 @@ def _render_bet_target_summary(race_id, race_date_str, venue_code, race_number, 
     bi_df = safe_query_to_df(beforeinfo_query, params=(int(race_id),))
     has_beforeinfo = bi_df is not None and not bi_df.empty and bi_df['cnt'].iloc[0] > 0
 
-    # 購入対象判定
-    evaluator = BetTargetEvaluator()
+    # 購入対象判定（Discord通知・レース監視と統一）
+    evaluator = BetTargetEvaluator(
+        use_multi_bet=True,
+        multi_bet_pattern=MultiBetPattern.PATTERN_H,
+        enable_venue_wind_filter=True,
+        enable_venue_course_adjustment=True,
+        db_path=DATABASE_PATH
+    )
     bet_target = evaluator.evaluate(
         confidence=confidence,
         c1_rank=c1_rank,
@@ -232,6 +227,100 @@ def _render_bet_target_summary(race_id, race_date_str, venue_code, race_number, 
     with col2:
         st.markdown(f"**理由**: {bet_target.reason}")
 
+    # 判定の詳細根拠を追加
+    with st.expander("📋 判定根拠の詳細", expanded=False):
+        st.markdown("### 参照した条件")
+
+        # 方式の説明
+        st.info("""
+        **予測方式について:**
+        - **事前予測**: レース前日までの情報（選手成績、モーター性能など）で予測
+        - **直前予測**: 展示タイム・STタイミングなど直前情報を加えて予測
+        - **両方式**: 事前予測と直前予測のオッズを比較して高い方を選択
+        """)
+
+        st.markdown(f"""
+        **検証項目:**
+        - 信頼度: **{confidence}**
+        - 1コース級別: **{c1_rank}**
+        - 事前予測買い目オッズ: **{old_combo}** → **{old_odds:.1f}倍**
+        - 直前予測買い目オッズ: **{new_combo}** → **{new_odds:.1f}倍**
+        - 直前情報: **{'取得済み' if has_beforeinfo else '未取得'}**
+        """)
+
+        # 適用された法則を表示
+        st.markdown("---")
+        st.markdown("### 📜 適用された法則")
+
+        try:
+            import os
+            db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'boatrace.db')
+            race_predictor = RacePredictor(db_path=db_path)
+            applied_rules = race_predictor.get_applied_rules_by_key(
+                race_date_str, venue_code, race_number
+            )
+
+            if applied_rules:
+                st.markdown("""
+                以下の法則は過去のレースデータから統計的に有意な勝率向上パターンとして抽出されたものです。
+                各法則には「的中率」「適用条件」が設定され、条件を満たす場合にスコアが加算されます。
+                """)
+
+                for rule in applied_rules:
+                    rule_type_icon = "🏟️" if rule['type'] == 'venue' else "👤"
+                    effect_pct = rule.get('effect', 0) * 100
+
+                    with st.container():
+                        st.markdown(f"""
+                        {rule_type_icon} **{rule['name']}**
+                        - 種別: {rule['type']}
+                        - 効果: +{effect_pct:.1f}%
+                        - 説明: {rule.get('description', '統計的有意パターン')}
+                        """)
+            else:
+                st.info("このレースに適用された特別な法則はありません（基本予測のみ）")
+
+        except Exception as e:
+            st.warning(f"適用法則の取得に失敗しました: {e}")
+
+        st.markdown("---")
+        st.markdown("### 購入条件との照合結果")
+
+        # 条件別の判定詳細
+        if bet_target.status in [BetStatus.TARGET_ADVANCE, BetStatus.TARGET_CONFIRMED]:
+            st.success(f"""
+            ✅ 購入条件を満たしました
+
+            - 適用条件: **{bet_target.reason}**
+            - 期待オッズ範囲: **{bet_target.odds_range}**
+            - 実際のオッズ: **{bet_target.odds:.1f}倍**
+            - 期待回収率: **{bet_target.expected_roi:.1f}%**
+            """)
+        elif bet_target.status == BetStatus.CANDIDATE:
+            st.warning(f"""
+            ⏳ 条件付きで購入候補
+
+            - 条件: **{bet_target.reason}**
+            - 必要オッズ範囲: **{bet_target.odds_range}**
+            - 現在のオッズ: **{bet_target.odds:.1f}倍** (条件の80%以上)
+
+            直前情報を取得後、以下が満たされれば購入対象に昇格:
+            - 直前予測が事前予測を維持
+            - オッズが条件範囲内に変動
+            """)
+        else:
+            st.info(f"""
+            ⚪ 購入条件を満たしませんでした
+
+            - 理由: **{bet_target.reason}**
+
+            以下のいずれかの理由で除外されました:
+            - 信頼度が低い（E以下）
+            - オッズが条件範囲外
+            - 1コース級別が条件外（B2以下）
+            - 会場×風速除外条件に該当
+            """)
+
     # 詳細情報
     st.markdown("---")
     st.markdown("### 詳細情報")
@@ -246,14 +335,14 @@ def _render_bet_target_summary(race_id, race_date_str, venue_code, race_number, 
 
     with col2:
         st.markdown("**予測買い目**")
-        st.write(f"- 従来方式: **{old_combo}**")
-        st.write(f"- 新方式: **{new_combo}**")
+        st.write(f"- 事前予測: **{old_combo}**")
+        st.write(f"- 直前予測: **{new_combo}**")
         st.write(f"- 採用方式: **{bet_target.method}**")
 
     with col3:
         st.markdown("**オッズ情報**")
-        st.write(f"- 従来買い目: **{old_odds:.1f}倍**" if old_odds else "- 従来買い目: 未取得")
-        st.write(f"- 新方式買い目: **{new_odds:.1f}倍**" if new_odds else "- 新方式買い目: 未取得")
+        st.write(f"- 事前予測買い目: **{old_odds:.1f}倍**" if old_odds else "- 事前予測買い目: 未取得")
+        st.write(f"- 直前予測買い目: **{new_odds:.1f}倍**" if new_odds else "- 直前予測買い目: 未取得")
         st.write(f"- 条件オッズ範囲: **{bet_target.odds_range}**")
 
     # 購入対象の場合の推奨
@@ -610,35 +699,179 @@ def _render_ai_prediction(race_id, race_date_str, venue_code, race_number, racer
         else:
             st.info("展示データはまだ取得されていません")
 
+    # 参照データの詳細を追加
+    st.markdown("---")
+    st.markdown("### 📊 予測で参照したデータ")
+
+    with st.expander("📋 参照データ詳細", expanded=True):
+        st.markdown("""
+        AI予測システムは以下のデータを総合的に分析して予測を生成しています:
+        """)
+
+        # 選手データ
+        st.markdown("#### 👤 選手データ")
+        entry_query = """
+            SELECT
+                e.pit_number,
+                e.racer_name,
+                e.racer_rank,
+                e.nationwide_win_rate,
+                e.nationwide_second_rate,
+                e.local_win_rate,
+                e.local_second_rate,
+                e.motor_second_rate,
+                e.boat_second_rate,
+                e.avg_st
+            FROM entries e
+            WHERE e.race_id = ?
+            ORDER BY e.pit_number
+        """
+        entry_df = safe_query_to_df(entry_query, params=(int(race_id),))
+
+        if entry_df is not None and not entry_df.empty:
+            display_entry = entry_df.copy()
+            display_entry.columns = ['艇番', '選手名', '級別', '全国勝率', '全国2連率', '当地勝率', '当地2連率', 'モーター2連率', 'ボート2連率', '平均ST']
+            st.dataframe(display_entry, use_container_width=True, hide_index=True)
+
+            st.caption("※ 勝率・2連率は選手の実力を、モーター・ボート2連率は機材の性能を表します")
+        else:
+            st.warning("選手データが取得できませんでした")
+
+        # レース条件データ
+        st.markdown("#### 🌊 レース条件データ")
+        condition_query = """
+            SELECT
+                weather,
+                wind_direction,
+                wind_speed,
+                wave_height,
+                water_temperature,
+                air_temperature
+            FROM race_conditions
+            WHERE race_id = ?
+        """
+        condition_df = safe_query_to_df(condition_query, params=(int(race_id),))
+
+        if condition_df is not None and not condition_df.empty:
+            cond = condition_df.iloc[0]
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.metric("天候", cond['weather'] if pd.notna(cond['weather']) else "不明")
+                st.metric("風向", cond['wind_direction'] if pd.notna(cond['wind_direction']) else "不明")
+
+            with col2:
+                st.metric("風速", f"{cond['wind_speed']:.1f}m" if pd.notna(cond['wind_speed']) else "不明")
+                st.metric("波高", f"{cond['wave_height']:.1f}cm" if pd.notna(cond['wave_height']) else "不明")
+
+            with col3:
+                st.metric("水温", f"{cond['water_temperature']:.1f}℃" if pd.notna(cond['water_temperature']) else "不明")
+                st.metric("気温", f"{cond['air_temperature']:.1f}℃" if pd.notna(cond['air_temperature']) else "不明")
+
+            st.caption("※ 風速・風向は予測精度に大きく影響します。特に風速5m以上の場合はレース展開が変わりやすくなります")
+        else:
+            st.info("レース条件データが取得できませんでした")
+
+        # 展示データ（直前情報）
+        if has_beforeinfo:
+            st.markdown("#### 🏁 展示データ（直前情報）")
+            exhibition_query = """
+                SELECT
+                    rd.pit_number,
+                    e.racer_name,
+                    rd.exhibition_time,
+                    rd.tilt_angle
+                FROM race_details rd
+                JOIN entries e ON rd.race_id = e.race_id AND rd.pit_number = e.pit_number
+                WHERE rd.race_id = ?
+                ORDER BY rd.pit_number
+            """
+            ex_df = safe_query_to_df(exhibition_query, params=(int(race_id),))
+
+            if ex_df is not None and not ex_df.empty:
+                # 展示タイム順位を計算
+                ex_df['展示T順位'] = ex_df['exhibition_time'].rank(method='min').fillna(0).astype(int)
+
+                display_ex = []
+                for _, row in ex_df.iterrows():
+                    display_ex.append({
+                        '艇番': int(row['pit_number']),
+                        '選手': row['racer_name'][:6],
+                        '展示T': f"{row['exhibition_time']:.2f}" if pd.notna(row['exhibition_time']) else '-',
+                        '展示T順位': f"{int(row['展示T順位'])}位" if row['展示T順位'] > 0 else '-',
+                        'チルト': f"{row['tilt_angle']:.1f}°" if pd.notna(row['tilt_angle']) else '-'
+                    })
+
+                st.dataframe(pd.DataFrame(display_ex), use_container_width=True, hide_index=True)
+                st.caption("※ 展示タイムはモーター性能とスタート力の指標です。上位選手が有利になる傾向があります")
+
+        # 会場特性データ
+        st.markdown("#### 🏟️ 会場特性")
+        venue_query = """
+            SELECT name, place, is_seawater FROM venues WHERE code = ?
+        """
+        venue_df = safe_query_to_df(venue_query, params=(selected_venue_code,))
+
+        if venue_df is not None and not venue_df.empty:
+            venue_info = venue_df.iloc[0]
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.write(f"**会場名**: {venue_info['name']}")
+                st.write(f"**所在地**: {venue_info['place']}")
+
+            with col2:
+                water_type = "海水" if venue_info['is_seawater'] == 1 else "淡水"
+                st.write(f"**水質**: {water_type}")
+                st.write(f"**会場コード**: {selected_venue_code}")
+
+            st.caption("※ 海水/淡水、インコース有利度などの会場特性が予測に影響します")
+
     # 判断根拠（適用法則）
     st.markdown("---")
     st.markdown("### 🔍 判断根拠（適用法則）")
 
-    try:
-        race_predictor = RacePredictor()
-        applied_rules = race_predictor.get_applied_rules_by_key(
-            race_date_str, venue_code, race_number
-        )
+    with st.expander("📜 適用された法則一覧", expanded=True):
+        st.markdown("""
+        以下の法則は過去のレースデータから統計的に有意な勝率向上パターンとして抽出されたものです。
+        各法則には「的中率」「適用条件」が設定され、条件を満たす場合にスコアが加算されます。
+        """)
 
-        if applied_rules:
-            for i, rule in enumerate(applied_rules[:10], 1):
-                effect_pct = rule['effect_value'] * 100
+        try:
+            import os
+            db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'boatrace.db')
+            race_predictor = RacePredictor(db_path=db_path)
+            applied_rules = race_predictor.get_applied_rules_by_key(
+                race_date_str, venue_code, race_number
+            )
 
-                # 法則タイプに応じたアイコン
-                rule_type = rule.get('type', '競艇場法則')
-                if rule_type == '競艇場法則':
-                    icon = '🏟️'
-                elif rule_type == '選手法則':
-                    icon = '👤'
-                else:
-                    icon = '📌'
+            if applied_rules:
+                for i, rule in enumerate(applied_rules[:10], 1):
+                    effect_pct = rule['effect_value'] * 100
 
-                st.write(f"{i}. {icon} {rule['description']} ({effect_pct:+.1f}%)")
-        else:
-            st.info("基本モデルのみで予想（法則未適用）")
+                    # 法則タイプに応じたアイコン
+                    rule_type = rule.get('type', '競艇場法則')
+                    if rule_type == '競艇場法則':
+                        icon = '🏟️'
+                    elif rule_type == '選手法則':
+                        icon = '👤'
+                    else:
+                        icon = '📌'
 
-    except Exception as e:
-        st.warning(f"法則取得エラー: {e}")
+                    st.write(f"{i}. {icon} {rule['description']} ({effect_pct:+.1f}%)")
+
+                st.markdown("""
+                ---
+                **法則の読み方:**
+                - **%値**: その法則がスコアに与える影響度（プラスが大きいほど有利）
+                - **🏟️**: 会場特有の傾向（例: 風向×コース）
+                - **👤**: 選手の特性に基づく法則（例: A1級×1コース）
+                """)
+            else:
+                st.info("基本モデルのみで予想（法則未適用）")
+
+        except Exception as e:
+            st.warning(f"法則取得エラー: {e}")
 
     # 改善機能の効果を表示
     st.markdown("---")
@@ -1016,8 +1249,36 @@ def _render_detailed_analysis(race_id, race_date_str, venue_code, race_number, r
     **このタブの機能**:
     - 展示タイム・スタートタイミングを**手動入力**して詳細予測
     - AI予測の根拠（有利・不利な要因）を可視化
+    - 各選手の強み・弱みを定量的に分析
     - ※「AI予測」タブの直前予想更新ボタンとは別機能です
     """)
+
+    st.markdown("---")
+    st.markdown("### 📚 XAI（説明可能AI）とは")
+
+    with st.expander("ℹ️ XAIの説明", expanded=False):
+        st.markdown("""
+        **XAI（Explainable AI）** は、AIの予測結果を人間が理解できる形で説明する技術です。
+
+        **このシステムでは以下を可視化します:**
+
+        1. **SHAP値分析**
+           - 各特徴量（選手の成績、モーター性能など）が予測にどれだけ貢献したか
+           - プラス要因（有利な要素）とマイナス要因（不利な要素）を分離表示
+
+        2. **特徴量の重要度**
+           - どのデータ（全国勝率、モーター2連率、展示タイムなど）が予測に影響したか
+           - 上位の重要特徴量を抽出して表示
+
+        3. **予測の確信度**
+           - AIがどれだけ確信を持って予測したか
+           - 不確実性が高い場合は警告を表示
+
+        **活用方法:**
+        - 本命選手の強み・弱みを確認
+        - 穴馬の有利要因を発見
+        - 予測の信頼性を判断
+        """)
 
     # 予測器の初期化
     if 'integrated_predictor' not in st.session_state:
@@ -1168,28 +1429,115 @@ def _render_detailed_analysis(race_id, race_date_str, venue_code, race_number, r
             st.markdown("---")
             st.markdown("### 🧠 AI予測の根拠（XAI）")
 
-            for explanation in result['explanations']:
-                with st.expander(f"{explanation['pit_number']}号艇: {explanation['racer_name']}"):
+            st.markdown("""
+            各選手の予測根拠を詳細に分析します。**有利な要因**と**不利な要因**を定量的に表示し、
+            なぜその予測になったのかを明確にします。
+            """)
+
+            # 予測順にソート（確率が高い順）
+            sorted_explanations = sorted(
+                result['explanations'],
+                key=lambda x: predictions_df[predictions_df['pit_number'] == x['pit_number']]['probability'].iloc[0] if len(predictions_df[predictions_df['pit_number'] == x['pit_number']]) > 0 else 0,
+                reverse=True
+            )
+
+            for idx, explanation in enumerate(sorted_explanations, 1):
+                pit = explanation['pit_number']
+                racer = explanation['racer_name']
+
+                # 予測確率を取得
+                pred_prob = predictions_df[predictions_df['pit_number'] == pit]['probability'].iloc[0] if len(predictions_df[predictions_df['pit_number'] == pit]) > 0 else 0
+
+                # 順位アイコン
+                rank_icon = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣"][idx - 1]
+
+                with st.expander(f"{rank_icon} {pit}号艇: {racer} （予測勝率: {pred_prob*100:.2f}%）", expanded=(idx <= 3)):
+                    st.markdown(f"#### 総合評価")
                     st.markdown(explanation['explanation_text'])
 
-                    # 有利・不利要因を可視化
-                    if explanation['explanation'].get('top_positive_factors'):
-                        st.markdown("#### ✅ 有利な要因")
-                        positive_df = pd.DataFrame(
-                            explanation['explanation']['top_positive_factors'],
-                            columns=['特徴量', '寄与度']
-                        )
-                        positive_df['寄与度'] = positive_df['寄与度'].apply(lambda x: f"+{x*100:.2f}%")
-                        st.dataframe(positive_df, hide_index=True)
+                    col1, col2 = st.columns(2)
 
-                    if explanation['explanation'].get('top_negative_factors'):
-                        st.markdown("#### ❌ 不利な要因")
-                        negative_df = pd.DataFrame(
-                            explanation['explanation']['top_negative_factors'],
-                            columns=['特徴量', '寄与度']
-                        )
-                        negative_df['寄与度'] = negative_df['寄与度'].apply(lambda x: f"{x*100:.2f}%")
-                        st.dataframe(negative_df, hide_index=True)
+                    # 有利・不利要因を可視化
+                    with col1:
+                        if explanation['explanation'].get('top_positive_factors'):
+                            st.markdown("#### ✅ 有利な要因")
+                            positive_df = pd.DataFrame(
+                                explanation['explanation']['top_positive_factors'],
+                                columns=['特徴量', '寄与度']
+                            )
+                            positive_df['寄与度'] = positive_df['寄与度'].apply(lambda x: f"+{x*100:.2f}%")
+                            st.dataframe(positive_df, hide_index=True, use_container_width=True)
+
+                            # 最も影響の大きい要因を強調
+                            if len(explanation['explanation']['top_positive_factors']) > 0:
+                                top_factor = explanation['explanation']['top_positive_factors'][0]
+                                st.success(f"💡 **最大の強み**: {top_factor[0]}")
+                        else:
+                            st.info("有利な要因が検出されませんでした")
+
+                    with col2:
+                        if explanation['explanation'].get('top_negative_factors'):
+                            st.markdown("#### ❌ 不利な要因")
+                            negative_df = pd.DataFrame(
+                                explanation['explanation']['top_negative_factors'],
+                                columns=['特徴量', '寄与度']
+                            )
+                            negative_df['寄与度'] = negative_df['寄与度'].apply(lambda x: f"{x*100:.2f}%")
+                            st.dataframe(negative_df, hide_index=True, use_container_width=True)
+
+                            # 最も影響の大きい弱点を強調
+                            if len(explanation['explanation']['top_negative_factors']) > 0:
+                                top_factor = explanation['explanation']['top_negative_factors'][0]
+                                st.warning(f"⚠️ **最大の弱み**: {top_factor[0]}")
+                        else:
+                            st.info("不利な要因が検出されませんでした")
+
+                    # 要因の解説を追加
+                    st.markdown("---")
+                    st.markdown("#### 📊 要因の解説")
+
+                    with st.expander("各特徴量の意味", expanded=False):
+                        st.markdown("""
+                        | 特徴量 | 説明 | 影響度 |
+                        |--------|------|--------|
+                        | 全国勝率 | 選手の全国での勝利実績 | ⭐⭐⭐ |
+                        | 全国2連率 | 全国での2着以内率 | ⭐⭐⭐ |
+                        | モーター2連率 | モーターの性能指標 | ⭐⭐⭐ |
+                        | 当地勝率 | この会場での勝利実績 | ⭐⭐ |
+                        | 当地2連率 | この会場での2着以内率 | ⭐⭐ |
+                        | 展示タイム | 展示航走のタイム | ⭐⭐ |
+                        | 平均ST | スタートタイミング平均 | ⭐⭐ |
+                        | ボート2連率 | ボートの性能指標 | ⭐ |
+
+                        **評価基準:**
+                        - ⭐⭐⭐: 予測に大きく影響
+                        - ⭐⭐: 中程度の影響
+                        - ⭐: 補助的な影響
+                        """)
+
+            # 全体のサマリー
+            st.markdown("---")
+            st.markdown("### 📈 予測サマリー")
+
+            summary_col1, summary_col2, summary_col3 = st.columns(3)
+
+            with summary_col1:
+                top_racer = sorted_explanations[0]
+                st.metric(
+                    "本命",
+                    f"{top_racer['pit_number']}号艇",
+                    f"{top_racer['racer_name']}"
+                )
+
+            with summary_col2:
+                # 有利要因の平均数
+                avg_positive = sum(len(e['explanation'].get('top_positive_factors', [])) for e in result['explanations']) / len(result['explanations'])
+                st.metric("平均有利要因数", f"{avg_positive:.1f}個")
+
+            with summary_col3:
+                # 不利要因の平均数
+                avg_negative = sum(len(e['explanation'].get('top_negative_factors', [])) for e in result['explanations']) / len(result['explanations'])
+                st.metric("平均不利要因数", f"{avg_negative:.1f}個")
 
 
 def _render_expected_value_analysis(predictions, race_id, venue_code, race_date_str, race_number):

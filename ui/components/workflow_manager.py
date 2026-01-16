@@ -100,7 +100,12 @@ def _render_running_job(job_name: str, stop_key: str):
 
 def _run_background_job(job_name: str, script_name: str):
     """バックグラウンドジョブを開始"""
-    script_path = os.path.join(PROJECT_ROOT, 'scripts', script_name)
+    # maintenance配下のスクリプトを検索
+    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'maintenance', script_name)
+
+    # maintenance配下にない場合はscripts直下を検索
+    if not os.path.exists(script_path):
+        script_path = os.path.join(PROJECT_ROOT, 'scripts', script_name)
 
     if not os.path.exists(script_path):
         st.error(f"スクリプトが見つかりません: {script_name}")

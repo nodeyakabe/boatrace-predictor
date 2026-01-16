@@ -2,11 +2,15 @@
 最近のレースの潮位データを収集（ブラウザ自動化版）
 """
 import sys
-sys.path.append('src')
+import os
+
+# プロジェクトルートをパスに追加
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, PROJECT_ROOT)
 
 import sqlite3
 from datetime import datetime, timedelta
-from scraper.tide_browser_scraper import TideBrowserScraper
+from src.scraper.tide_browser_scraper import TideBrowserScraper
 from tqdm import tqdm
 import time
 

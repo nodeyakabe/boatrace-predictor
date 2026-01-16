@@ -196,19 +196,15 @@ def _render_supplement_data_collection():
     tasks = {
         "決まり手データ": {
             "description": "決まり手情報を補完（改善版）",
-            "script": "補完_決まり手データ_改善版.py"
+            "script": "scripts/data_collection/補完_決まり手データ_改善版.py"
         },
         "レース詳細データv4": {
             "description": "展示タイム、モーター・ボート情報等",
-            "script": "補完_レース詳細データ_改善版v4.py"
+            "script": "scripts/data_collection/補完_レース詳細データ_改善版v4.py"
         },
-        "天候データ": {
-            "description": "気温・水温・波高",
-            "script": "補完_天候データ_改善版.py"
-        },
-        "風向データ": {
-            "description": "風速・風向",
-            "script": "補完_風向データ_改善版.py"
+        "気象データ": {
+            "description": "気温・水温・波高・風速・風向",
+            "script": "scripts/data_collection/fill_missing_weather_data.py"
         },
     }
 

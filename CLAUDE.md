@@ -23,6 +23,7 @@
 | **不採用案** | [docs/improvement_attempts/REJECTED_IDEAS.md](docs/improvement_attempts/REJECTED_IDEAS.md) |
 | **購入条件** | [docs/presets/BET_CONDITIONS.md](docs/presets/BET_CONDITIONS.md) |
 | **DB構造** | [docs/architecture/DATABASE_SCHEMA.md](docs/architecture/DATABASE_SCHEMA.md) |
+| **データ収集** | [docs/guides/DATA_COLLECTION_MASTER.md](docs/guides/DATA_COLLECTION_MASTER.md) |
 
 **注意**:
 - 日付付きドキュメント（`*_20251220.md`等）は過去ログ。最新情報ではない
@@ -109,6 +110,48 @@ JOIN trifecta_odds t ON rp.race_id = t.race_id
 ## 残タスクへの追記
 
 「残タスクに追記して」等のリクエスト → `docs/残タスク一覧.md` に追加
+
+## データ収集タスク（重要）
+
+**「データ収集」を依頼されたら必ず参照:**
+
+### クイックリファレンス
+
+| やりたいこと | 推奨スクリプト |
+|-------------|---------------|
+| **過去全データ（2020-2025）** | `python scripts/data_collection/auto_fetch_2020_2025.py` |
+| **特定期間のデータ** | `python scripts/data_collection/fetch_historical_data_parallel.py --start 2024-01-01 --end 2024-12-31` |
+| **大量CSV収集（DB負荷なし）** | `python scripts/data_collection/fetch_to_csv_parallel_improved.py --start 2020-01-01 --end 2020-12-31 --output data/csv/2020` |
+| **決まり手補完** | `python scripts/data_collection/補完_決まり手データ_改善版.py` |
+| **レース詳細補完** | `python scripts/data_collection/補完_レース詳細データ_改善版v4.py` |
+| **オッズ収集** | `python scripts/data_collection/fetch_odds_parallel_safe.py --start 2024-01-01 --end 2024-12-31` |
+| **本日の直前情報** | `python scripts/data_collection/fetch_today_beforeinfo.py` |
+| **統計指標生成** | `python scripts/data_collection/build_indicator_stats.py --year 2024` |
+
+### 基本原則
+
+1. **大量データはCSV方式** - DB負荷を回避
+2. **並列化を活用** - 高速化（8-12ワーカー）
+3. **月別に分割** - リカバリ容易
+4. **旧版は使わない** - 必ず推奨スクリプトを使用
+
+### ⚠️ 重要な制約（必読）
+
+| データ種別 | 取得可能期間 | 補完可否 |
+|-----------|-------------|---------|
+| レース基本情報・結果・オッズ | 2020年～ | ✅ 可能（公式APIで常時公開） |
+| **オリジナル展示** | **前日のみ** | **❌ 不可（一度逃すと永久欠損）** |
+
+**Claude Codeへの注意**:
+- 公式データ（レース・結果・オッズ）は過去数年分取得可能
+- オリジナル展示のみ前日限定、毎日の自動収集が必須
+
+### 詳細ドキュメント
+
+- **マスターガイド**: [docs/guides/DATA_COLLECTION_MASTER.md](docs/guides/DATA_COLLECTION_MASTER.md)
+- **スクリプトカタログ**: [docs/guides/DATA_COLLECTION_SCRIPTS_CATALOG.md](docs/guides/DATA_COLLECTION_SCRIPTS_CATALOG.md)
+- **CSV方式詳細**: [docs/guides/CSV_DATA_COLLECTION_GUIDE.md](docs/guides/CSV_DATA_COLLECTION_GUIDE.md)
+- **競艇場独自データ**: [docs/guides/VENUE_SPECIFIC_DATA_COLLECTION.md](docs/guides/VENUE_SPECIFIC_DATA_COLLECTION.md)
 
 ## ディレクトリ構成
 

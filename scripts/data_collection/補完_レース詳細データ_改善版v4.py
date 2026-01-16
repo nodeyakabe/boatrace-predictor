@@ -11,11 +11,15 @@ ST time、actual_course、チルト角、展示タイム等を一括補完
 """
 import sys
 import io
+import os
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-sys.path.append('src')
+
+# プロジェクトルートをパスに追加
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, PROJECT_ROOT)
 
 import sqlite3
-from scraper.result_scraper import ResultScraper
+from src.scraper.result_scraper import ResultScraper
 from tqdm import tqdm
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed

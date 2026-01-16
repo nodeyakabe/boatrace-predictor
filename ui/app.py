@@ -241,7 +241,7 @@ def render_data_preparation_tab():
 
         if not is_job_running(JOB_TODAY_PREDICTION):
             if st.button("▶️ 実行", key="run_today_pred", type="primary", use_container_width=True):
-                script_path = os.path.join(PROJECT_ROOT, 'scripts', 'background_today_prediction.py')
+                script_path = os.path.join(PROJECT_ROOT, 'scripts', 'maintenance', 'background_today_prediction.py')
                 result = start_job(JOB_TODAY_PREDICTION, script_path)
                 if result['success']:
                     st.success("✅ 開始しました")
@@ -426,13 +426,36 @@ def render_data_reference_tab(target_date, selected_venues):
 
 def _render_race_results_section(target_date, selected_venues):
     """レース結果セクション - 予想との照合（信頼度・払戻金付き）"""
+
+    # タブで機能を分割
+    result_tab1, result_tab2 = st.tabs([
+        "🎯 購入対象・候補レースの分析",
+        "📋 全レース結果の照合"
+    ])
+
+    with result_tab1:
+        # 新しいパフォーマンス分析コンポーネント
+        from ui.components.bet_performance_analyzer import render_bet_performance_analyzer
+        render_bet_performance_analyzer()
+
+    with result_tab2:
+        _render_all_race_results(target_date, selected_venues)
+
+
+def _render_all_race_results(target_date, selected_venues):
+    """全レース結果の照合"""
     st.subheader("🏁 レース結果と予想の照合")
+
+    # デフォルトで当月の期間を設定
+    today = datetime.now().date()
+    default_start_date = today.replace(day=1)  # 当月1日
+    default_end_date = today  # 今日
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        start_date = st.date_input("開始日", target_date - timedelta(days=7), key="res_start")
+        start_date = st.date_input("開始日", default_start_date, key="res_start")
     with col2:
-        end_date = st.date_input("終了日", target_date, key="res_end")
+        end_date = st.date_input("終了日", default_end_date, key="res_end")
     with col3:
         prediction_type = st.selectbox("予想タイプ", ["advance", "before"], format_func=lambda x: "事前予想" if x == "advance" else "直前予想", key="pred_type")
 
@@ -537,9 +560,14 @@ def _render_race_results_section(target_date, selected_venues):
             # 結果の組み合わせから払戻金を取得（payoutsテーブルから直接取得）
             trifecta_payout = None
             if result_1st and result_2nd and result_3rd:
-                combination = f"{int(result_1st)}-{int(result_2nd)}-{int(result_3rd)}"
-                race_payouts = payout_dict.get(race_id, {})
-                trifecta_payout = race_payouts.get(combination)
+                # NaNチェック
+                if not (math.isnan(result_1st) or math.isnan(result_2nd) or math.isnan(result_3rd)):
+                    combination = f"{int(result_1st)}-{int(result_2nd)}-{int(result_3rd)}"
+                    race_payouts = payout_dict.get(race_id, {})
+                    trifecta_payout = race_payouts.get(combination)
+                else:
+                    combination = None
+                    trifecta_payout = None
 
             pred = pred_dict.get(race_id, (None, None, None, None, None))
             pred_1st, pred_2nd, pred_3rd, confidence, total_score = pred
@@ -577,12 +605,18 @@ def _render_race_results_section(target_date, selected_venues):
                 hit_12 = "-"
                 hit_123 = "-"
 
+            # NaNチェックを含む結果フォーマット
+            def format_result(val):
+                if val and not math.isnan(val):
+                    return str(int(val))
+                return '-'
+
             results_data.append({
                 '日付': row['race_date'],
                 '会場': venue_name,
                 'R': row['race_number'],
-                '結果': f"{int(result_1st) if result_1st else '-'}-{int(result_2nd) if result_2nd else '-'}-{int(result_3rd) if result_3rd else '-'}",
-                '予想': f"{int(pred_1st) if pred_1st else '-'}-{int(pred_2nd) if pred_2nd else '-'}-{int(pred_3rd) if pred_3rd else '-'}",
+                '結果': f"{format_result(result_1st)}-{format_result(result_2nd)}-{format_result(result_3rd)}",
+                '予想': f"{format_result(pred_1st)}-{format_result(pred_2nd)}-{format_result(pred_3rd)}",
                 '信頼度': conf_display,
                 '1着': hit_1,
                 '3連単': hit_123,

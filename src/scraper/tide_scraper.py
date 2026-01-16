@@ -13,12 +13,15 @@ class TideScraper:
 
     # ボートレース場と気象庁観測地点のマッピング
     VENUE_TO_STATION = {
-        '15': {'name': '児島', 'station': '宇野', 'station_id': '71'},       # 児島 → 宇野
-        '16': {'name': '鳴門', 'station': '小松島', 'station_id': '79'},     # 鳴門 → 小松島
-        '17': {'name': '丸亀', 'station': '高松', 'station_id': '74'},       # 丸亀 → 高松
-        '18': {'name': '宮島', 'station': '広島', 'station_id': '69'},       # 宮島 → 広島
-        '20': {'name': '下関', 'station': '関門', 'station_id': '66'},       # 下関 → 関門
+        '14': {'name': '鳴門', 'station': '小松島', 'station_id': '79'},     # 鳴門 → 小松島
+        '15': {'name': '丸亀', 'station': '高松', 'station_id': '74'},       # 丸亀 → 高松
+        '16': {'name': '児島', 'station': '宇野', 'station_id': '71'},       # 児島 → 宇野
+        '17': {'name': '宮島', 'station': '広島', 'station_id': '69'},       # 宮島 → 広島
+        '18': {'name': '徳山', 'station': '徳山', 'station_id': '67'},       # 徳山 → 徳山
+        '19': {'name': '下関', 'station': '関門', 'station_id': '66'},       # 下関 → 関門
+        '20': {'name': '若松', 'station': '博多', 'station_id': '61'},       # 若松 → 博多（近隣）
         '22': {'name': '福岡', 'station': '博多', 'station_id': '61'},       # 福岡 → 博多
+        '23': {'name': '唐津', 'station': '博多', 'station_id': '61'},       # 唐津 → 博多（近隣）
         '24': {'name': '大村', 'station': '長崎', 'station_id': '51'},       # 大村 → 長崎
     }
 

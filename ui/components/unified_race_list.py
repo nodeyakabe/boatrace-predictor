@@ -149,6 +149,7 @@ def _render_bet_targets():
     try:
         import sqlite3
         from config.settings import DATABASE_PATH, VENUES
+        from src.betting.multi_bet_generator import MultiBetPattern
 
         conn = sqlite3.connect(DATABASE_PATH)
         cursor = conn.cursor()
@@ -186,8 +187,14 @@ def _render_bet_targets():
             conn.close()
             return
 
-        # 評価器を初期化
-        evaluator = BetTargetEvaluator()
+        # 評価器を初期化（Discord通知と同じ設定）
+        evaluator = BetTargetEvaluator(
+            use_multi_bet=True,
+            multi_bet_pattern=MultiBetPattern.PATTERN_H,
+            enable_venue_wind_filter=True,
+            enable_venue_course_adjustment=True,
+            db_path=DATABASE_PATH
+        )
 
         # レースごとにデータをグループ化
         race_data_by_id = {}
@@ -329,9 +336,30 @@ def _render_bet_targets():
 
         # ステータス別に分類
         targets_advance = [t for t in bet_targets if t['target'].status == BetStatus.TARGET_ADVANCE]
-        candidates = [t for t in bet_targets if t['target'].status == BetStatus.CANDIDATE]
+        all_candidates = [t for t in bet_targets if t['target'].status == BetStatus.CANDIDATE]
         targets_confirmed = [t for t in bet_targets if t['target'].status == BetStatus.TARGET_CONFIRMED]
         excluded = [t for t in bet_targets if t['target'].status == BetStatus.EXCLUDED]
+
+        # 候補レースをフィルタリング（オッズが条件の80%以上のみ表示）
+        candidates = []
+        for t in all_candidates:
+            target = t['target']
+            # オッズ未取得の場合は候補に含める
+            if target.odds is None:
+                candidates.append(t)
+            else:
+                # オッズが判明している場合、条件の80%以上なら候補とする
+                odds_range_str = target.odds_range
+                try:
+                    # "20-30倍" から最小値を抽出
+                    min_odds = float(odds_range_str.split('-')[0])
+                    threshold = min_odds * 0.8
+
+                    if target.odds >= threshold:
+                        candidates.append(t)
+                except:
+                    # パース失敗時は候補に含める
+                    candidates.append(t)
 
         # 時間情報を付与して分類
         now = datetime.now()
@@ -394,8 +422,8 @@ def _render_bet_targets():
         if active_and_upcoming:
             # 複数点買い対応の賭け金計算
             def get_bet_amount(target):
-                if target.multi_bet_result and hasattr(target.multi_bet_result, 'total_bet_amount'):
-                    return target.multi_bet_result.total_bet_amount
+                if target.multi_bet_result and hasattr(target.multi_bet_result, 'total_investment'):
+                    return target.multi_bet_result.total_investment
                 return target.bet_amount
 
             total_bet = sum(get_bet_amount(t['target']) for t in active_and_upcoming)
@@ -596,76 +624,75 @@ def _render_race_card_enhanced(t: Dict, key_prefix: str, is_candidate: bool = Fa
         # パターンH等の複数点買い表示
         bet_lines = []
         for bet in multi_bet.bets:
-            bet_lines.append(f"<div style='display:flex; gap:8px; align-items:center; margin-bottom:4px;'>"
-                           f"<span style='font-family:monospace; font-weight:bold;'>{bet.combination}</span>"
-                           f"<span style='color:#666; font-size:0.85em;'>{bet.odds:.1f}倍</span>"
-                           f"<span style='font-weight:bold;'>¥{bet.bet_amount}</span>"
-                           f"</div>")
+            line = (
+                '<div style="display:flex; gap:8px; align-items:center; margin-bottom:4px;">'
+                '<span style="font-family:monospace; font-weight:bold;">' + bet.combination + '</span>'
+                '<span style="color:#666; font-size:0.85em;">' + f"{bet.odds:.1f}" + '倍</span>'
+                '<span style="font-weight:bold;">' + f"¥{bet.bet_amount}" + '</span>'
+                '</div>'
+            )
+            bet_lines.append(line)
         bet_html = "".join(bet_lines)
         total_bet = multi_bet.total_investment
-        multi_bet_badge = f"<span style='background:#1976d2;color:white;padding:2px 6px;border-radius:4px;font-size:0.7em;margin-left:8px;'>パターンH</span>"
+        multi_bet_badge = '<span style="background:#1976d2;color:white;padding:2px 6px;border-radius:4px;font-size:0.7em;margin-left:8px;">パターンH</span>'
+        odds_section = ""  # 複数点買いの場合はオッズセクション不要
     else:
         # 1点買い表示
-        bet_html = f"<span style='font-size: 1.4em; font-weight: bold; font-family: monospace;'>{target.combination}</span>"
+        bet_html = '<span style="font-size: 1.4em; font-weight: bold; font-family: monospace;">' + target.combination + '</span>'
         total_bet = target.bet_amount
         multi_bet_badge = ""
+        odds_section = '<div><span style="color: #666; font-size: 0.8em;">オッズ</span><br><span style="font-size: 1.1em; font-weight: bold;">' + odds_display + '</span></div>'
 
-    # カードHTML
-    st.markdown(f"""
-    <style>
-        @keyframes pulse {{
-            0% {{ box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.4); }}
-            70% {{ box-shadow: 0 0 0 10px rgba(229, 57, 53, 0); }}
-            100% {{ box-shadow: 0 0 0 0 rgba(229, 57, 53, 0); }}
-        }}
-    </style>
-    <div style="
-        background: {bg_gradient};
-        border-left: 5px solid {border_color};
-        border-radius: 10px;
-        padding: 16px;
-        margin-bottom: 12px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        {pulse_anim}
-    ">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
-            <div style="flex: 1;">
-                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                    <span style="font-size: 1.3em; font-weight: bold;">{t['venue_name']} {t['race_number']}R</span>
-                    {time_badge}
-                    <span style="
-                        background: {'#e53935' if t['has_beforeinfo'] else '#bdbdbd'};
-                        color: white;
-                        padding: 2px 6px;
-                        border-radius: 4px;
-                        font-size: 0.7em;
-                    ">{'直前済' if t['has_beforeinfo'] else '事前'}</span>
-                    {multi_bet_badge}
-                </div>
-                <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start;">
-                    <div>
-                        <span style="color: #666; font-size: 0.8em;">買い目{' (3点)' if has_multi_bet else ''}</span><br>
-                        {bet_html}
-                    </div>
-                    {'<div><span style="color: #666; font-size: 0.8em;">オッズ</span><br><span style="font-size: 1.1em; font-weight: bold;">' + odds_display + '</span></div>' if not has_multi_bet else ''}
-                    <div>
-                        <span style="color: #666; font-size: 0.8em;">{'投資計' if has_multi_bet else '賭け金'}</span><br>
-                        <span style="font-size: 1.1em; font-weight: bold;">¥{total_bet}</span>
-                    </div>
-                </div>
-            </div>
-            <div style="text-align: right; min-width: 100px;">
-                <div style="font-size: 0.8em; color: #666;">期待回収率</div>
-                <div style="font-size: 1.8em; font-weight: bold; color: {roi_color};">
-                    {roi_icon} {target.expected_roi:.0f}%
-                </div>
-                <div style="font-size: 0.75em; color: #888; margin-top: 4px;">
-                    {target.confidence}級 / 1コース{target.c1_rank}
-                </div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    # 条件分岐の値を事前に計算
+    beforeinfo_bg = '#e53935' if t['has_beforeinfo'] else '#bdbdbd'
+    beforeinfo_text = '直前済' if t['has_beforeinfo'] else '事前'
+    bet_label = '買い目 (3点)' if has_multi_bet else '買い目'
+    investment_label = '投資計' if has_multi_bet else '賭け金'
+    roi_value = f"{target.expected_roi:.0f}"
+
+    # カードHTML（完全な文字列連結で生成）
+    card_html = (
+        '<style>'
+        '@keyframes pulse {'
+        '0% { box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.4); }'
+        '70% { box-shadow: 0 0 0 10px rgba(229, 57, 53, 0); }'
+        '100% { box-shadow: 0 0 0 0 rgba(229, 57, 53, 0); }'
+        '}'
+        '</style>'
+        '<div style="background: ' + bg_gradient + '; border-left: 5px solid ' + border_color + '; border-radius: 10px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); ' + pulse_anim + '">'
+        '<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">'
+        '<div style="flex: 1;">'
+        '<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">'
+        '<span style="font-size: 1.3em; font-weight: bold;">' + t['venue_name'] + ' ' + str(t['race_number']) + 'R</span>'
+        + time_badge +
+        '<span style="background: ' + beforeinfo_bg + '; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7em;">' + beforeinfo_text + '</span>'
+        + multi_bet_badge +
+        '</div>'
+        '<div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start;">'
+        '<div>'
+        '<span style="color: #666; font-size: 0.8em;">' + bet_label + '</span><br>'
+        + bet_html +
+        '</div>'
+        + odds_section +
+        '<div>'
+        '<span style="color: #666; font-size: 0.8em;">' + investment_label + '</span><br>'
+        '<span style="font-size: 1.1em; font-weight: bold;">¥' + str(total_bet) + '</span>'
+        '</div>'
+        '</div>'
+        '</div>'
+        '<div style="text-align: right; min-width: 100px;">'
+        '<div style="font-size: 0.8em; color: #666;">期待回収率</div>'
+        '<div style="font-size: 1.8em; font-weight: bold; color: ' + roi_color + ';">'
+        + roi_icon + ' ' + roi_value + '%'
+        '</div>'
+        '<div style="font-size: 0.75em; color: #888; margin-top: 4px;">'
+        + target.confidence + '級 / 1コース' + target.c1_rank +
+        '</div>'
+        '</div>'
+        '</div>'
+        '</div>'
+    )
+    st.markdown(card_html, unsafe_allow_html=True)
 
     # 詳細ボタン
     col1, col2 = st.columns([4, 1])
@@ -727,7 +754,7 @@ def _render_race_card_compact(t: Dict, key_prefix: str):
         hit_combos = [bet.combination for bet in multi_bet.bets if bet.combination == actual_combo]
         is_hit = len(hit_combos) > 0
         bet_display = " / ".join([bet.combination for bet in multi_bet.bets])
-        bet_amount = multi_bet.total_bet_amount
+        bet_amount = multi_bet.total_investment
     else:
         is_hit = target.combination == actual_combo
         bet_display = target.combination
