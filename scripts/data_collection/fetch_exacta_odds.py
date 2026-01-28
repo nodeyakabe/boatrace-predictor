@@ -13,14 +13,16 @@ Seleniumを使用してJavaScriptで動的に生成されるオッズを取得�
 
 import sys
 import os
+
+# プロジェクトルートをパスに追加（最優先）
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, PROJECT_ROOT)
+
 import argparse
 import sqlite3
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 import time
-
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, PROJECT_ROOT)
 
 from config.settings import DATABASE_PATH
 

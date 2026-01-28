@@ -318,6 +318,7 @@ def _load_extended_score_weights():
             'start_timing': es.get('start_timing', 8),
             'exhibition': es.get('exhibition', 10),
             'tilt': es.get('tilt', 3),
+            'chikusen_time': es.get('chikusen_time', 4),  # 直線タイムスコア追加
             'recent_form': es.get('recent_form', 8),
             'venue_affinity': es.get('venue_affinity', 3),
             'place_rate': 5,  # YAMLにない場合のデフォルト
@@ -335,6 +336,7 @@ def _load_extended_score_weights():
             'start_timing': 10,
             'exhibition': 10,
             'tilt': 2,
+            'chikusen_time': 4,  # 直線タイムスコア追加
             'recent_form': 8,
             'venue_affinity': 8,
             'place_rate': 5,

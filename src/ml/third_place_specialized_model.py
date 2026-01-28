@@ -76,18 +76,24 @@ class ThirdPlaceSpecializedScorer:
 
     def _load_flow_stats(self, path: str) -> Optional[Dict]:
         """統計ファイルを読み込む"""
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                stats = json.load(f)
-            # キーを整数に変換
-            converted = {}
-            for winner_course, kimarite_data in stats.items():
-                converted[int(winner_course)] = kimarite_data
-            logger.info(f"決まり手統計を読み込みました: {path}")
-            return converted
-        except Exception as e:
-            logger.warning(f"統計ファイル読み込み失敗: {e}")
-            return None
+        # 複数のエンコーディングを試す
+        for encoding in ['utf-8', 'cp932', 'shift-jis']:
+            try:
+                with open(path, 'r', encoding=encoding) as f:
+                    stats = json.load(f)
+                # キーを整数に変換
+                converted = {}
+                for winner_course, kimarite_data in stats.items():
+                    converted[int(winner_course)] = kimarite_data
+                logger.info(f"決まり手統計を読み込みました ({encoding}): {path}")
+                return converted
+            except UnicodeDecodeError:
+                continue
+            except Exception as e:
+                logger.warning(f"統計ファイル読み込み失敗 ({encoding}): {e}")
+                return None
+        logger.warning(f"統計ファイル読み込み失敗: すべてのエンコーディングで失敗")
+        return None
 
     def calculate_third_scores(
         self,

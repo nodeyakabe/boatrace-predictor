@@ -1007,6 +1007,7 @@ class RacePredictor:
                     'start_timing': extended_score_detail.get('start_timing', {}),
                     'exhibition': extended_score_detail.get('exhibition', {}),  # 展示タイム（新規）
                     'tilt': extended_score_detail.get('tilt', {}),  # チルト角度（新規）
+                    'chikusen_time': extended_score_detail.get('chikusen_time', {}),  # 直線タイム（新規）
                     'recent_form': extended_score_detail.get('recent_form', {}),  # 直近成績（新規）
                     'venue_affinity': extended_score_detail.get('venue_affinity', {}),  # 会場別勝率（新規）
                     'place_rate': extended_score_detail.get('place_rate', {})  # 連対率（新規）

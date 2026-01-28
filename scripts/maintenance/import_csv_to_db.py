@@ -112,7 +112,7 @@ class CSVImporter:
                         race_id = race_result[0]
 
                         cursor.execute('''
-                            INSERT OR IGNORE INTO race_results
+                            INSERT OR IGNORE INTO results
                             (race_id, pit_number, finish_position, finish_time, start_timing)
                             VALUES (?, ?, ?, ?, ?)
                         ''', (
@@ -170,7 +170,7 @@ class CSVImporter:
                         race_id = race_result[0]
 
                         cursor.execute('''
-                            INSERT OR IGNORE INTO race_entries
+                            INSERT OR IGNORE INTO entries
                             (race_id, pit_number, racer_id, racer_name, racer_class, weight,
                              boat_no, motor_no, exhibition_time, national_win_rate, national_place_rate_2,
                              national_place_rate_3, local_win_rate, local_place_rate_2, local_place_rate_3)

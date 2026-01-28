@@ -1393,6 +1393,132 @@ class ExtendedScorer:
         finally:
             cursor.close()
 
+    def calculate_chikusen_time_score(
+        self,
+        race_id: int,
+        pit_number: int,
+        max_score: float = 4.0
+    ) -> Dict:
+        """
+        直線タイム（chikusen_time）に基づくスコアを計算
+
+        直線タイムは選手とモーターの伸び脚を示す重要な指標。
+        レース内での相対順位によってスコアを付与します。
+
+        Args:
+            race_id: レースID
+            pit_number: 枠番
+            max_score: 最大スコア（デフォルト: 4.0点）
+
+        Returns:
+            {'score': float, 'chikusen_time': float, 'rank': int,
+             'level': str, 'description': str}
+
+        スコアリング基準:
+            1位（最速）: max_score点
+            2-3位: max_score * 0.6点
+            4-5位: max_score * 0.3点
+            6位（最遅）: 0点
+            データなし: max_score * 0.5点（中立）
+        """
+        # batch_loaderからキャッシュを取得（高速化）
+        if self.batch_loader and hasattr(self.batch_loader, '_cache'):
+            race_details = self.batch_loader._cache.get('race_details', {}).get(race_id, {})
+            times_data = []
+            for pit, details in race_details.items():
+                chikusen_time = details.get('chikusen_time')
+                if chikusen_time is not None:
+                    times_data.append((pit, chikusen_time))
+
+            # 直線タイムでソート（昇順=速い順）
+            times_data.sort(key=lambda x: x[1])
+        else:
+            # フォールバック: 従来のDBクエリ
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+
+            try:
+                # 該当レースの全艇の直線タイムを取得
+                # exhibition_dataとrace_detailsの両方から取得を試みる
+                cursor.execute('''
+                    SELECT pit_number, chikusen_time
+                    FROM (
+                        -- exhibition_dataから取得（優先）
+                        SELECT pit_number, chikusen_time
+                        FROM exhibition_data
+                        WHERE race_id = ? AND chikusen_time IS NOT NULL
+
+                        UNION
+
+                        -- race_detailsから取得（フォールバック）
+                        SELECT pit_number, chikusen_time
+                        FROM race_details
+                        WHERE race_id = ? AND chikusen_time IS NOT NULL
+                    )
+                    ORDER BY chikusen_time ASC
+                ''', (race_id, race_id))
+
+                times_data = cursor.fetchall()
+            finally:
+                cursor.close()
+
+        # データなしチェック
+        if not times_data or len(times_data) == 0:
+            # データなしの場合は中立点
+            return {
+                'score': max_score * 0.5,
+                'chikusen_time': None,
+                'rank': None,
+                'level': 'unknown',
+                'description': '直線タイムデータなし'
+            }
+
+        # 対象艇のデータを探す
+        target_time = None
+        target_rank = None
+
+        for rank, (pit, time) in enumerate(times_data, start=1):
+            if pit == pit_number:
+                target_time = time
+                target_rank = rank
+                break
+
+        if target_time is None:
+            # 対象艇のデータなし
+            return {
+                'score': max_score * 0.5,
+                'chikusen_time': None,
+                'rank': None,
+                'level': 'unknown',
+                'description': '直線タイムデータなし'
+            }
+
+        # 順位に基づくスコアリング
+        if target_rank == 1:
+            score = max_score  # 1位（最速）: 満点
+            level = 'excellent'
+            desc = f'直線タイム{target_time:.2f}秒（1位/最速）'
+        elif target_rank in [2, 3]:
+            score = max_score * 0.6  # 2-3位: 60%
+            level = 'good'
+            desc = f'直線タイム{target_time:.2f}秒（{target_rank}位/良好）'
+        elif target_rank in [4, 5]:
+            score = max_score * 0.3  # 4-5位: 30%
+            level = 'average'
+            desc = f'直線タイム{target_time:.2f}秒（{target_rank}位/普通）'
+        else:  # 6位
+            score = 0.0  # 6位（最遅）: 0点
+            level = 'poor'
+            desc = f'直線タイム{target_time:.2f}秒（6位/不調）'
+
+        return {
+            'score': round(score, 2),
+            'chikusen_time': round(target_time, 2),
+            'rank': target_rank,
+            'level': level,
+            'description': desc
+        }
+
     def calculate_recent_form_score(
         self,
         racer_number: str,
@@ -1502,88 +1628,108 @@ class ExtendedScorer:
         racer_number: str,
         venue_code: str,
         race_date: str,
-        max_score: float = 6.0
+        max_score: float = 6.0,
+        local_win_rate: float = None,
+        national_win_rate: float = None
     ) -> Dict:
         """
-        会場別成績（地元/得意水面）に基づくスコアを計算
+        会場相性スコアを計算（当地勝率 - 全国勝率）
 
-        選手によっては特定の会場で高い勝率を持つ。
-        地元選手や得意水面を持つ選手を評価する。
+        選手の全国勝率と当地勝率の差分から会場相性を評価します。
+        entriesテーブルのlocal_win_rate/win_rateを直接使用することで、
+        より正確な相性評価が可能です。
 
         Args:
             racer_number: 選手番号
             venue_code: 会場コード
             race_date: 対象日付
-            max_score: 最大スコア
+            max_score: 最大スコア（デフォルト: 6.0点）
+            local_win_rate: 当地勝率（%、entries.local_win_rateから渡される場合）
+            national_win_rate: 全国勝率（%、entries.win_rateから渡される場合）
 
         Returns:
-            {'score': float, 'venue_win_rate': float, 'venue_races': int,
-             'is_local': bool, 'description': str}
+            {'score': float, 'affinity_diff': float, 'local_win_rate': float,
+             'national_win_rate': float, 'affinity_level': str, 'description': str}
+
+        スコアリング基準:
+            +5.0pt以上: 得意会場 → +3点
+            +2.0-5.0pt: やや得意 → +1点
+            -2.0-+2.0pt: 標準 → 中立点（max_score * 0.5）
+            -5.0--2.0pt: やや苦手 → -1点
+            -5.0pt以下: 苦手会場 → -3点
         """
         conn = get_connection(self.db_path)
         cursor = conn.cursor()
 
         try:
-            # racer_venue_featuresから会場別成績を取得
-            cursor.execute('''
-                SELECT venue_win_rate, venue_avg_rank, venue_races
-                FROM racer_venue_features
-                WHERE racer_number = ? AND venue_code = ? AND race_date <= ?
-                ORDER BY race_date DESC
-                LIMIT 1
-            ''', (racer_number, venue_code, race_date))
+            # パラメータで渡されていない場合はDBから取得
+            if local_win_rate is None or national_win_rate is None:
+                # 最新のentries情報から取得
+                cursor.execute('''
+                    SELECT e.local_win_rate, e.win_rate
+                    FROM entries e
+                    JOIN races r ON e.race_id = r.id
+                    WHERE e.racer_number = ?
+                      AND r.venue_code = ?
+                      AND r.race_date <= ?
+                      AND e.local_win_rate IS NOT NULL
+                      AND e.win_rate IS NOT NULL
+                    ORDER BY r.race_date DESC
+                    LIMIT 1
+                ''', (racer_number, venue_code, race_date))
 
-            row = cursor.fetchone()
+                row = cursor.fetchone()
 
-            if not row or row[2] < 5:  # 5レース未満はデータ不足
-                return {
-                    'score': max_score * 0.5,
-                    'venue_win_rate': None,
-                    'venue_avg_rank': None,
-                    'venue_races': row[2] if row else 0,
-                    'is_local': False,
-                    'description': '会場別データ不足'
-                }
+                if not row:
+                    # データなしの場合は中立点
+                    return {
+                        'score': max_score * 0.5,
+                        'affinity_diff': 0.0,
+                        'local_win_rate': None,
+                        'national_win_rate': None,
+                        'affinity_level': 'unknown',
+                        'description': '会場相性データなし'
+                    }
 
-            venue_win_rate, venue_avg_rank, venue_races = row
+                local_win_rate, national_win_rate = row
 
-            # 全国平均勝率（16.7%）との比較でスコア計算
-            national_avg_win_rate = 0.167
-            win_rate_ratio = venue_win_rate / national_avg_win_rate if national_avg_win_rate > 0 else 1.0
+            # 会場相性差を計算（pt単位）
+            affinity_diff = local_win_rate - national_win_rate
 
-            # 勝率が全国平均の2倍（33%）以上なら満点、半分（8%）以下なら0点
-            if win_rate_ratio >= 2.0:
-                score = max_score
-            elif win_rate_ratio <= 0.5:
-                score = 0
+            # スコアリング（5段階評価）
+            if affinity_diff >= 5.0:
+                # 得意会場: +3点
+                score = max_score * 0.5 + 3.0
+                affinity_level = 'excellent'
+                desc = f'得意水面（+{affinity_diff:.1f}pt）'
+            elif affinity_diff >= 2.0:
+                # やや得意: +1点
+                score = max_score * 0.5 + 1.0
+                affinity_level = 'good'
+                desc = f'やや得意（+{affinity_diff:.1f}pt）'
+            elif affinity_diff >= -2.0:
+                # 標準: 中立点
+                score = max_score * 0.5
+                affinity_level = 'average'
+                sign = '+' if affinity_diff >= 0 else ''
+                desc = f'標準相性（{sign}{affinity_diff:.1f}pt）'
+            elif affinity_diff >= -5.0:
+                # やや苦手: -1点
+                score = max_score * 0.5 - 1.0
+                affinity_level = 'poor'
+                desc = f'やや苦手（{affinity_diff:.1f}pt）'
             else:
-                # 線形補間
-                score = max_score * (win_rate_ratio - 0.5) / 1.5
-
-            # データ量によるボーナス
-            if venue_races >= 30:
-                score = min(max_score, score * 1.1)  # 十分なサンプル数
-            elif venue_races < 10:
-                score *= 0.9  # サンプル数不足で減点
-
-            # 得意/不得意判定
-            is_strong = venue_win_rate > national_avg_win_rate * 1.5  # 1.5倍以上
-            is_weak = venue_win_rate < national_avg_win_rate * 0.7  # 0.7倍以下
-
-            # 説明文
-            if is_strong:
-                desc = f'得意水面（当地勝率{venue_win_rate*100:.1f}%, {venue_races}走）'
-            elif is_weak:
-                desc = f'苦手水面（当地勝率{venue_win_rate*100:.1f}%, {venue_races}走）'
-            else:
-                desc = f'当地勝率{venue_win_rate*100:.1f}%（{venue_races}走）'
+                # 苦手会場: -3点
+                score = max_score * 0.5 - 3.0
+                affinity_level = 'very_poor'
+                desc = f'苦手水面（{affinity_diff:.1f}pt）'
 
             return {
-                'score': round(max(0, min(max_score, score)), 2),
-                'venue_win_rate': round(venue_win_rate * 100, 1),
-                'venue_avg_rank': round(venue_avg_rank, 2) if venue_avg_rank else None,
-                'venue_races': venue_races,
-                'is_strong': is_strong,
+                'score': round(max(0, min(max_score * 1.5, score)), 2),  # 範囲: 0 ~ max_score*1.5
+                'affinity_diff': round(affinity_diff, 2),
+                'local_win_rate': round(local_win_rate, 1),
+                'national_win_rate': round(national_win_rate, 1),
+                'affinity_level': affinity_level,
                 'description': desc
             }
 
@@ -1786,74 +1932,6 @@ class ExtendedScorer:
         Returns:
             総合スコアと各要素の詳細
         """
-        # TEMPORARY BYPASS: DBアクセスを全てスキップしてデフォルト値を返す
-        pit_number = entry.get('pit_number')
-        weights = EXTENDED_SCORE_WEIGHTS
-
-        # 最小限の計算のみ
-        class_result = self.calculate_class_score(entry.get('racer_rank'), max_score=float(weights.get('class', 10)))
-        fl_result = self.calculate_fl_penalty(entry.get('f_count', 0), entry.get('l_count', 0))
-        st_result = self.calculate_start_timing_score(entry.get('avg_st'), pit_number, max_score=float(weights.get('start_timing', 10)))
-
-        # 転覆ペナルティ計算（フラグが有効な場合のみ）
-        capsizing_result = {'penalty': 0.0, 'capsizing_count': 0, 'days_since_last': None, 'risk_level': 'none', 'description': '転覆履歴なし'}
-        if is_feature_enabled('motor_capsizing_penalty') and entry.get('motor_number'):
-            capsizing_result = self.calculate_motor_capsizing_penalty(
-                entry.get('motor_number'),
-                venue_code,
-                target_date
-            )
-
-        # 逃げ率スコア計算（フラグが有効な場合のみ、1コース艇のみ）
-        escape_rate_result = {'score': 0.0, 'escape_rate': None, 'is_local': False, 'races_count': 0, 'level': 'not_applicable', 'description': '逃げ率スコア無効'}
-        if is_feature_enabled('escape_rate_scoring'):
-            escape_rate_result = self.calculate_escape_rate_score(
-                entry.get('racer_number'),
-                pit_number,
-                venue_code
-            )
-
-        # 会場攻撃率スコア計算（フラグが有効な場合のみ、2-5コース艇のみ）
-        venue_attack_result = {'score': 0.0, 'makuri_rate': None, 'sashi_rate': None, 'attack_type': None, 'venue_level': 'not_applicable', 'description': '会場攻撃率スコア無効'}
-        if is_feature_enabled('venue_attack_scoring'):
-            venue_attack_result = self.calculate_venue_attack_score(
-                pit_number,
-                venue_code
-            )
-
-        # 全てのDBアクセスメソッドをデフォルト値に置き換え
-        total_score = (
-            class_result['score'] + fl_result['penalty'] + st_result['score'] +
-            capsizing_result['penalty'] +  # 転覆ペナルティを追加
-            escape_rate_result['score'] +  # 逃げ率スコアを追加（1コースのみ有効）
-            venue_attack_result['score'] +  # 会場攻撃率スコアを追加（2-5コースのみ有効）
-            2.5 + 2.5 + 2.5 + 2.5 + 2.5 + 4.0 + 1.0 + 4.0 + 3.0 + 2.5
-        )
-
-        return {
-            'total_extended_score': total_score,
-            'max_possible_score': sum(v for k, v in weights.items() if k != 'fl_penalty') + 3.0 + 2.0,  # 逃げ率+3.0, 会場攻撃率+2.0
-            'weights_used': weights,
-            'class': class_result,
-            'fl_penalty': fl_result,
-            'capsizing_penalty': capsizing_result,  # 転覆ペナルティを追加
-            'escape_rate': escape_rate_result,  # 逃げ率スコアを追加
-            'venue_attack': venue_attack_result,  # 会場攻撃率スコアを追加
-            'session': {'score': 2.5, 'description': 'バイパス中'},
-            'prev_race': {'score': 2.5, 'description': 'バイパス中'},
-            'course_entry': {'score': 2.5, 'description': 'バイパス中'},
-            'matchup': {'relative_score': 2.5},
-            'motor': {'score': 2.5, 'description': 'バイパス中'},
-            'start_timing': st_result,
-            'exhibition': {'score': 4.0, 'description': 'バイパス中'},
-            'tilt': {'score': 1.0, 'description': 'バイパス中'},
-            'recent_form': {'score': 4.0, 'description': 'バイパス中'},
-            'venue_affinity': {'score': 3.0, 'description': 'バイパス中'},
-            'place_rate': {'score': 2.5, 'description': 'バイパス中'},
-            'course_prediction': {'predicted_course': pit_number, 'confidence': 0.5, 'description': 'バイパス中'}
-        }
-
-        # ORIGINAL CODE BELOW - TEMPORARILY BYPASSED
         pit_number = entry.get('pit_number')
         racer_number = entry.get('racer_number')
 
@@ -1943,12 +2021,14 @@ class ExtendedScorer:
             max_score=float(weights.get('recent_form', 8))
         )
 
-        # 12. 会場別勝率スコア (設定: venue_affinity) - 強化
+        # 12. 会場相性スコア (設定: venue_affinity) - local_win_rate活用に改善
         venue_affinity_result = self.calculate_venue_affinity_score(
             racer_number,
             venue_code,
             target_date,
-            max_score=float(weights.get('venue_affinity', 8))  # 6→8に強化
+            max_score=float(weights.get('venue_affinity', 0.0)),  # 6→8に強化
+            local_win_rate=entry.get('local_win_rate'),  # entriesから直接取得
+            national_win_rate=entry.get('win_rate')  # entriesから直接取得
         )
 
         # 13. 連対率スコア (設定: place_rate)
@@ -1958,7 +2038,14 @@ class ExtendedScorer:
             max_score=float(weights.get('place_rate', 5))
         )
 
-        # 14. 転覆ペナルティ（フラグが有効な場合のみ）
+        # 14. 直線タイムスコア (設定: chikusen_time)
+        chikusen_time_result = self.calculate_chikusen_time_score(
+            race_id,
+            pit_number,
+            max_score=float(weights.get('chikusen_time', 4))
+        )
+
+        # 15. 転覆ペナルティ（フラグが有効な場合のみ）
         capsizing_result = {'penalty': 0.0, 'capsizing_count': 0, 'days_since_last': None, 'risk_level': 'none', 'description': '転覆履歴なし'}
         if is_feature_enabled('motor_capsizing_penalty') and entry.get('motor_number'):
             capsizing_result = self.calculate_motor_capsizing_penalty(
@@ -1966,6 +2053,13 @@ class ExtendedScorer:
                 venue_code,
                 target_date
             )
+
+        # 16. モーター2連対率スコア
+        motor_second_rate = entry.get('motor_second_rate')
+        motor_second_rate_result = self.calculate_motor_second_rate_score(
+            motor_second_rate,
+            max_score=0.0
+        )
 
         # 総合スコア計算
         # 各スコアを合算
@@ -1981,9 +2075,11 @@ class ExtendedScorer:
             st_result['score'] +
             exhibition_result['score'] +
             tilt_result['score'] +
+            chikusen_time_result['score'] +  # 直線タイムスコアを追加
             recent_form_result['score'] +
             venue_affinity_result['score'] +
-            place_rate_result['score']
+            place_rate_result['score'] +
+            motor_second_rate_result['score']  # モーター2連対率スコアを追加
         )
 
         # 最大可能スコアを計算（正規化用）
@@ -2015,10 +2111,81 @@ class ExtendedScorer:
             },
             'matchup': matchup_result,
             'motor': motor_result,
+            'motor_second_rate': motor_second_rate_result,
             'start_timing': st_result,
             'exhibition': exhibition_result,
             'tilt': tilt_result,
+            'chikusen_time': chikusen_time_result,  # 直線タイムスコアを追加
             'recent_form': recent_form_result,
             'venue_affinity': venue_affinity_result,
             'place_rate': place_rate_result
+        }
+
+    def calculate_motor_second_rate_score(
+        self,
+        motor_second_rate: float,
+        max_score: float = 5.0
+    ) -> Dict:
+        """
+        モーター2連対率スコアを計算
+
+        Args:
+            motor_second_rate: モーター2連対率（0.0-100.0）
+            max_score: 最大スコア（デフォルト5.0点）
+
+        Returns:
+            {
+                'score': float,              # スコア（-2.0 〜 +5.0）
+                'motor_second_rate': float,  # モーター2連対率
+                'level': str,                # excellent/good/average/poor/very_poor
+                'description': str
+            }
+        """
+        if motor_second_rate is None:
+            return {
+                'score': 0.0,
+                'motor_second_rate': None,
+                'level': 'unknown',
+                'description': 'モーター2連対率データなし'
+            }
+
+        # モーター2連対率の基準
+        # 全国平均: 約40-45%
+        # 優秀: 50%以上
+        # 良好: 45-50%
+        # 平均: 35-45%
+        # 低い: 30-35%
+        # 非常に低い: 30%未満
+
+        if motor_second_rate >= 50.0:
+            # 優秀なモーター（50%以上）
+            score = max_score  # +5.0点
+            level = 'excellent'
+            description = f'優秀モーター({motor_second_rate:.1f}%)'
+        elif motor_second_rate >= 45.0:
+            # 良好なモーター（45-50%）
+            score = max_score * 0.6  # +3.0点
+            level = 'good'
+            description = f'良好モーター({motor_second_rate:.1f}%)'
+        elif motor_second_rate >= 35.0:
+            # 平均的なモーター（35-45%）
+            score = 0.0
+            level = 'average'
+            description = f'平均モーター({motor_second_rate:.1f}%)'
+        elif motor_second_rate >= 30.0:
+            # 低成績モーター（30-35%）
+            score = -1.0
+            level = 'poor'
+            description = f'低成績モーター({motor_second_rate:.1f}%)'
+        else:
+            # 非常に低成績モーター（30%未満）
+            score = -2.0
+            level = 'very_poor'
+            description = f'非常に低成績モーター({motor_second_rate:.1f}%)'
+
+        return {
+            'score': score,
+            'motor_second_rate': motor_second_rate,
+            'level': level,
+            'description': description
         }

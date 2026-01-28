@@ -102,10 +102,10 @@ def get_todays_target_and_candidates(db_path: str) -> tuple:
                 venue_name = venue_map.get(venue_code_str, f'会場{venue_code}')
 
                 # 買い目を整形（パターンH対応）
-                if bet_target.multi_bet_result and bet_target.multi_bet_result.combinations:
-                    # パターンH（3点買い）
-                    combinations = ['-'.join(map(str, combo)) for combo in bet_target.multi_bet_result.combinations]
-                    combination_str = ', '.join(combinations)
+                if bet_target.multi_bet_result and bet_target.multi_bet_result.bets:
+                    # パターンH（3点買い）- betsから各買い目を抽出
+                    combinations = [bet.combination for bet in bet_target.multi_bet_result.bets]
+                    combination_str = f"{len(combinations)}点買い: " + ', '.join(combinations)
                 else:
                     # 1点買い
                     combination_str = bet_target.combination

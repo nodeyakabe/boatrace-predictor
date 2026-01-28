@@ -150,6 +150,22 @@ CONDITIONS = [
         'description': 'B×10-30倍×穴源(bias<-0.3)×会場',
         'use_pattern_h': False,  # 1点買い（低オッズ帯）
     },
+    # 【2026-01-26検証→不採用】B×10-30倍×穴源×会場+モーター2連対率
+    # 連帯率分析で発見: モーター好調（2連対率40%以上）で改善
+    # 検証結果: 27件, ROI 214.1%, +3,080円, 黒字3/6年（採用基準4/6年未達）
+    # 不採用理由: サンプル数27件（過少）、元条件より収支-1,840円悪化
+    # {
+    #     'name': 'B×10-30×穴源×会場+Motor40%',
+    #     'confidence': 'B',
+    #     'c1_rank': ['A1', 'A2', 'B1'],
+    #     'odds_min': 10,
+    #     'odds_max': 30,
+    #     'venue_filter': [6, 7, 8, 10, 15, 19],
+    #     'bias_max': -0.3,
+    #     'p1_motor_second_rate_min': 40,
+    #     'description': 'B×10-30倍×穴源×会場+モーター2連対率40%+（不採用）',
+    #     'use_pattern_h': False,
+    # },
     # 【2026-01-13検証→不採用】B×A1×会場限定
     # 検証結果: 341件, ROI 65.9%, -11,620円（全年赤字）
     # 不採用理由: 分析時の計算ミス（1-2-3固定オッズで計算していた）
@@ -359,6 +375,16 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
         """
         bias_clause = f"AND pbs.bias_index IS NOT NULL AND pbs.bias_index < {cond['bias_max']} "
 
+    # モーター連帯率フィルター（2026-01-26追加）
+    motor_rate_join = ""
+    motor_rate_clause = ""
+    if cond.get('p1_motor_second_rate_min') is not None:
+        # 1着予測の選手のモーター2連対率をチェック
+        motor_rate_join = """
+        LEFT JOIN entries e_motor ON r.id = e_motor.race_id AND e_motor.pit_number = rp1.pit_number
+        """
+        motor_rate_clause = f"AND e_motor.motor_second_rate >= {cond['p1_motor_second_rate_min']} "
+
     if use_pattern_h:
         # パターンH: 3点買い（1-2-3: 200円, 1-2-4: 100円, 1-2-5: 100円）
         query = f'''
@@ -384,6 +410,7 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
             JOIN entries e1 ON r.id = e1.race_id AND e1.pit_number = 1
             {escape_rate_join}
             {bias_join}
+            {motor_rate_join}
             WHERE rp.rank_prediction = 1
             AND rp.confidence = '{cond["confidence"]}'
             AND e1.racer_rank IN ('{c1_rank_str}')
@@ -398,6 +425,7 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
             {month_exclude_clause}
             {escape_rate_clause}
             {bias_clause}
+            {motor_rate_clause}
         ),
         race_with_results AS (
             SELECT
@@ -486,6 +514,7 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
             JOIN entries e1 ON r.id = e1.race_id AND e1.pit_number = 1
             {escape_rate_join}
             {bias_join}
+            {motor_rate_join}
             WHERE rp.rank_prediction = 1
             AND rp.confidence = '{cond["confidence"]}'
             AND e1.racer_rank IN ('{c1_rank_str}')
@@ -500,6 +529,7 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
             {month_exclude_clause}
             {escape_rate_clause}
             {bias_clause}
+            {motor_rate_clause}
         ),
         race_bets AS (
             SELECT

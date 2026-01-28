@@ -27,8 +27,8 @@ import logging
 # Windows環境での文字化け対策
 if sys.platform == 'win32' and hasattr(sys.stdout, 'buffer'):
     import codecs
-    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
-    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'replace')
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'replace')
 
 # プロジェクトルートをパスに追加
 project_root = Path(__file__).resolve().parents[2]
@@ -158,9 +158,11 @@ def collect_previous_day_tenji(headless=True, update_existing=True):
     db_path = project_root / 'data' / 'boatrace.db'
 
     try:
-        save_tenji_data(temp_json, db_path, update_existing=update_existing)
+        save_tenji_data(str(temp_json), str(db_path), update_existing=update_existing)
     except Exception as e:
         logger.error(f"DB保存エラー: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return 0
 
     # 永久保存用にコピー

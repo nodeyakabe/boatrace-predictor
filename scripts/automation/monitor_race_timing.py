@@ -317,6 +317,12 @@ class RaceMonitor:
             try:
                 cursor = conn.cursor()
 
+                # レースデータを再取得（気象条件更新のため、2026-01-28追加）
+                race_data = self._get_race_data(cursor, race_id)
+                if not race_data:
+                    print(f"[WARNING] レースデータ取得失敗: {race_id}")
+                    return
+
                 # 直前予測データを取得
                 predictions = self._get_predictions_with_beforeinfo(cursor, race_id)
                 if not predictions:
@@ -325,9 +331,9 @@ class RaceMonitor:
                 # オッズデータを再取得
                 odds_data = self._get_odds_data(cursor, race_id, predictions)
 
-                # 購入判定を再評価（has_beforeinfo=True）
+                # 購入判定を再評価（has_beforeinfo=True、最新のrace_dataを使用）
                 bet_target = self.bet_evaluator.evaluate_race(
-                    race_data=race['race_data'],
+                    race_data=race_data,
                     predictions=predictions,
                     odds_data=odds_data,
                     has_beforeinfo=True
@@ -425,23 +431,34 @@ class RaceMonitor:
             }
 
             # 予想情報整形（BetTargetから取得）
-            # 複数点買いの場合はmulti_bet_resultから取得
-            if bet_target.multi_bet_result and bet_target.multi_bet_result.combinations:
-                # パターンH（3点買い）
-                pit_numbers = bet_target.multi_bet_result.combinations
+            # pit_numbersは常にリストのリスト形式に統一（2026-01-28修正）
+            if bet_target.multi_bet_result and bet_target.multi_bet_result.bets:
+                # パターンH（3点買い）- betsから各買い目を抽出
+                pit_numbers = [[int(x) for x in bet.combination.split('-')] for bet in bet_target.multi_bet_result.bets]
             else:
-                # 1点買い
-                pit_numbers = [int(x) for x in bet_target.combination.split('-')]
+                # 1点買いの場合もリストのリスト形式に統一
+                pit_numbers = [[int(x) for x in bet_target.combination.split('-')]]
 
             prediction = {
                 'pit_numbers': pit_numbers,
                 'confidence': float(bet_target.confidence) if isinstance(bet_target.confidence, str) and bet_target.confidence in ['A', 'B', 'C', 'D'] else 0.7
             }
 
-            # オッズ情報整形
-            odds_info = {
-                'trifecta_odds': bet_target.odds if bet_target.odds else 10.0,
-            }
+            # オッズ情報整形（2026-01-28修正: パターンH対応）
+            if bet_target.multi_bet_result and bet_target.multi_bet_result.bets:
+                # パターンH（3点買い）- 全買い目のオッズを含める
+                odds_info = {
+                    'trifecta_odds': bet_target.odds if bet_target.odds else 10.0,
+                    'multi_bets': [
+                        {'combination': bet.combination, 'odds': bet.odds}
+                        for bet in bet_target.multi_bet_result.bets
+                    ]
+                }
+            else:
+                # 1点買い
+                odds_info = {
+                    'trifecta_odds': bet_target.odds if bet_target.odds else 10.0,
+                }
 
             # 直前情報があれば取得
             direct_info = None
@@ -539,8 +556,8 @@ def main():
         bet_target = race['bet_target']
 
         # 買い目情報
-        if bet_target.multi_bet_result and bet_target.multi_bet_result.combinations:
-            bet_info = f"{len(bet_target.multi_bet_result.combinations)}点買い"
+        if bet_target.multi_bet_result and bet_target.multi_bet_result.bets:
+            bet_info = f"{len(bet_target.multi_bet_result.bets)}点買い"
         else:
             bet_info = "1点買い"
 

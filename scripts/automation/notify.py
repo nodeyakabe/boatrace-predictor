@@ -110,24 +110,30 @@ def format_race_notification(
     race_num = race_info['race_number']
     deadline = race_info['deadline']
 
-    # 予想情報
+    # 予想情報（pit_numbersは常にリストのリスト形式: [[1,2,3]] or [[1,2,3],[1,2,4],[1,2,5]]）
     pit_numbers = prediction['pit_numbers']
 
-    # 複数の買い目がある場合（パターンH）
-    if isinstance(pit_numbers, list) and len(pit_numbers) > 0 and isinstance(pit_numbers[0], list):
+    # pit_numbersをリストのリスト形式に統一（2026-01-28修正）
+    if not isinstance(pit_numbers[0], list):
+        # 旧形式（リスト）の場合は変換
+        pit_numbers = [pit_numbers]
+
+    # 買い目を整形
+    combinations = ['-'.join(map(str, combo)) for combo in pit_numbers]
+
+    if len(combinations) > 1:
         # 複数点買い
-        combinations = ['-'.join(map(str, combo)) for combo in pit_numbers]
         combination_str = '\n  '.join(combinations)
         bet_info = f"{len(combinations)}点買い\n  {combination_str}"
     else:
         # 1点買い
-        combination = '-'.join(map(str, pit_numbers))
-        bet_info = f"{combination}"
+        bet_info = f"{combinations[0]}"
 
     confidence = prediction['confidence']
 
-    # オッズ情報
+    # オッズ情報（2026-01-28修正: パターンH対応）
     odds = odds_info['trifecta_odds']
+    multi_bets = odds_info.get('multi_bets', None)
 
     # メッセージ組み立て
     message = f"""================================
@@ -141,8 +147,14 @@ def format_race_notification(
 信頼度: {confidence:.1%}
 
 【オッズ】
-3連単: {odds:.1f}倍
 """
+
+    # パターンHの場合は全買い目のオッズを表示
+    if multi_bets and len(multi_bets) > 1:
+        for bet in multi_bets:
+            message += f"{bet['combination']}: {bet['odds']:.1f}倍\n"
+    else:
+        message += f"3連単: {odds:.1f}倍\n"
 
     # 直前情報があれば追加
     if direct_info:

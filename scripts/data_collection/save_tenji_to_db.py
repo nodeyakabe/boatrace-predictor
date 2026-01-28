@@ -22,8 +22,8 @@ from datetime import datetime
 # Windows環境での文字化け対策
 if sys.platform == 'win32' and hasattr(sys.stdout, 'buffer'):
     import codecs
-    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
-    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'replace')
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'replace')
 
 # プロジェクトルートをパスに追加
 project_root = Path(__file__).resolve().parents[2]
@@ -118,11 +118,13 @@ def save_tenji_data(json_file_path, db_path, update_existing=False):
         print("データが空です")
         return 0
 
-    print(f"{'='*80}")
+    separator = "=" * 80
+    print(separator)
     print(f"オリジナル展示データ DB保存")
     print(f"JSONファイル: {json_file_path}")
     print(f"データ件数: {len(data)}レース")
-    print(f"{'='*80}\n")
+    print(separator)
+    print()
 
     # DB接続
     conn = sqlite3.connect(db_path)
@@ -199,12 +201,13 @@ def save_tenji_data(json_file_path, db_path, update_existing=False):
             conn.commit()
             print(f"  ✓ 保存完了: {len(racers)}艇")
 
-        print(f"\n{'='*80}")
+        print()
+        print(separator)
         print(f"保存完了")
         print(f"  新規保存: {saved_count}件")
         print(f"  更新: {updated_count}件")
         print(f"  スキップ: {skipped_count}件")
-        print(f"{'='*80}")
+        print(separator)
 
         return saved_count + updated_count
 

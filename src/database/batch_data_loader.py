@@ -70,13 +70,13 @@ class BatchDataLoader:
         self._load_boat_stats_batch(target_date)
         self._load_motor_recent_form_batch(target_date)
 
-        # ExtendedScorer用の追加データ（一時的に無効化 - 最適化が必要）
-        # self._load_race_details_batch(target_date)
-        # self._load_racer_features_batch(target_date)
-        # self._load_racer_venue_features_batch(target_date)
-        # self._load_course_entry_tendency_batch(target_date)
-        # self._load_session_performance_batch(target_date)
-        # self._load_previous_race_batch(target_date)
+        # Phase 2: ExtendedScorer用の追加データ（Phase 2で有効化）
+        self._load_race_details_batch(target_date)
+        self._load_racer_features_batch(target_date)
+        self._load_racer_venue_features_batch(target_date)
+        self._load_course_entry_tendency_batch(target_date)
+        self._load_session_performance_batch(target_date)
+        self._load_previous_race_batch(target_date)
 
         self._cache_loaded = True
         print(f"[BatchDataLoader] データ取得完了")
@@ -124,6 +124,9 @@ class BatchDataLoader:
                 e.racer_name,
                 e.motor_number,
                 e.boat_number,
+                e.motor_second_rate,
+                e.local_win_rate,
+                e.win_rate,
                 rd.actual_course
             FROM entries e
             LEFT JOIN race_details rd ON e.race_id = rd.race_id AND e.pit_number = rd.pit_number
@@ -143,6 +146,9 @@ class BatchDataLoader:
                 'racer_name': row['racer_name'],
                 'motor_number': row['motor_number'],
                 'boat_number': row['boat_number'],
+                'motor_second_rate': row['motor_second_rate'],
+                'local_win_rate': row['local_win_rate'],
+                'win_rate': row['win_rate'],
                 'actual_course': row['actual_course']
             })
 
@@ -952,7 +958,8 @@ class BatchDataLoader:
                 rd.exhibition_time,
                 rd.tilt_angle,
                 rd.st_time,
-                rd.actual_course
+                rd.actual_course,
+                rd.chikusen_time
             FROM race_details rd
             JOIN races r ON rd.race_id = r.id
             WHERE r.race_date = ?
@@ -966,8 +973,36 @@ class BatchDataLoader:
                 'exhibition_time': row['exhibition_time'],
                 'tilt_angle': row['tilt_angle'],
                 'st_time': row['st_time'],
-                'actual_course': row['actual_course']
+                'actual_course': row['actual_course'],
+                'chikusen_time': row['chikusen_time']
             }
+
+        # exhibition_dataテーブルからもchikusen_timeを取得（補完用）
+        cursor.execute("""
+            SELECT
+                ed.race_id,
+                ed.pit_number,
+                ed.chikusen_time,
+                ed.exhibition_time
+            FROM exhibition_data ed
+            JOIN races r ON ed.race_id = r.id
+            WHERE r.race_date = ?
+              AND ed.chikusen_time IS NOT NULL
+        """, [target_date])
+
+        for row in cursor.fetchall():
+            race_id = row['race_id']
+            pit = row['pit_number']
+            if race_id not in race_details:
+                race_details[race_id] = {}
+            if pit not in race_details[race_id]:
+                race_details[race_id][pit] = {}
+
+            # exhibition_dataのデータで補完（race_detailsにない場合）
+            if not race_details[race_id][pit].get('chikusen_time') and row['chikusen_time']:
+                race_details[race_id][pit]['chikusen_time'] = row['chikusen_time']
+            if not race_details[race_id][pit].get('exhibition_time') and row['exhibition_time']:
+                race_details[race_id][pit]['exhibition_time'] = row['exhibition_time']
 
         self._cache['race_details'] = dict(race_details)
         cursor.close()

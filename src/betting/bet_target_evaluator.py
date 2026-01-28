@@ -903,6 +903,12 @@ class BetTargetEvaluator:
             if first_pred_racer:
                 escape_rate = self._get_player_escape_rate(str(first_pred_racer))
 
+        # 1着予測選手のバイアス指数を取得（2026-01-28追加）
+        bias_index = None
+        first_pred_racer = predictions.get('first_racer_number')
+        if first_pred_racer:
+            bias_index = self._get_player_bias_index(str(first_pred_racer))
+
         # 基本的な購入対象判定
         bet_target = self.evaluate(
             confidence=confidence,
@@ -920,7 +926,8 @@ class BetTargetEvaluator:
             sashi_rate=sashi_rate,
             makuri_rate=makuri_rate,
             race_month=race_month,  # 冬季除外フィルター用（2026-01-09追加）
-            escape_rate=escape_rate  # 逃げ率フィルター用（2026-01-09追加）
+            escape_rate=escape_rate,  # 逃げ率フィルター用（2026-01-09追加）
+            bias_index=bias_index  # バイアス指数フィルター用（2026-01-28追加）
         )
 
         # 会場×コース別調整を適用
@@ -961,18 +968,94 @@ class BetTargetEvaluator:
                     full_prediction = full_prediction[:6]
 
                 if len(full_prediction) >= 4 and odds_data:
+                    # パターンH用の全買い目のオッズを取得（2026-01-28追加）
+                    odds_dict_complete = self._fetch_pattern_h_odds(
+                        race_id=race_data.get('id'),
+                        predictions=full_prediction,
+                        existing_odds=odds_data
+                    )
+
                     try:
                         multi_bet_result = self.multi_bet_generator.generate(
                             predictions=full_prediction,
-                            odds_dict=odds_data
+                            odds_dict=odds_dict_complete
                         )
                         bet_target.multi_bet_result = multi_bet_result
                     except Exception as e:
-                        # 複数点買い生成失敗時は1点買いのまま継続
-                        pass
+                        # 複数点買い生成失敗時は1点買いのまま継続（2026-01-28修正）
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"パターンH生成失敗 (レースID: {race_data.get('id', 'unknown')}): {str(e)}")
+                        logger.debug(f"  full_prediction: {full_prediction}, odds_data: {odds_dict_complete}")
             # else: use_pattern_h=Falseの場合は1点買いのまま（multi_bet_result=None）
 
         return bet_target
+
+    def _fetch_pattern_h_odds(
+        self,
+        race_id: Optional[int],
+        predictions: List[int],
+        existing_odds: Dict[str, float]
+    ) -> Dict[str, float]:
+        """
+        パターンH用の全買い目のオッズを取得
+
+        Args:
+            race_id: レースID
+            predictions: 予測順位リスト（最低4艇必要）
+            existing_odds: 既存のオッズ辞書
+
+        Returns:
+            補完されたオッズ辞書
+        """
+        if not race_id or len(predictions) < 4:
+            return existing_odds
+
+        # パターンHの買い目を計算（1-2軸固定、3着は3-5位）
+        p1, p2 = predictions[0], predictions[1]
+        third_candidates = [predictions[2], predictions[3], predictions[4]]
+
+        # 必要な買い目リストを作成
+        needed_combinations = []
+        for third in third_candidates:
+            if third != p1 and third != p2:
+                combo = f"{p1}-{p2}-{third}"
+                if combo not in existing_odds:
+                    needed_combinations.append(combo)
+
+        # 追加取得が不要ならそのまま返す
+        if not needed_combinations:
+            return existing_odds
+
+        # DBから不足分のオッズを取得
+        try:
+            import sqlite3
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            # IN句用のプレースホルダー
+            placeholders = ','.join(['?' for _ in needed_combinations])
+            query = f"""
+                SELECT combination, odds
+                FROM trifecta_odds
+                WHERE race_id = ? AND combination IN ({placeholders})
+            """
+
+            cursor.execute(query, [race_id] + needed_combinations)
+            fetched_odds = {row[0]: row[1] for row in cursor.fetchall()}
+            conn.close()
+
+            # 既存のオッズと統合
+            complete_odds = dict(existing_odds)
+            complete_odds.update(fetched_odds)
+
+            return complete_odds
+
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"パターンH用オッズ取得失敗 (レースID: {race_id}): {str(e)}")
+            return existing_odds
 
     def get_summary(self, targets: List[BetTarget]) -> Dict[str, Any]:
         """

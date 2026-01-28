@@ -1,0 +1,4866 @@
+[
+  {
+    "venue_code": 5,
+    "date": "2026-01-27",
+    "race_no": 1,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.73,
+        "isshu_time": 36.35,
+        "mawariashi_time": 5.92
+      },
+      "2": {
+        "chikusen_time": 6.73,
+        "isshu_time": 36.77,
+        "mawariashi_time": 5.8
+      },
+      "3": {
+        "chikusen_time": 6.9,
+        "isshu_time": 36.9,
+        "mawariashi_time": 5.63
+      },
+      "4": {
+        "chikusen_time": 7.03,
+        "isshu_time": 37.84,
+        "mawariashi_time": 5.6
+      },
+      "5": {
+        "chikusen_time": 6.87,
+        "isshu_time": 37.34,
+        "mawariashi_time": 5.56
+      },
+      "6": {
+        "chikusen_time": 6.9,
+        "isshu_time": 37.2,
+        "mawariashi_time": 5.37
+      }
+    }
+  },
+  {
+    "venue_code": 5,
+    "date": "2026-01-27",
+    "race_no": 2,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.87,
+        "isshu_time": 37.07,
+        "mawariashi_time": 5.6
+      },
+      "2": {
+        "chikusen_time": 6.81,
+        "isshu_time": 36.9,
+        "mawariashi_time": 5.83
+      },
+      "3": {
+        "chikusen_time": 6.93,
+        "isshu_time": 37.77,
+        "mawariashi_time": 5.77
+      },
+      "4": {
+        "chikusen_time": 6.97,
+        "isshu_time": 36.47,
+        "mawariashi_time": 6.1
+      },
+      "5": {
+        "chikusen_time": 6.77,
+        "isshu_time": 36.7,
+        "mawariashi_time": 6.03
+      },
+      "6": {
+        "chikusen_time": 6.95,
+        "isshu_time": 38.2,
+        "mawariashi_time": 5.87
+      }
+    }
+  },
+  {
+    "venue_code": 5,
+    "date": "2026-01-27",
+    "race_no": 3,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.63,
+        "isshu_time": 36.83,
+        "mawariashi_time": 5.83
+      },
+      "2": {
+        "chikusen_time": 6.63,
+        "isshu_time": 36.53,
+        "mawariashi_time": 6.13
+      },
+      "3": {
+        "chikusen_time": 6.93,
+        "isshu_time": 37.77,
+        "mawariashi_time": 6.1
+      },
+      "4": {
+        "chikusen_time": 6.83,
+        "isshu_time": 37.46,
+        "mawariashi_time": 5.97
+      },
+      "5": {
+        "chikusen_time": 6.7,
+        "isshu_time": 37.7,
+        "mawariashi_time": 6.33
+      },
+      "6": {
+        "chikusen_time": 6.9,
+        "isshu_time": 36.87,
+        "mawariashi_time": 5.83
+      }
+    }
+  },
+  {
+    "venue_code": 5,
+    "date": "2026-01-27",
+    "race_no": 4,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.8,
+        "isshu_time": 36.43,
+        "mawariashi_time": 5.6
+      },
+      "2": {
+        "chikusen_time": 6.8,
+        "isshu_time": 36.59,
+        "mawariashi_time": 5.56
+      },
+      "3": {
+        "chikusen_time": 7.0,
+        "isshu_time": 36.97,
+        "mawariashi_time": 5.43
+      },
+      "4": {
+        "chikusen_time": 6.9,
+        "isshu_time": 37.6,
+        "mawariashi_time": 5.73
+      },
+      "5": {
+        "chikusen_time": 6.87,
+        "isshu_time": 37.5,
+        "mawariashi_time": 5.7
+      },
+      "6": {
+        "chikusen_time": 6.87,
+        "isshu_time": 38.2,
+        "mawariashi_time": 5.73
+      }
+    }
+  },
+  {
+    "venue_code": 5,
+    "date": "2026-01-27",
+    "race_no": 5,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.9,
+        "isshu_time": 36.7,
+        "mawariashi_time": 5.6
+      },
+      "2": {
+        "chikusen_time": 6.93,
+        "isshu_time": 37.4,
+        "mawariashi_time": 5.64
+      },
+      "3": {
+        "chikusen_time": 7.07,
+        "isshu_time": 37.17,
+        "mawariashi_time": 5.38
+      },
+      "4": {
+        "chikusen_time": 7.17,
+        "isshu_time": 37.65,
+        "mawariashi_time": 5.69
+      },
+      "5": {
+        "chikusen_time": 6.97,
+        "isshu_time": 37.29,
+        "mawariashi_time": 6.15
+      },
+      "6": {
+        "chikusen_time": 7.0,
+        "isshu_time": 37.39,
+        "mawariashi_time": 5.67
+      }
+    }
+  },
+  {
+    "venue_code": 5,
+    "date": "2026-01-27",
+    "race_no": 6,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.7,
+        "isshu_time": 36.6,
+        "mawariashi_time": 5.87
+      },
+      "2": {
+        "chikusen_time": 6.83,
+        "isshu_time": 37.72,
+        "mawariashi_time": 5.92
+      },
+      "3": {
+        "chikusen_time": 7.1,
+        "isshu_time": 38.4,
+        "mawariashi_time": 5.57
+      },
+      "4": {
+        "chikusen_time": 6.83,
+        "isshu_time": 36.76,
+        "mawariashi_time": 5.9
+      },
+      "5": {
+        "chikusen_time": 6.9,
+        "isshu_time": 35.9,
+        "mawariashi_time": 6.0
+      },
+      "6": {
+        "chikusen_time": 7.03,
+        "isshu_time": 38.4,
+        "mawariashi_time": 6.03
+      }
+    }
+  },
+  {
+    "venue_code": 5,
+    "date": "2026-01-27",
+    "race_no": 7,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.82,
+        "isshu_time": 36.62,
+        "mawariashi_time": 5.69
+      },
+      "2": {
+        "chikusen_time": 7.07,
+        "isshu_time": 37.16,
+        "mawariashi_time": 5.64
+      },
+      "3": {
+        "chikusen_time": 7.17,
+        "isshu_time": 37.52,
+        "mawariashi_time": 5.44
+      },
+      "4": {
+        "chikusen_time": 6.83,
+        "isshu_time": 37.93,
+        "mawariashi_time": 6.1
+      },
+      "5": {
+        "chikusen_time": 6.9,
+        "isshu_time": 37.28,
+        "mawariashi_time": 5.67
+      },
+      "6": {
+        "chikusen_time": 6.89,
+        "isshu_time": 36.75,
+        "mawariashi_time": 5.79
+      }
+    }
+  },
+  {
+    "venue_code": 5,
+    "date": "2026-01-27",
+    "race_no": 8,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.7,
+        "isshu_time": 36.22,
+        "mawariashi_time": 6.01
+      },
+      "2": {
+        "chikusen_time": 6.83,
+        "isshu_time": 37.12,
+        "mawariashi_time": 5.95
+      },
+      "3": {
+        "chikusen_time": 6.9,
+        "isshu_time": 36.8,
+        "mawariashi_time": 5.9
+      },
+      "4": {
+        "chikusen_time": 7.0,
+        "isshu_time": 37.36,
+        "mawariashi_time": 5.77
+      },
+      "5": {
+        "chikusen_time": 6.97,
+        "isshu_time": 37.36,
+        "mawariashi_time": 5.63
+      },
+      "6": {
+        "chikusen_time": 6.9,
+        "isshu_time": 37.0,
+        "mawariashi_time": 6.0
+      }
+    }
+  },
+  {
+    "venue_code": 5,
+    "date": "2026-01-27",
+    "race_no": 9,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.73,
+        "isshu_time": 37.3,
+        "mawariashi_time": 6.14
+      },
+      "2": {
+        "chikusen_time": 6.9,
+        "isshu_time": 37.21,
+        "mawariashi_time": 6.02
+      },
+      "3": {
+        "chikusen_time": 6.7,
+        "isshu_time": 37.83,
+        "mawariashi_time": 6.23
+      },
+      "4": {
+        "chikusen_time": 6.9,
+        "isshu_time": 36.98,
+        "mawariashi_time": 5.53
+      },
+      "5": {
+        "chikusen_time": 7.0,
+        "isshu_time": 37.13,
+        "mawariashi_time": 6.13
+      },
+      "6": {
+        "chikusen_time": 7.1,
+        "isshu_time": 36.53,
+        "mawariashi_time": 5.51
+      }
+    }
+  },
+  {
+    "venue_code": 5,
+    "date": "2026-01-27",
+    "race_no": 10,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.69,
+        "isshu_time": 36.92,
+        "mawariashi_time": 6.01
+      },
+      "2": {
+        "chikusen_time": 6.94,
+        "isshu_time": 36.5,
+        "mawariashi_time": 5.8
+      },
+      "3": {
+        "chikusen_time": 7.03,
+        "isshu_time": 37.19,
+        "mawariashi_time": 5.98
+      },
+      "4": {
+        "chikusen_time": 7.07,
+        "isshu_time": 37.4,
+        "mawariashi_time": 5.74
+      },
+      "5": {
+        "chikusen_time": 7.07,
+        "isshu_time": 37.73,
+        "mawariashi_time": 5.97
+      },
+      "6": {
+        "chikusen_time": 7.07,
+        "isshu_time": 37.2,
+        "mawariashi_time": 5.5
+      }
+    }
+  },
+  {
+    "venue_code": 5,
+    "date": "2026-01-27",
+    "race_no": 11,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.83,
+        "isshu_time": 37.18,
+        "mawariashi_time": 5.87
+      },
+      "2": {
+        "chikusen_time": 6.9,
+        "isshu_time": 36.44,
+        "mawariashi_time": 5.93
+      },
+      "3": {
+        "chikusen_time": 6.9,
+        "isshu_time": 36.37,
+        "mawariashi_time": 5.6
+      },
+      "4": {
+        "chikusen_time": 7.01,
+        "isshu_time": 37.44,
+        "mawariashi_time": 5.66
+      },
+      "5": {
+        "chikusen_time": 7.07,
+        "isshu_time": 37.08,
+        "mawariashi_time": 5.53
+      },
+      "6": {
+        "chikusen_time": 6.87,
+        "isshu_time": 37.16,
+        "mawariashi_time": 6.15
+      }
+    }
+  },
+  {
+    "venue_code": 5,
+    "date": "2026-01-27",
+    "race_no": 12,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.86,
+        "isshu_time": 35.76,
+        "mawariashi_time": 5.61
+      },
+      "2": {
+        "chikusen_time": 6.94,
+        "isshu_time": 36.5,
+        "mawariashi_time": 5.7
+      },
+      "3": {
+        "chikusen_time": 6.8,
+        "isshu_time": 36.62,
+        "mawariashi_time": 6.01
+      },
+      "4": {
+        "chikusen_time": 6.93,
+        "isshu_time": 36.73,
+        "mawariashi_time": 5.73
+      },
+      "5": {
+        "chikusen_time": 6.9,
+        "isshu_time": 36.67,
+        "mawariashi_time": 5.97
+      },
+      "6": {
+        "chikusen_time": 6.9,
+        "isshu_time": 37.14,
+        "mawariashi_time": 5.96
+      }
+    }
+  },
+  {
+    "venue_code": 6,
+    "date": "2026-01-27",
+    "race_no": 1,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.01,
+        "isshu_time": 37.24,
+        "mawariashi_time": 5.75
+      },
+      "2": {
+        "chikusen_time": 8.2,
+        "isshu_time": 37.89,
+        "mawariashi_time": 5.38
+      },
+      "3": {
+        "chikusen_time": 8.01,
+        "isshu_time": 37.59,
+        "mawariashi_time": 5.41
+      },
+      "4": {
+        "chikusen_time": 7.91,
+        "isshu_time": 37.46,
+        "mawariashi_time": 5.39
+      },
+      "5": {
+        "chikusen_time": 7.79,
+        "isshu_time": 37.8,
+        "mawariashi_time": 5.45
+      },
+      "6": {
+        "chikusen_time": 7.78,
+        "isshu_time": 37.89,
+        "mawariashi_time": 5.74
+      }
+    }
+  },
+  {
+    "venue_code": 6,
+    "date": "2026-01-27",
+    "race_no": 2,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.83,
+        "isshu_time": 36.98,
+        "mawariashi_time": 5.27
+      },
+      "2": {
+        "chikusen_time": 7.8,
+        "isshu_time": 36.92,
+        "mawariashi_time": 5.48
+      },
+      "3": {
+        "chikusen_time": 8.0,
+        "isshu_time": 37.06,
+        "mawariashi_time": 5.36
+      },
+      "4": {
+        "chikusen_time": 7.92,
+        "isshu_time": 37.25,
+        "mawariashi_time": 5.26
+      },
+      "5": {
+        "chikusen_time": 7.91,
+        "isshu_time": 37.42,
+        "mawariashi_time": 5.12
+      },
+      "6": {
+        "chikusen_time": 7.74,
+        "isshu_time": 37.75,
+        "mawariashi_time": 5.8
+      }
+    }
+  },
+  {
+    "venue_code": 6,
+    "date": "2026-01-27",
+    "race_no": 3,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.97,
+        "isshu_time": 37.19,
+        "mawariashi_time": 5.33
+      },
+      "2": {
+        "chikusen_time": 7.92,
+        "isshu_time": 37.62,
+        "mawariashi_time": 5.32
+      },
+      "3": {
+        "chikusen_time": 7.84,
+        "isshu_time": 38.1,
+        "mawariashi_time": 5.32
+      },
+      "4": {
+        "chikusen_time": 7.84,
+        "isshu_time": 37.7,
+        "mawariashi_time": 5.42
+      },
+      "5": {
+        "chikusen_time": 7.75,
+        "isshu_time": 37.16,
+        "mawariashi_time": 5.18
+      },
+      "6": {
+        "chikusen_time": 7.79,
+        "isshu_time": 37.28,
+        "mawariashi_time": 5.44
+      }
+    }
+  },
+  {
+    "venue_code": 6,
+    "date": "2026-01-27",
+    "race_no": 4,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.96,
+        "isshu_time": 37.11,
+        "mawariashi_time": 5.23
+      },
+      "2": {
+        "chikusen_time": 7.86,
+        "isshu_time": 37.51,
+        "mawariashi_time": 5.53
+      },
+      "3": {
+        "chikusen_time": 7.76,
+        "isshu_time": 36.88,
+        "mawariashi_time": 5.51
+      },
+      "4": {
+        "chikusen_time": 7.73,
+        "isshu_time": 36.93,
+        "mawariashi_time": 5.45
+      },
+      "5": {
+        "chikusen_time": 7.82,
+        "isshu_time": 37.31,
+        "mawariashi_time": 5.31
+      },
+      "6": {
+        "chikusen_time": 7.84,
+        "isshu_time": 37.69,
+        "mawariashi_time": 5.35
+      }
+    }
+  },
+  {
+    "venue_code": 6,
+    "date": "2026-01-27",
+    "race_no": 5,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.01,
+        "isshu_time": 37.14,
+        "mawariashi_time": 5.18
+      },
+      "2": {
+        "chikusen_time": 8.05,
+        "isshu_time": 37.73,
+        "mawariashi_time": 5.48
+      },
+      "3": {
+        "chikusen_time": 8.06,
+        "isshu_time": 37.83,
+        "mawariashi_time": 5.49
+      },
+      "4": {
+        "chikusen_time": 8.05,
+        "isshu_time": 36.77,
+        "mawariashi_time": 5.18
+      },
+      "5": {
+        "chikusen_time": 7.95,
+        "isshu_time": 37.53,
+        "mawariashi_time": 5.26
+      },
+      "6": {
+        "chikusen_time": 7.76,
+        "isshu_time": 37.89,
+        "mawariashi_time": 5.45
+      }
+    }
+  },
+  {
+    "venue_code": 6,
+    "date": "2026-01-27",
+    "race_no": 6,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.93,
+        "isshu_time": 36.8,
+        "mawariashi_time": 5.32
+      },
+      "2": {
+        "chikusen_time": 8.14,
+        "isshu_time": 37.21,
+        "mawariashi_time": 5.38
+      },
+      "3": {
+        "chikusen_time": 7.98,
+        "isshu_time": 37.6,
+        "mawariashi_time": 5.57
+      },
+      "4": {
+        "chikusen_time": 7.88,
+        "isshu_time": 37.3,
+        "mawariashi_time": 5.31
+      },
+      "5": {
+        "chikusen_time": 7.95,
+        "isshu_time": 38.03,
+        "mawariashi_time": 5.58
+      },
+      "6": {
+        "chikusen_time": 7.96,
+        "isshu_time": 38.08,
+        "mawariashi_time": 5.71
+      }
+    }
+  },
+  {
+    "venue_code": 6,
+    "date": "2026-01-27",
+    "race_no": 7,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.07,
+        "isshu_time": 37.12,
+        "mawariashi_time": 5.14
+      },
+      "2": {
+        "chikusen_time": 7.97,
+        "isshu_time": 37.71,
+        "mawariashi_time": 5.5
+      },
+      "3": {
+        "chikusen_time": 7.83,
+        "isshu_time": 36.97,
+        "mawariashi_time": 5.52
+      },
+      "4": {
+        "chikusen_time": 7.88,
+        "isshu_time": 37.51,
+        "mawariashi_time": 5.4
+      },
+      "5": {
+        "chikusen_time": 7.95,
+        "isshu_time": 37.61,
+        "mawariashi_time": 5.6
+      },
+      "6": {
+        "chikusen_time": 7.86,
+        "isshu_time": 37.67,
+        "mawariashi_time": 5.6
+      }
+    }
+  },
+  {
+    "venue_code": 6,
+    "date": "2026-01-27",
+    "race_no": 8,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.19,
+        "isshu_time": 37.75,
+        "mawariashi_time": 5.48
+      },
+      "2": {
+        "chikusen_time": 8.24,
+        "isshu_time": 38.27,
+        "mawariashi_time": 5.6
+      },
+      "3": {
+        "chikusen_time": 8.11,
+        "isshu_time": 38.78,
+        "mawariashi_time": 5.97
+      },
+      "4": {
+        "chikusen_time": 8.22,
+        "isshu_time": 37.91,
+        "mawariashi_time": 5.88
+      },
+      "5": {
+        "chikusen_time": 8.19,
+        "isshu_time": 37.75,
+        "mawariashi_time": 5.75
+      },
+      "6": {
+        "chikusen_time": 8.06,
+        "isshu_time": 37.45,
+        "mawariashi_time": 5.5
+      }
+    }
+  },
+  {
+    "venue_code": 6,
+    "date": "2026-01-27",
+    "race_no": 9,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.13,
+        "isshu_time": 38.69,
+        "mawariashi_time": 5.49
+      },
+      "2": {
+        "chikusen_time": 8.0,
+        "isshu_time": 38.72,
+        "mawariashi_time": 5.64
+      },
+      "3": {
+        "chikusen_time": 8.09,
+        "isshu_time": 37.94,
+        "mawariashi_time": 6.05
+      },
+      "4": {
+        "chikusen_time": 8.02,
+        "isshu_time": 37.98,
+        "mawariashi_time": 5.7
+      },
+      "5": {
+        "chikusen_time": 8.08,
+        "isshu_time": 38.24,
+        "mawariashi_time": 6.1
+      },
+      "6": {
+        "chikusen_time": 8.03,
+        "isshu_time": 38.52,
+        "mawariashi_time": 5.7
+      }
+    }
+  },
+  {
+    "venue_code": 6,
+    "date": "2026-01-27",
+    "race_no": 10,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.02,
+        "isshu_time": 36.85,
+        "mawariashi_time": 5.23
+      },
+      "2": {
+        "chikusen_time": 8.13,
+        "isshu_time": 37.37,
+        "mawariashi_time": 5.32
+      },
+      "3": {
+        "chikusen_time": 8.07,
+        "isshu_time": 37.82,
+        "mawariashi_time": 5.54
+      },
+      "4": {
+        "chikusen_time": 8.1,
+        "isshu_time": 37.59,
+        "mawariashi_time": 5.53
+      },
+      "5": {
+        "chikusen_time": 8.18,
+        "isshu_time": 38.13,
+        "mawariashi_time": 5.53
+      },
+      "6": {
+        "chikusen_time": 8.13,
+        "isshu_time": 37.5,
+        "mawariashi_time": 5.46
+      }
+    }
+  },
+  {
+    "venue_code": 6,
+    "date": "2026-01-27",
+    "race_no": 11,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.87,
+        "isshu_time": 36.47,
+        "mawariashi_time": 5.07
+      },
+      "2": {
+        "chikusen_time": 7.87,
+        "isshu_time": 36.83,
+        "mawariashi_time": 5.4
+      },
+      "3": {
+        "chikusen_time": 8.07,
+        "isshu_time": 36.6,
+        "mawariashi_time": 5.17
+      },
+      "4": {
+        "chikusen_time": 8.0,
+        "isshu_time": 37.27,
+        "mawariashi_time": 5.23
+      },
+      "5": {
+        "chikusen_time": 8.03,
+        "isshu_time": 37.93,
+        "mawariashi_time": 5.5
+      },
+      "6": {
+        "chikusen_time": 8.2,
+        "isshu_time": 37.0,
+        "mawariashi_time": 5.37
+      }
+    }
+  },
+  {
+    "venue_code": 6,
+    "date": "2026-01-27",
+    "race_no": 12,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.07,
+        "isshu_time": 37.41,
+        "mawariashi_time": 5.48
+      },
+      "2": {
+        "chikusen_time": 8.0,
+        "isshu_time": 37.36,
+        "mawariashi_time": 5.46
+      },
+      "3": {
+        "chikusen_time": 8.05,
+        "isshu_time": 37.31,
+        "mawariashi_time": 5.42
+      },
+      "4": {
+        "chikusen_time": 8.11,
+        "isshu_time": 37.87,
+        "mawariashi_time": 5.46
+      },
+      "5": {
+        "chikusen_time": 7.87,
+        "isshu_time": 37.63,
+        "mawariashi_time": 5.6
+      },
+      "6": {
+        "chikusen_time": 8.01,
+        "isshu_time": 37.67,
+        "mawariashi_time": 5.55
+      }
+    }
+  },
+  {
+    "venue_code": 7,
+    "date": "2026-01-27",
+    "race_no": 1,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.45,
+        "isshu_time": 36.87,
+        "mawariashi_time": 4.78
+      },
+      "2": {
+        "chikusen_time": 6.4,
+        "isshu_time": 37.43,
+        "mawariashi_time": 5.09
+      },
+      "3": {
+        "chikusen_time": 6.41,
+        "isshu_time": 37.75,
+        "mawariashi_time": 5.4
+      },
+      "4": {
+        "chikusen_time": 6.38,
+        "isshu_time": 37.38,
+        "mawariashi_time": 5.27
+      },
+      "5": {
+        "chikusen_time": 6.37,
+        "isshu_time": 37.66,
+        "mawariashi_time": 5.21
+      },
+      "6": {
+        "chikusen_time": 6.29,
+        "isshu_time": 37.6,
+        "mawariashi_time": 5.31
+      }
+    }
+  },
+  {
+    "venue_code": 7,
+    "date": "2026-01-27",
+    "race_no": 2,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.29,
+        "isshu_time": 37.53,
+        "mawariashi_time": 5.02
+      },
+      "2": {
+        "chikusen_time": 6.33,
+        "isshu_time": 37.09,
+        "mawariashi_time": 5.08
+      },
+      "3": {
+        "chikusen_time": 6.32,
+        "isshu_time": 37.27,
+        "mawariashi_time": 5.23
+      },
+      "4": {
+        "chikusen_time": 6.24,
+        "isshu_time": 37.75,
+        "mawariashi_time": 5.31
+      },
+      "5": {
+        "chikusen_time": 6.13,
+        "isshu_time": 36.74,
+        "mawariashi_time": 5.9
+      },
+      "6": {
+        "chikusen_time": 6.2,
+        "isshu_time": 37.85,
+        "mawariashi_time": 5.56
+      }
+    }
+  },
+  {
+    "venue_code": 7,
+    "date": "2026-01-27",
+    "race_no": 3,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.42,
+        "isshu_time": 36.97,
+        "mawariashi_time": 4.97
+      },
+      "2": {
+        "chikusen_time": 6.28,
+        "isshu_time": 37.02,
+        "mawariashi_time": 5.03
+      },
+      "3": {
+        "chikusen_time": 6.49,
+        "isshu_time": 37.03,
+        "mawariashi_time": 5.17
+      },
+      "4": {
+        "chikusen_time": 6.36,
+        "isshu_time": 37.67,
+        "mawariashi_time": 5.13
+      },
+      "5": {
+        "chikusen_time": 6.32,
+        "isshu_time": 37.42,
+        "mawariashi_time": 5.0
+      },
+      "6": {
+        "chikusen_time": 6.17,
+        "isshu_time": 38.4,
+        "mawariashi_time": 5.34
+      }
+    }
+  },
+  {
+    "venue_code": 7,
+    "date": "2026-01-27",
+    "race_no": 4,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.26,
+        "isshu_time": 37.31,
+        "mawariashi_time": 5.32
+      },
+      "2": {
+        "chikusen_time": 6.21,
+        "isshu_time": 37.22,
+        "mawariashi_time": 5.15
+      },
+      "3": {
+        "chikusen_time": 6.19,
+        "isshu_time": 37.02,
+        "mawariashi_time": 5.05
+      },
+      "4": {
+        "chikusen_time": 6.36,
+        "isshu_time": 37.54,
+        "mawariashi_time": 5.09
+      },
+      "5": {
+        "chikusen_time": 6.24,
+        "isshu_time": 36.87,
+        "mawariashi_time": 5.37
+      },
+      "6": {
+        "chikusen_time": 6.17,
+        "isshu_time": 37.37,
+        "mawariashi_time": 5.1
+      }
+    }
+  },
+  {
+    "venue_code": 7,
+    "date": "2026-01-27",
+    "race_no": 5,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.31,
+        "isshu_time": 37.67,
+        "mawariashi_time": 4.93
+      },
+      "2": {
+        "chikusen_time": 6.24,
+        "isshu_time": 37.44,
+        "mawariashi_time": 5.16
+      },
+      "3": {
+        "chikusen_time": 6.34,
+        "isshu_time": 37.87,
+        "mawariashi_time": 5.03
+      },
+      "4": {
+        "chikusen_time": 6.38,
+        "isshu_time": 37.47,
+        "mawariashi_time": 5.04
+      },
+      "5": {
+        "chikusen_time": 6.23,
+        "isshu_time": 37.92,
+        "mawariashi_time": 5.52
+      },
+      "6": {
+        "chikusen_time": 6.32,
+        "isshu_time": 37.46,
+        "mawariashi_time": 5.16
+      }
+    }
+  },
+  {
+    "venue_code": 7,
+    "date": "2026-01-27",
+    "race_no": 6,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.35,
+        "isshu_time": 37.04,
+        "mawariashi_time": 4.98
+      },
+      "2": {
+        "chikusen_time": 6.28,
+        "isshu_time": 37.55,
+        "mawariashi_time": 5.12
+      },
+      "3": {
+        "chikusen_time": 6.2,
+        "isshu_time": 37.1,
+        "mawariashi_time": 5.41
+      },
+      "4": {
+        "chikusen_time": 6.25,
+        "isshu_time": 36.93,
+        "mawariashi_time": 5.54
+      },
+      "5": {
+        "chikusen_time": 6.33,
+        "isshu_time": 37.95,
+        "mawariashi_time": 5.57
+      },
+      "6": {
+        "chikusen_time": 6.15,
+        "isshu_time": 36.58,
+        "mawariashi_time": 5.83
+      }
+    }
+  },
+  {
+    "venue_code": 7,
+    "date": "2026-01-27",
+    "race_no": 7,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.33,
+        "isshu_time": 36.82,
+        "mawariashi_time": 4.83
+      },
+      "2": {
+        "chikusen_time": 6.37,
+        "isshu_time": 38.52,
+        "mawariashi_time": 5.13
+      },
+      "3": {
+        "chikusen_time": 6.3,
+        "isshu_time": 38.02,
+        "mawariashi_time": 5.25
+      },
+      "4": {
+        "chikusen_time": 6.36,
+        "isshu_time": 37.59,
+        "mawariashi_time": 5.4
+      },
+      "5": {
+        "chikusen_time": 6.4,
+        "isshu_time": 37.27,
+        "mawariashi_time": 5.15
+      },
+      "6": {
+        "chikusen_time": 6.13,
+        "isshu_time": 37.02,
+        "mawariashi_time": 6.11
+      }
+    }
+  },
+  {
+    "venue_code": 7,
+    "date": "2026-01-27",
+    "race_no": 8,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.22,
+        "isshu_time": 37.49,
+        "mawariashi_time": 5.0
+      },
+      "2": {
+        "chikusen_time": 6.2,
+        "isshu_time": 37.58,
+        "mawariashi_time": 5.37
+      },
+      "3": {
+        "chikusen_time": 6.26,
+        "isshu_time": 38.26,
+        "mawariashi_time": 5.39
+      },
+      "4": {
+        "chikusen_time": 6.23,
+        "isshu_time": 37.77,
+        "mawariashi_time": 5.28
+      },
+      "5": {
+        "chikusen_time": 6.37,
+        "isshu_time": 38.47,
+        "mawariashi_time": 5.37
+      },
+      "6": {
+        "chikusen_time": 6.27,
+        "isshu_time": 37.6,
+        "mawariashi_time": 5.46
+      }
+    }
+  },
+  {
+    "venue_code": 7,
+    "date": "2026-01-27",
+    "race_no": 9,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.32,
+        "isshu_time": 36.82,
+        "mawariashi_time": 4.91
+      },
+      "2": {
+        "chikusen_time": 6.25,
+        "isshu_time": 37.19,
+        "mawariashi_time": 4.99
+      },
+      "3": {
+        "chikusen_time": 6.32,
+        "isshu_time": 37.49,
+        "mawariashi_time": 5.1
+      },
+      "4": {
+        "chikusen_time": 6.27,
+        "isshu_time": 36.62,
+        "mawariashi_time": 4.98
+      },
+      "5": {
+        "chikusen_time": 6.15,
+        "isshu_time": 37.41,
+        "mawariashi_time": 5.3
+      },
+      "6": {
+        "chikusen_time": 6.17,
+        "isshu_time": 37.6,
+        "mawariashi_time": 5.37
+      }
+    }
+  },
+  {
+    "venue_code": 7,
+    "date": "2026-01-27",
+    "race_no": 10,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.26,
+        "isshu_time": 36.9,
+        "mawariashi_time": 4.77
+      },
+      "2": {
+        "chikusen_time": 6.33,
+        "isshu_time": 37.2,
+        "mawariashi_time": 4.93
+      },
+      "3": {
+        "chikusen_time": 6.2,
+        "isshu_time": 37.58,
+        "mawariashi_time": 4.99
+      },
+      "4": {
+        "chikusen_time": 6.26,
+        "isshu_time": 37.56,
+        "mawariashi_time": 5.13
+      },
+      "5": {
+        "chikusen_time": 6.2,
+        "isshu_time": 37.91,
+        "mawariashi_time": 5.16
+      },
+      "6": {
+        "chikusen_time": 6.23,
+        "isshu_time": 37.41,
+        "mawariashi_time": 5.36
+      }
+    }
+  },
+  {
+    "venue_code": 7,
+    "date": "2026-01-27",
+    "race_no": 11,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.26,
+        "isshu_time": 36.67,
+        "mawariashi_time": 4.86
+      },
+      "2": {
+        "chikusen_time": 6.18,
+        "isshu_time": 36.57,
+        "mawariashi_time": 5.37
+      },
+      "3": {
+        "chikusen_time": 6.37,
+        "isshu_time": 37.4,
+        "mawariashi_time": 5.26
+      },
+      "4": {
+        "chikusen_time": 6.25,
+        "isshu_time": 36.84,
+        "mawariashi_time": 5.14
+      },
+      "5": {
+        "chikusen_time": 6.3,
+        "isshu_time": 37.06,
+        "mawariashi_time": 5.23
+      },
+      "6": {
+        "chikusen_time": 6.24,
+        "isshu_time": 37.44,
+        "mawariashi_time": 5.29
+      }
+    }
+  },
+  {
+    "venue_code": 7,
+    "date": "2026-01-27",
+    "race_no": 12,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.32,
+        "isshu_time": 37.43,
+        "mawariashi_time": 5.14
+      },
+      "2": {
+        "chikusen_time": 6.3,
+        "isshu_time": 36.94,
+        "mawariashi_time": 5.0
+      },
+      "3": {
+        "chikusen_time": 6.31,
+        "isshu_time": 37.82,
+        "mawariashi_time": 5.36
+      },
+      "4": {
+        "chikusen_time": 6.32,
+        "isshu_time": 37.26,
+        "mawariashi_time": 5.47
+      },
+      "5": {
+        "chikusen_time": 6.33,
+        "isshu_time": 37.57,
+        "mawariashi_time": 5.54
+      },
+      "6": {
+        "chikusen_time": 6.33,
+        "isshu_time": 37.08,
+        "mawariashi_time": 5.22
+      }
+    }
+  },
+  {
+    "venue_code": 9,
+    "date": "2026-01-27",
+    "race_no": 1,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.47,
+        "isshu_time": 36.53,
+        "mawariashi_time": 4.13
+      },
+      "2": {
+        "chikusen_time": 8.47,
+        "isshu_time": 36.7,
+        "mawariashi_time": 4.43
+      },
+      "3": {
+        "chikusen_time": 8.37,
+        "isshu_time": 36.63,
+        "mawariashi_time": 4.53
+      },
+      "4": {
+        "chikusen_time": 8.9,
+        "isshu_time": 36.53,
+        "mawariashi_time": 4.4
+      },
+      "5": {
+        "chikusen_time": 8.27,
+        "isshu_time": 37.32,
+        "mawariashi_time": 5.18
+      },
+      "6": {
+        "chikusen_time": 8.37,
+        "isshu_time": 37.3,
+        "mawariashi_time": 4.9
+      }
+    }
+  },
+  {
+    "venue_code": 9,
+    "date": "2026-01-27",
+    "race_no": 2,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.43,
+        "isshu_time": 37.38,
+        "mawariashi_time": 4.86
+      },
+      "2": {
+        "chikusen_time": 8.23,
+        "isshu_time": 37.17,
+        "mawariashi_time": 4.83
+      },
+      "3": {
+        "chikusen_time": 8.27,
+        "isshu_time": 36.97,
+        "mawariashi_time": 4.86
+      },
+      "4": {
+        "chikusen_time": 8.27,
+        "isshu_time": 37.08,
+        "mawariashi_time": 4.7
+      },
+      "5": {
+        "chikusen_time": 8.21,
+        "isshu_time": 37.43,
+        "mawariashi_time": 4.9
+      },
+      "6": {
+        "chikusen_time": 8.39,
+        "isshu_time": 37.84,
+        "mawariashi_time": 5.05
+      }
+    }
+  },
+  {
+    "venue_code": 9,
+    "date": "2026-01-27",
+    "race_no": 3,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.43,
+        "isshu_time": 36.83,
+        "mawariashi_time": 4.53
+      },
+      "2": {
+        "chikusen_time": 8.27,
+        "isshu_time": 37.33,
+        "mawariashi_time": 4.73
+      },
+      "3": {
+        "chikusen_time": 8.39,
+        "isshu_time": 37.82,
+        "mawariashi_time": 4.57
+      },
+      "4": {
+        "chikusen_time": 8.47,
+        "isshu_time": 38.07,
+        "mawariashi_time": 4.77
+      },
+      "5": {
+        "chikusen_time": 8.27,
+        "isshu_time": 37.9,
+        "mawariashi_time": 4.83
+      },
+      "6": {
+        "chikusen_time": 8.43,
+        "isshu_time": 37.83,
+        "mawariashi_time": 4.83
+      }
+    }
+  },
+  {
+    "venue_code": 9,
+    "date": "2026-01-27",
+    "race_no": 4,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.68,
+        "isshu_time": 37.53,
+        "mawariashi_time": 4.5
+      },
+      "2": {
+        "chikusen_time": 8.62,
+        "isshu_time": 37.13,
+        "mawariashi_time": 4.43
+      },
+      "3": {
+        "chikusen_time": 8.5,
+        "isshu_time": 37.07,
+        "mawariashi_time": 4.47
+      },
+      "4": {
+        "chikusen_time": 8.41,
+        "isshu_time": 37.43,
+        "mawariashi_time": 4.73
+      },
+      "5": {
+        "chikusen_time": 8.27,
+        "isshu_time": 37.53,
+        "mawariashi_time": 5.37
+      },
+      "6": {
+        "chikusen_time": 8.5,
+        "isshu_time": 37.8,
+        "mawariashi_time": 4.7
+      }
+    }
+  },
+  {
+    "venue_code": 9,
+    "date": "2026-01-27",
+    "race_no": 5,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.6,
+        "isshu_time": 37.39,
+        "mawariashi_time": 4.53
+      },
+      "2": {
+        "chikusen_time": 8.63,
+        "isshu_time": 37.38,
+        "mawariashi_time": 4.7
+      },
+      "3": {
+        "chikusen_time": 8.37,
+        "isshu_time": 37.61,
+        "mawariashi_time": 4.88
+      },
+      "4": {
+        "chikusen_time": 8.3,
+        "isshu_time": 37.6,
+        "mawariashi_time": 4.97
+      },
+      "5": {
+        "chikusen_time": 8.3,
+        "isshu_time": 37.52,
+        "mawariashi_time": 5.58
+      },
+      "6": {
+        "chikusen_time": 8.43,
+        "isshu_time": 37.75,
+        "mawariashi_time": 5.07
+      }
+    }
+  },
+  {
+    "venue_code": 9,
+    "date": "2026-01-27",
+    "race_no": 6,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.48,
+        "isshu_time": 36.97,
+        "mawariashi_time": 4.83
+      },
+      "2": {
+        "chikusen_time": 8.22,
+        "isshu_time": 37.14,
+        "mawariashi_time": 4.9
+      },
+      "3": {
+        "chikusen_time": 8.34,
+        "isshu_time": 37.1,
+        "mawariashi_time": 4.62
+      },
+      "4": {
+        "chikusen_time": 8.39,
+        "isshu_time": 37.07,
+        "mawariashi_time": 4.5
+      },
+      "5": {
+        "chikusen_time": 8.44,
+        "isshu_time": 37.48,
+        "mawariashi_time": 4.96
+      },
+      "6": {
+        "chikusen_time": 8.34,
+        "isshu_time": 36.63,
+        "mawariashi_time": 4.67
+      }
+    }
+  },
+  {
+    "venue_code": 9,
+    "date": "2026-01-27",
+    "race_no": 7,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.77,
+        "isshu_time": 37.07,
+        "mawariashi_time": 4.77
+      },
+      "2": {
+        "chikusen_time": 8.57,
+        "isshu_time": 37.38,
+        "mawariashi_time": 4.76
+      },
+      "3": {
+        "chikusen_time": 8.27,
+        "isshu_time": 37.55,
+        "mawariashi_time": 4.83
+      },
+      "4": {
+        "chikusen_time": 8.57,
+        "isshu_time": 37.93,
+        "mawariashi_time": 4.83
+      },
+      "5": {
+        "chikusen_time": 8.73,
+        "isshu_time": 37.2,
+        "mawariashi_time": 4.67
+      },
+      "6": {
+        "chikusen_time": 8.43,
+        "isshu_time": 38.93,
+        "mawariashi_time": 5.14
+      }
+    }
+  },
+  {
+    "venue_code": 9,
+    "date": "2026-01-27",
+    "race_no": 8,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.41,
+        "isshu_time": 36.9,
+        "mawariashi_time": 4.3
+      },
+      "2": {
+        "chikusen_time": 8.17,
+        "isshu_time": 37.1,
+        "mawariashi_time": 4.67
+      },
+      "3": {
+        "chikusen_time": 8.23,
+        "isshu_time": 37.73,
+        "mawariashi_time": 4.83
+      },
+      "4": {
+        "chikusen_time": 8.42,
+        "isshu_time": 36.93,
+        "mawariashi_time": 4.47
+      },
+      "5": {
+        "chikusen_time": 8.13,
+        "isshu_time": 37.67,
+        "mawariashi_time": 4.9
+      },
+      "6": {
+        "chikusen_time": 8.5,
+        "isshu_time": 38.17,
+        "mawariashi_time": 4.57
+      }
+    }
+  },
+  {
+    "venue_code": 9,
+    "date": "2026-01-27",
+    "race_no": 9,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.41,
+        "isshu_time": 37.07,
+        "mawariashi_time": 4.53
+      },
+      "2": {
+        "chikusen_time": 8.3,
+        "isshu_time": 37.27,
+        "mawariashi_time": 4.73
+      },
+      "3": {
+        "chikusen_time": 8.53,
+        "isshu_time": 36.93,
+        "mawariashi_time": 4.71
+      },
+      "4": {
+        "chikusen_time": 8.74,
+        "isshu_time": 36.5,
+        "mawariashi_time": 4.49
+      },
+      "5": {
+        "chikusen_time": 8.43,
+        "isshu_time": 37.3,
+        "mawariashi_time": 4.63
+      },
+      "6": {
+        "chikusen_time": 8.49,
+        "isshu_time": 37.47,
+        "mawariashi_time": 4.73
+      }
+    }
+  },
+  {
+    "venue_code": 9,
+    "date": "2026-01-27",
+    "race_no": 10,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.27,
+        "isshu_time": 37.25,
+        "mawariashi_time": 4.43
+      },
+      "2": {
+        "chikusen_time": 8.27,
+        "isshu_time": 37.57,
+        "mawariashi_time": 4.47
+      },
+      "3": {
+        "chikusen_time": 8.5,
+        "isshu_time": 37.07,
+        "mawariashi_time": 4.63
+      },
+      "4": {
+        "chikusen_time": 8.53,
+        "isshu_time": 37.8,
+        "mawariashi_time": 4.67
+      },
+      "5": {
+        "chikusen_time": 8.53,
+        "isshu_time": 38.0,
+        "mawariashi_time": 4.77
+      },
+      "6": {
+        "chikusen_time": 8.27,
+        "isshu_time": 38.03,
+        "mawariashi_time": 4.77
+      }
+    }
+  },
+  {
+    "venue_code": 9,
+    "date": "2026-01-27",
+    "race_no": 11,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.39,
+        "isshu_time": 37.27,
+        "mawariashi_time": 4.29
+      },
+      "2": {
+        "chikusen_time": 8.3,
+        "isshu_time": 37.07,
+        "mawariashi_time": 4.56
+      },
+      "3": {
+        "chikusen_time": 8.43,
+        "isshu_time": 37.5,
+        "mawariashi_time": 4.66
+      },
+      "4": {
+        "chikusen_time": 8.29,
+        "isshu_time": 37.44,
+        "mawariashi_time": 4.81
+      },
+      "5": {
+        "chikusen_time": 8.35,
+        "isshu_time": 37.61,
+        "mawariashi_time": 4.87
+      },
+      "6": {
+        "chikusen_time": 8.03,
+        "isshu_time": 37.53,
+        "mawariashi_time": 4.83
+      }
+    }
+  },
+  {
+    "venue_code": 9,
+    "date": "2026-01-27",
+    "race_no": 12,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.48,
+        "isshu_time": 36.9,
+        "mawariashi_time": 4.31
+      },
+      "2": {
+        "chikusen_time": 8.54,
+        "isshu_time": 37.44,
+        "mawariashi_time": 4.33
+      },
+      "3": {
+        "chikusen_time": 8.47,
+        "isshu_time": 37.89,
+        "mawariashi_time": 4.23
+      },
+      "4": {
+        "chikusen_time": 8.38,
+        "isshu_time": 38.31,
+        "mawariashi_time": 4.78
+      },
+      "5": {
+        "chikusen_time": 8.33,
+        "isshu_time": 38.3,
+        "mawariashi_time": 5.03
+      },
+      "6": {
+        "chikusen_time": 8.29,
+        "isshu_time": 38.17,
+        "mawariashi_time": 4.93
+      }
+    }
+  },
+  {
+    "venue_code": 11,
+    "date": "2026-01-27",
+    "race_no": 1,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.83,
+        "isshu_time": 37.07,
+        "mawariashi_time": 5.3
+      },
+      "2": {
+        "chikusen_time": 7.87,
+        "isshu_time": 38.13,
+        "mawariashi_time": 5.53
+      },
+      "3": {
+        "chikusen_time": 7.87,
+        "isshu_time": 37.8,
+        "mawariashi_time": 5.6
+      },
+      "4": {
+        "chikusen_time": 7.95,
+        "isshu_time": 37.9,
+        "mawariashi_time": 5.73
+      },
+      "5": {
+        "chikusen_time": 7.87,
+        "isshu_time": 37.4,
+        "mawariashi_time": 5.47
+      },
+      "6": {
+        "chikusen_time": 7.73,
+        "isshu_time": 38.4,
+        "mawariashi_time": 5.63
+      }
+    }
+  },
+  {
+    "venue_code": 11,
+    "date": "2026-01-27",
+    "race_no": 2,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.8,
+        "isshu_time": 36.67,
+        "mawariashi_time": 5.37
+      },
+      "2": {
+        "chikusen_time": 7.88,
+        "isshu_time": 36.97,
+        "mawariashi_time": 5.5
+      },
+      "3": {
+        "chikusen_time": 7.9,
+        "isshu_time": 38.07,
+        "mawariashi_time": 5.77
+      },
+      "4": {
+        "chikusen_time": 7.83,
+        "isshu_time": 37.94,
+        "mawariashi_time": 5.92
+      },
+      "5": {
+        "chikusen_time": 7.87,
+        "isshu_time": 37.43,
+        "mawariashi_time": 5.9
+      },
+      "6": {
+        "chikusen_time": 7.87,
+        "isshu_time": 38.43,
+        "mawariashi_time": 5.93
+      }
+    }
+  },
+  {
+    "venue_code": 11,
+    "date": "2026-01-27",
+    "race_no": 3,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.17,
+        "isshu_time": 38.4,
+        "mawariashi_time": 5.5
+      },
+      "2": {
+        "chikusen_time": 7.6,
+        "isshu_time": 36.67,
+        "mawariashi_time": 5.63
+      },
+      "3": {
+        "chikusen_time": 7.77,
+        "isshu_time": 37.6,
+        "mawariashi_time": 5.6
+      },
+      "4": {
+        "chikusen_time": 7.7,
+        "isshu_time": 36.63,
+        "mawariashi_time": 5.5
+      },
+      "5": {
+        "chikusen_time": 7.97,
+        "isshu_time": 36.82,
+        "mawariashi_time": 5.67
+      },
+      "6": {
+        "chikusen_time": 7.7,
+        "isshu_time": 37.89,
+        "mawariashi_time": 5.7
+      }
+    }
+  },
+  {
+    "venue_code": 11,
+    "date": "2026-01-27",
+    "race_no": 4,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.2,
+        "isshu_time": 37.6,
+        "mawariashi_time": 5.46
+      },
+      "2": {
+        "chikusen_time": 7.9,
+        "isshu_time": 37.67,
+        "mawariashi_time": 5.77
+      },
+      "3": {
+        "chikusen_time": 7.9,
+        "isshu_time": 37.49,
+        "mawariashi_time": 5.64
+      },
+      "4": {
+        "chikusen_time": 7.63,
+        "isshu_time": 37.35,
+        "mawariashi_time": 5.82
+      },
+      "5": {
+        "chikusen_time": 7.63,
+        "isshu_time": 37.93,
+        "mawariashi_time": 5.93
+      },
+      "6": {
+        "chikusen_time": 7.7,
+        "isshu_time": 38.23,
+        "mawariashi_time": 6.1
+      }
+    }
+  },
+  {
+    "venue_code": 11,
+    "date": "2026-01-27",
+    "race_no": 5,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.93,
+        "isshu_time": 37.27,
+        "mawariashi_time": 5.53
+      },
+      "2": {
+        "chikusen_time": 8.03,
+        "isshu_time": 37.48,
+        "mawariashi_time": 5.62
+      },
+      "3": {
+        "chikusen_time": 7.93,
+        "isshu_time": 37.43,
+        "mawariashi_time": 5.67
+      },
+      "4": {
+        "chikusen_time": 7.83,
+        "isshu_time": 38.07,
+        "mawariashi_time": 5.9
+      },
+      "5": {
+        "chikusen_time": 7.83,
+        "isshu_time": 37.5,
+        "mawariashi_time": 5.93
+      },
+      "6": {
+        "chikusen_time": 7.8,
+        "isshu_time": 37.43,
+        "mawariashi_time": 5.8
+      }
+    }
+  },
+  {
+    "venue_code": 11,
+    "date": "2026-01-27",
+    "race_no": 6,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.97,
+        "isshu_time": 37.34,
+        "mawariashi_time": 5.27
+      },
+      "2": {
+        "chikusen_time": 7.87,
+        "isshu_time": 37.72,
+        "mawariashi_time": 5.74
+      },
+      "3": {
+        "chikusen_time": 7.73,
+        "isshu_time": 36.85,
+        "mawariashi_time": 5.61
+      },
+      "4": {
+        "chikusen_time": 7.9,
+        "isshu_time": 37.03,
+        "mawariashi_time": 5.6
+      },
+      "5": {
+        "chikusen_time": 7.97,
+        "isshu_time": 38.1,
+        "mawariashi_time": 5.77
+      },
+      "6": {
+        "chikusen_time": 7.93,
+        "isshu_time": 38.59,
+        "mawariashi_time": 5.7
+      }
+    }
+  },
+  {
+    "venue_code": 11,
+    "date": "2026-01-27",
+    "race_no": 7,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.9,
+        "isshu_time": 37.47,
+        "mawariashi_time": 5.46
+      },
+      "2": {
+        "chikusen_time": 7.67,
+        "isshu_time": 37.0,
+        "mawariashi_time": 5.77
+      },
+      "3": {
+        "chikusen_time": 7.87,
+        "isshu_time": 37.05,
+        "mawariashi_time": 5.59
+      },
+      "4": {
+        "chikusen_time": 7.9,
+        "isshu_time": 38.1,
+        "mawariashi_time": 5.63
+      },
+      "5": {
+        "chikusen_time": 7.8,
+        "isshu_time": 37.84,
+        "mawariashi_time": 5.84
+      },
+      "6": {
+        "chikusen_time": 7.7,
+        "isshu_time": 37.29,
+        "mawariashi_time": 5.64
+      }
+    }
+  },
+  {
+    "venue_code": 11,
+    "date": "2026-01-27",
+    "race_no": 8,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.97,
+        "isshu_time": 37.27,
+        "mawariashi_time": 5.5
+      },
+      "2": {
+        "chikusen_time": 7.82,
+        "isshu_time": 37.2,
+        "mawariashi_time": 5.47
+      },
+      "3": {
+        "chikusen_time": 7.87,
+        "isshu_time": 37.6,
+        "mawariashi_time": 5.8
+      },
+      "4": {
+        "chikusen_time": 7.87,
+        "isshu_time": 37.8,
+        "mawariashi_time": 5.67
+      },
+      "5": {
+        "chikusen_time": 7.93,
+        "isshu_time": 37.37,
+        "mawariashi_time": 5.63
+      },
+      "6": {
+        "chikusen_time": 7.93,
+        "isshu_time": 38.1,
+        "mawariashi_time": 5.9
+      }
+    }
+  },
+  {
+    "venue_code": 11,
+    "date": "2026-01-27",
+    "race_no": 9,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.73,
+        "isshu_time": 36.3,
+        "mawariashi_time": 5.3
+      },
+      "2": {
+        "chikusen_time": 7.77,
+        "isshu_time": 38.07,
+        "mawariashi_time": 5.81
+      },
+      "3": {
+        "chikusen_time": 7.86,
+        "isshu_time": 37.58,
+        "mawariashi_time": 5.65
+      },
+      "4": {
+        "chikusen_time": 7.9,
+        "isshu_time": 37.1,
+        "mawariashi_time": 5.63
+      },
+      "5": {
+        "chikusen_time": 7.9,
+        "isshu_time": 37.53,
+        "mawariashi_time": 5.47
+      },
+      "6": {
+        "chikusen_time": 7.81,
+        "isshu_time": 37.53,
+        "mawariashi_time": 5.83
+      }
+    }
+  },
+  {
+    "venue_code": 11,
+    "date": "2026-01-27",
+    "race_no": 10,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.13,
+        "isshu_time": 36.57,
+        "mawariashi_time": 5.65
+      },
+      "2": {
+        "chikusen_time": 7.87,
+        "isshu_time": 36.57,
+        "mawariashi_time": 5.47
+      },
+      "3": {
+        "chikusen_time": 7.9,
+        "isshu_time": 37.03,
+        "mawariashi_time": 5.67
+      },
+      "4": {
+        "chikusen_time": 7.97,
+        "isshu_time": 37.44,
+        "mawariashi_time": 5.73
+      },
+      "5": {
+        "chikusen_time": 7.93,
+        "isshu_time": 37.84,
+        "mawariashi_time": 5.69
+      },
+      "6": {
+        "chikusen_time": 7.97,
+        "isshu_time": 37.56,
+        "mawariashi_time": 5.64
+      }
+    }
+  },
+  {
+    "venue_code": 11,
+    "date": "2026-01-27",
+    "race_no": 11,
+    "racers": {
+      "1": {
+        "chikusen_time": 8.0,
+        "isshu_time": 37.32,
+        "mawariashi_time": 5.37
+      },
+      "2": {
+        "chikusen_time": 8.0,
+        "isshu_time": 37.75,
+        "mawariashi_time": 5.53
+      },
+      "3": {
+        "chikusen_time": 8.1,
+        "isshu_time": 38.19,
+        "mawariashi_time": 5.8
+      },
+      "4": {
+        "chikusen_time": 7.97,
+        "isshu_time": 37.47,
+        "mawariashi_time": 5.87
+      },
+      "5": {
+        "chikusen_time": 8.03,
+        "isshu_time": 38.87,
+        "mawariashi_time": 5.87
+      },
+      "6": {
+        "chikusen_time": 7.83,
+        "isshu_time": 37.87,
+        "mawariashi_time": 5.87
+      }
+    }
+  },
+  {
+    "venue_code": 11,
+    "date": "2026-01-27",
+    "race_no": 12,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.97,
+        "isshu_time": 36.67,
+        "mawariashi_time": 5.53
+      },
+      "2": {
+        "chikusen_time": 7.87,
+        "isshu_time": 36.4,
+        "mawariashi_time": 5.57
+      },
+      "3": {
+        "chikusen_time": 7.93,
+        "isshu_time": 37.07,
+        "mawariashi_time": 5.63
+      },
+      "4": {
+        "chikusen_time": 7.83,
+        "isshu_time": 36.53,
+        "mawariashi_time": 5.63
+      },
+      "5": {
+        "chikusen_time": 7.97,
+        "isshu_time": 36.85,
+        "mawariashi_time": 5.51
+      },
+      "6": {
+        "chikusen_time": 7.93,
+        "isshu_time": 36.95,
+        "mawariashi_time": 5.78
+      }
+    }
+  },
+  {
+    "venue_code": 12,
+    "date": "2026-01-27",
+    "race_no": 1,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 36.82,
+        "mawariashi_time": 11.1
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 37.93,
+        "mawariashi_time": 11.67
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 37.52,
+        "mawariashi_time": 11.57
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.2,
+        "mawariashi_time": 11.48
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 37.28,
+        "mawariashi_time": 11.48
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 37.85,
+        "mawariashi_time": 11.57
+      }
+    }
+  },
+  {
+    "venue_code": 12,
+    "date": "2026-01-27",
+    "race_no": 2,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 37.11,
+        "mawariashi_time": 11.38
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 37.24,
+        "mawariashi_time": 11.54
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 37.55,
+        "mawariashi_time": 11.51
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.47,
+        "mawariashi_time": 11.41
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 37.32,
+        "mawariashi_time": 11.6
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 37.41,
+        "mawariashi_time": 11.6
+      }
+    }
+  },
+  {
+    "venue_code": 12,
+    "date": "2026-01-27",
+    "race_no": 3,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 36.86,
+        "mawariashi_time": 11.21
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 37.93,
+        "mawariashi_time": 11.78
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 37.02,
+        "mawariashi_time": 11.29
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.42,
+        "mawariashi_time": 11.75
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 37.0,
+        "mawariashi_time": 11.3
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 37.5,
+        "mawariashi_time": 11.67
+      }
+    }
+  },
+  {
+    "venue_code": 12,
+    "date": "2026-01-27",
+    "race_no": 4,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 36.72,
+        "mawariashi_time": 11.33
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 36.7,
+        "mawariashi_time": 11.12
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 37.01,
+        "mawariashi_time": 11.3
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.38,
+        "mawariashi_time": 11.58
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 37.38,
+        "mawariashi_time": 11.46
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 37.3,
+        "mawariashi_time": 11.51
+      }
+    }
+  },
+  {
+    "venue_code": 12,
+    "date": "2026-01-27",
+    "race_no": 5,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 36.88,
+        "mawariashi_time": 11.15
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 36.98,
+        "mawariashi_time": 11.43
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 37.28,
+        "mawariashi_time": 11.4
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.14,
+        "mawariashi_time": 11.41
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 37.96,
+        "mawariashi_time": 11.64
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 37.33,
+        "mawariashi_time": 11.45
+      }
+    }
+  },
+  {
+    "venue_code": 12,
+    "date": "2026-01-27",
+    "race_no": 6,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 36.99,
+        "mawariashi_time": 11.34
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 37.14,
+        "mawariashi_time": 11.41
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 37.49,
+        "mawariashi_time": 11.61
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.11,
+        "mawariashi_time": 11.35
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 37.59,
+        "mawariashi_time": 11.72
+      }
+    }
+  },
+  {
+    "venue_code": 12,
+    "date": "2026-01-27",
+    "race_no": 7,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 36.64,
+        "mawariashi_time": 11.28
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 36.92,
+        "mawariashi_time": 11.32
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 37.03,
+        "mawariashi_time": 11.47
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 36.74,
+        "mawariashi_time": 11.39
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 37.43,
+        "mawariashi_time": 11.5
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 36.91,
+        "mawariashi_time": 11.42
+      }
+    }
+  },
+  {
+    "venue_code": 12,
+    "date": "2026-01-27",
+    "race_no": 8,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 37.43,
+        "mawariashi_time": 11.55
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 37.49,
+        "mawariashi_time": 11.61
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 37.52,
+        "mawariashi_time": 11.59
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.17,
+        "mawariashi_time": 11.55
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 38.15,
+        "mawariashi_time": 11.67
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 37.54,
+        "mawariashi_time": 11.58
+      }
+    }
+  },
+  {
+    "venue_code": 12,
+    "date": "2026-01-27",
+    "race_no": 9,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 36.76,
+        "mawariashi_time": 11.24
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 37.22,
+        "mawariashi_time": 11.66
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 37.44,
+        "mawariashi_time": 11.72
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.72,
+        "mawariashi_time": 11.62
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 37.38,
+        "mawariashi_time": 11.61
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 37.28,
+        "mawariashi_time": 11.65
+      }
+    }
+  },
+  {
+    "venue_code": 12,
+    "date": "2026-01-27",
+    "race_no": 10,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 37.02,
+        "mawariashi_time": 11.41
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 37.29,
+        "mawariashi_time": 11.55
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 37.13,
+        "mawariashi_time": 11.55
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.06,
+        "mawariashi_time": 11.46
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 37.17,
+        "mawariashi_time": 11.52
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 37.0,
+        "mawariashi_time": 11.43
+      }
+    }
+  },
+  {
+    "venue_code": 12,
+    "date": "2026-01-27",
+    "race_no": 11,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 36.37,
+        "mawariashi_time": 11.17
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 37.24,
+        "mawariashi_time": 11.61
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 36.85,
+        "mawariashi_time": 11.37
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.55,
+        "mawariashi_time": 11.63
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 37.85,
+        "mawariashi_time": 11.6
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 37.23,
+        "mawariashi_time": 11.55
+      }
+    }
+  },
+  {
+    "venue_code": 12,
+    "date": "2026-01-27",
+    "race_no": 12,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 36.75,
+        "mawariashi_time": 11.3
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 37.21,
+        "mawariashi_time": 11.45
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 36.79,
+        "mawariashi_time": 11.36
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.1,
+        "mawariashi_time": 11.66
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 36.61,
+        "mawariashi_time": 11.29
+      }
+    }
+  },
+  {
+    "venue_code": 18,
+    "date": "2026-01-27",
+    "race_no": 1,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 36.82,
+        "mawariashi_time": 11.46
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 37.56,
+        "mawariashi_time": 11.55
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 37.8,
+        "mawariashi_time": 11.86
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.47,
+        "mawariashi_time": 11.68
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 37.38,
+        "mawariashi_time": 11.71
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 37.58,
+        "mawariashi_time": 11.84
+      }
+    }
+  },
+  {
+    "venue_code": 18,
+    "date": "2026-01-27",
+    "race_no": 2,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 36.94,
+        "mawariashi_time": 11.19
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 37.64,
+        "mawariashi_time": 11.72
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 37.49,
+        "mawariashi_time": 11.78
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.72,
+        "mawariashi_time": 11.69
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 37.47,
+        "mawariashi_time": 11.59
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 37.33,
+        "mawariashi_time": 11.66
+      }
+    }
+  },
+  {
+    "venue_code": 18,
+    "date": "2026-01-27",
+    "race_no": 3,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 37.01,
+        "mawariashi_time": 11.56
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 36.98,
+        "mawariashi_time": 11.34
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 38.19,
+        "mawariashi_time": 11.95
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.44,
+        "mawariashi_time": 11.68
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 37.37,
+        "mawariashi_time": 11.71
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 37.69,
+        "mawariashi_time": 11.7
+      }
+    }
+  },
+  {
+    "venue_code": 18,
+    "date": "2026-01-27",
+    "race_no": 4,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 37.29,
+        "mawariashi_time": 11.57
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 37.58,
+        "mawariashi_time": 11.71
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 37.1,
+        "mawariashi_time": 11.6
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 38.33,
+        "mawariashi_time": 12.07
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 38.04,
+        "mawariashi_time": 11.74
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 37.52,
+        "mawariashi_time": 11.25
+      }
+    }
+  },
+  {
+    "venue_code": 18,
+    "date": "2026-01-27",
+    "race_no": 5,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 37.24,
+        "mawariashi_time": 11.59
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 36.96,
+        "mawariashi_time": 11.58
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 37.62,
+        "mawariashi_time": 11.81
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.3,
+        "mawariashi_time": 11.68
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 37.12,
+        "mawariashi_time": 11.42
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 37.51,
+        "mawariashi_time": 11.7
+      }
+    }
+  },
+  {
+    "venue_code": 18,
+    "date": "2026-01-27",
+    "race_no": 6,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 37.75,
+        "mawariashi_time": 11.68
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 37.39,
+        "mawariashi_time": 11.51
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 37.33,
+        "mawariashi_time": 11.61
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.07,
+        "mawariashi_time": 11.43
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 37.99,
+        "mawariashi_time": 11.77
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 37.68,
+        "mawariashi_time": 11.75
+      }
+    }
+  },
+  {
+    "venue_code": 18,
+    "date": "2026-01-27",
+    "race_no": 7,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 36.91,
+        "mawariashi_time": 11.27
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 37.43,
+        "mawariashi_time": 11.58
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 37.75,
+        "mawariashi_time": 11.71
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 38.18,
+        "mawariashi_time": 11.91
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 37.28,
+        "mawariashi_time": 11.56
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 37.38,
+        "mawariashi_time": 11.49
+      }
+    }
+  },
+  {
+    "venue_code": 18,
+    "date": "2026-01-27",
+    "race_no": 8,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 37.38,
+        "mawariashi_time": 11.84
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 37.35,
+        "mawariashi_time": 11.76
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 38.0,
+        "mawariashi_time": 11.86
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.57,
+        "mawariashi_time": 11.55
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 37.55,
+        "mawariashi_time": 11.63
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 38.61,
+        "mawariashi_time": 12.09
+      }
+    }
+  },
+  {
+    "venue_code": 18,
+    "date": "2026-01-27",
+    "race_no": 9,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 37.01,
+        "mawariashi_time": 11.53
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 37.26,
+        "mawariashi_time": 11.57
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 37.88,
+        "mawariashi_time": 11.74
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.41,
+        "mawariashi_time": 11.85
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 37.82,
+        "mawariashi_time": 11.74
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 37.9,
+        "mawariashi_time": 11.88
+      }
+    }
+  },
+  {
+    "venue_code": 18,
+    "date": "2026-01-27",
+    "race_no": 10,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 37.18,
+        "mawariashi_time": 11.45
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 37.73,
+        "mawariashi_time": 11.75
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 38.45,
+        "mawariashi_time": 12.26
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 38.3,
+        "mawariashi_time": 12.24
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 38.64,
+        "mawariashi_time": 12.16
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 38.55,
+        "mawariashi_time": 12.21
+      }
+    }
+  },
+  {
+    "venue_code": 18,
+    "date": "2026-01-27",
+    "race_no": 11,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 38.2,
+        "mawariashi_time": 11.89
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 37.6,
+        "mawariashi_time": 11.61
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 37.7,
+        "mawariashi_time": 11.64
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.72,
+        "mawariashi_time": 11.92
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 38.2,
+        "mawariashi_time": 12.01
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 38.31,
+        "mawariashi_time": 12.32
+      }
+    }
+  },
+  {
+    "venue_code": 18,
+    "date": "2026-01-27",
+    "race_no": 12,
+    "racers": {
+      "1": {
+        "chikusen_time": null,
+        "isshu_time": 37.24,
+        "mawariashi_time": 11.37
+      },
+      "2": {
+        "chikusen_time": null,
+        "isshu_time": 37.53,
+        "mawariashi_time": 11.73
+      },
+      "3": {
+        "chikusen_time": null,
+        "isshu_time": 37.65,
+        "mawariashi_time": 11.67
+      },
+      "4": {
+        "chikusen_time": null,
+        "isshu_time": 37.72,
+        "mawariashi_time": 11.66
+      },
+      "5": {
+        "chikusen_time": null,
+        "isshu_time": 37.24,
+        "mawariashi_time": 11.54
+      },
+      "6": {
+        "chikusen_time": null,
+        "isshu_time": 37.46,
+        "mawariashi_time": 11.75
+      }
+    }
+  },
+  {
+    "venue_code": 20,
+    "date": "2026-01-27",
+    "race_no": 1,
+    "racers": {
+      "1": {
+        "chikusen_time": 5.95,
+        "isshu_time": 36.49,
+        "mawariashi_time": 5.53
+      },
+      "2": {
+        "chikusen_time": 6.0,
+        "isshu_time": 36.48,
+        "mawariashi_time": 5.55
+      },
+      "3": {
+        "chikusen_time": 6.06,
+        "isshu_time": 36.77,
+        "mawariashi_time": 5.57
+      },
+      "4": {
+        "chikusen_time": 5.96,
+        "isshu_time": 36.87,
+        "mawariashi_time": 5.65
+      },
+      "5": {
+        "chikusen_time": 6.02,
+        "isshu_time": 36.99,
+        "mawariashi_time": 5.71
+      },
+      "6": {
+        "chikusen_time": 6.04,
+        "isshu_time": 36.94,
+        "mawariashi_time": 5.69
+      }
+    }
+  },
+  {
+    "venue_code": 20,
+    "date": "2026-01-27",
+    "race_no": 2,
+    "racers": {
+      "1": {
+        "chikusen_time": 5.99,
+        "isshu_time": 36.7,
+        "mawariashi_time": 5.63
+      },
+      "2": {
+        "chikusen_time": 5.98,
+        "isshu_time": 36.46,
+        "mawariashi_time": 5.56
+      },
+      "3": {
+        "chikusen_time": 6.02,
+        "isshu_time": 37.44,
+        "mawariashi_time": 5.87
+      },
+      "4": {
+        "chikusen_time": 6.03,
+        "isshu_time": 37.07,
+        "mawariashi_time": 5.75
+      },
+      "5": {
+        "chikusen_time": 6.05,
+        "isshu_time": 37.35,
+        "mawariashi_time": 5.8
+      },
+      "6": {
+        "chikusen_time": 5.98,
+        "isshu_time": 37.01,
+        "mawariashi_time": 5.69
+      }
+    }
+  },
+  {
+    "venue_code": 20,
+    "date": "2026-01-27",
+    "race_no": 3,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.0,
+        "isshu_time": 36.81,
+        "mawariashi_time": 5.63
+      },
+      "2": {
+        "chikusen_time": 6.08,
+        "isshu_time": 37.29,
+        "mawariashi_time": 5.76
+      },
+      "3": {
+        "chikusen_time": 6.0,
+        "isshu_time": 37.38,
+        "mawariashi_time": 5.75
+      },
+      "4": {
+        "chikusen_time": 6.09,
+        "isshu_time": 37.67,
+        "mawariashi_time": 5.84
+      },
+      "5": {
+        "chikusen_time": 6.08,
+        "isshu_time": 38.08,
+        "mawariashi_time": 6.02
+      },
+      "6": {
+        "chikusen_time": 6.07,
+        "isshu_time": 36.91,
+        "mawariashi_time": 5.52
+      }
+    }
+  },
+  {
+    "venue_code": 20,
+    "date": "2026-01-27",
+    "race_no": 4,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.03,
+        "isshu_time": 36.84,
+        "mawariashi_time": 5.59
+      },
+      "2": {
+        "chikusen_time": 6.09,
+        "isshu_time": 36.78,
+        "mawariashi_time": 5.6
+      },
+      "3": {
+        "chikusen_time": 5.99,
+        "isshu_time": 37.2,
+        "mawariashi_time": 5.85
+      },
+      "4": {
+        "chikusen_time": 5.99,
+        "isshu_time": 37.03,
+        "mawariashi_time": 5.62
+      },
+      "5": {
+        "chikusen_time": 6.04,
+        "isshu_time": 37.45,
+        "mawariashi_time": 5.75
+      },
+      "6": {
+        "chikusen_time": 5.99,
+        "isshu_time": 37.57,
+        "mawariashi_time": 5.9
+      }
+    }
+  },
+  {
+    "venue_code": 20,
+    "date": "2026-01-27",
+    "race_no": 5,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.01,
+        "isshu_time": 37.02,
+        "mawariashi_time": 5.62
+      },
+      "2": {
+        "chikusen_time": 6.04,
+        "isshu_time": 36.95,
+        "mawariashi_time": 5.66
+      },
+      "3": {
+        "chikusen_time": 6.08,
+        "isshu_time": 37.97,
+        "mawariashi_time": 5.81
+      },
+      "4": {
+        "chikusen_time": 6.02,
+        "isshu_time": 37.36,
+        "mawariashi_time": 5.76
+      },
+      "5": {
+        "chikusen_time": 5.99,
+        "isshu_time": 37.14,
+        "mawariashi_time": 5.88
+      },
+      "6": {
+        "chikusen_time": 6.09,
+        "isshu_time": 37.17,
+        "mawariashi_time": 5.66
+      }
+    }
+  },
+  {
+    "venue_code": 20,
+    "date": "2026-01-27",
+    "race_no": 6,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.03,
+        "isshu_time": 36.68,
+        "mawariashi_time": 5.67
+      },
+      "2": {
+        "chikusen_time": 5.95,
+        "isshu_time": 37.89,
+        "mawariashi_time": 5.94
+      },
+      "3": {
+        "chikusen_time": 6.05,
+        "isshu_time": 37.2,
+        "mawariashi_time": 5.71
+      },
+      "4": {
+        "chikusen_time": 5.98,
+        "isshu_time": 36.98,
+        "mawariashi_time": 5.48
+      },
+      "5": {
+        "chikusen_time": 6.04,
+        "isshu_time": 37.31,
+        "mawariashi_time": 5.83
+      },
+      "6": {
+        "chikusen_time": 6.0,
+        "isshu_time": 37.08,
+        "mawariashi_time": 5.54
+      }
+    }
+  },
+  {
+    "venue_code": 20,
+    "date": "2026-01-27",
+    "race_no": 7,
+    "racers": {
+      "1": {
+        "chikusen_time": 5.99,
+        "isshu_time": 36.69,
+        "mawariashi_time": 5.68
+      },
+      "2": {
+        "chikusen_time": 6.04,
+        "isshu_time": 37.21,
+        "mawariashi_time": 5.63
+      },
+      "3": {
+        "chikusen_time": 6.04,
+        "isshu_time": 36.59,
+        "mawariashi_time": 5.61
+      },
+      "4": {
+        "chikusen_time": 6.0,
+        "isshu_time": 37.23,
+        "mawariashi_time": 5.84
+      },
+      "5": {
+        "chikusen_time": 6.05,
+        "isshu_time": 37.45,
+        "mawariashi_time": 5.95
+      },
+      "6": {
+        "chikusen_time": 6.02,
+        "isshu_time": 37.32,
+        "mawariashi_time": 5.95
+      }
+    }
+  },
+  {
+    "venue_code": 20,
+    "date": "2026-01-27",
+    "race_no": 8,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.01,
+        "isshu_time": 36.56,
+        "mawariashi_time": 5.54
+      },
+      "2": {
+        "chikusen_time": 6.1,
+        "isshu_time": 37.61,
+        "mawariashi_time": 5.88
+      },
+      "3": {
+        "chikusen_time": 6.04,
+        "isshu_time": 37.92,
+        "mawariashi_time": 5.74
+      },
+      "4": {
+        "chikusen_time": 5.99,
+        "isshu_time": 38.29,
+        "mawariashi_time": 5.96
+      },
+      "5": {
+        "chikusen_time": 6.04,
+        "isshu_time": 37.6,
+        "mawariashi_time": 5.77
+      },
+      "6": {
+        "chikusen_time": 6.01,
+        "isshu_time": 37.13,
+        "mawariashi_time": 5.63
+      }
+    }
+  },
+  {
+    "venue_code": 20,
+    "date": "2026-01-27",
+    "race_no": 9,
+    "racers": {
+      "1": {
+        "chikusen_time": 5.95,
+        "isshu_time": 36.13,
+        "mawariashi_time": 5.6
+      },
+      "2": {
+        "chikusen_time": 6.05,
+        "isshu_time": 37.28,
+        "mawariashi_time": 5.83
+      },
+      "3": {
+        "chikusen_time": 6.0,
+        "isshu_time": 36.91,
+        "mawariashi_time": 5.69
+      },
+      "4": {
+        "chikusen_time": 6.01,
+        "isshu_time": 37.15,
+        "mawariashi_time": 5.77
+      },
+      "5": {
+        "chikusen_time": 5.98,
+        "isshu_time": 37.38,
+        "mawariashi_time": 5.87
+      },
+      "6": {
+        "chikusen_time": 6.0,
+        "isshu_time": 37.23,
+        "mawariashi_time": 5.83
+      }
+    }
+  },
+  {
+    "venue_code": 20,
+    "date": "2026-01-27",
+    "race_no": 10,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.05,
+        "isshu_time": 36.68,
+        "mawariashi_time": 5.56
+      },
+      "2": {
+        "chikusen_time": 5.96,
+        "isshu_time": 36.93,
+        "mawariashi_time": 5.5
+      },
+      "3": {
+        "chikusen_time": 6.03,
+        "isshu_time": 37.06,
+        "mawariashi_time": 5.67
+      },
+      "4": {
+        "chikusen_time": 6.0,
+        "isshu_time": 36.73,
+        "mawariashi_time": 5.58
+      },
+      "5": {
+        "chikusen_time": 5.99,
+        "isshu_time": 36.87,
+        "mawariashi_time": 5.5
+      }
+    }
+  },
+  {
+    "venue_code": 20,
+    "date": "2026-01-27",
+    "race_no": 11,
+    "racers": {
+      "1": {
+        "chikusen_time": 5.96,
+        "isshu_time": 36.62,
+        "mawariashi_time": 5.71
+      },
+      "2": {
+        "chikusen_time": 5.99,
+        "isshu_time": 36.85,
+        "mawariashi_time": 5.77
+      },
+      "3": {
+        "chikusen_time": 6.0,
+        "isshu_time": 36.93,
+        "mawariashi_time": 5.67
+      },
+      "4": {
+        "chikusen_time": 6.02,
+        "isshu_time": 37.39,
+        "mawariashi_time": 5.94
+      },
+      "5": {
+        "chikusen_time": 6.09,
+        "isshu_time": 36.9,
+        "mawariashi_time": 5.58
+      },
+      "6": {
+        "chikusen_time": 6.01,
+        "isshu_time": 37.07,
+        "mawariashi_time": 5.65
+      }
+    }
+  },
+  {
+    "venue_code": 20,
+    "date": "2026-01-27",
+    "race_no": 12,
+    "racers": {
+      "1": {
+        "chikusen_time": 6.01,
+        "isshu_time": 36.48,
+        "mawariashi_time": 5.49
+      },
+      "2": {
+        "chikusen_time": 6.04,
+        "isshu_time": 37.54,
+        "mawariashi_time": 5.98
+      },
+      "3": {
+        "chikusen_time": 6.06,
+        "isshu_time": 37.69,
+        "mawariashi_time": 5.76
+      },
+      "4": {
+        "chikusen_time": 6.03,
+        "isshu_time": 37.51,
+        "mawariashi_time": 5.8
+      },
+      "5": {
+        "chikusen_time": 6.05,
+        "isshu_time": 37.05,
+        "mawariashi_time": 5.81
+      },
+      "6": {
+        "chikusen_time": 6.01,
+        "isshu_time": 37.88,
+        "mawariashi_time": 5.5
+      }
+    }
+  },
+  {
+    "venue_code": 21,
+    "date": "2026-01-27",
+    "race_no": 1,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.66,
+        "isshu_time": 36.08,
+        "mawariashi_time": 7.86
+      },
+      "2": {
+        "chikusen_time": 7.84,
+        "isshu_time": 36.74,
+        "mawariashi_time": 7.71
+      },
+      "3": {
+        "chikusen_time": 7.72,
+        "isshu_time": 37.18,
+        "mawariashi_time": 8.25
+      },
+      "4": {
+        "chikusen_time": 7.62,
+        "isshu_time": 36.75,
+        "mawariashi_time": 8.11
+      },
+      "5": {
+        "chikusen_time": 7.68,
+        "isshu_time": 36.55,
+        "mawariashi_time": 7.94
+      },
+      "6": {
+        "chikusen_time": 7.68,
+        "isshu_time": 36.26,
+        "mawariashi_time": 7.82
+      }
+    }
+  },
+  {
+    "venue_code": 21,
+    "date": "2026-01-27",
+    "race_no": 2,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.65,
+        "isshu_time": 36.82,
+        "mawariashi_time": 8.15
+      },
+      "2": {
+        "chikusen_time": 7.76,
+        "isshu_time": 36.54,
+        "mawariashi_time": 7.85
+      },
+      "3": {
+        "chikusen_time": 7.73,
+        "isshu_time": 37.16,
+        "mawariashi_time": 8.11
+      },
+      "4": {
+        "chikusen_time": 7.69,
+        "isshu_time": 37.61,
+        "mawariashi_time": 8.16
+      },
+      "5": {
+        "chikusen_time": 7.75,
+        "isshu_time": 37.44,
+        "mawariashi_time": 8.17
+      },
+      "6": {
+        "chikusen_time": 7.68,
+        "isshu_time": 36.75,
+        "mawariashi_time": 8.12
+      }
+    }
+  },
+  {
+    "venue_code": 21,
+    "date": "2026-01-27",
+    "race_no": 3,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.63,
+        "isshu_time": 36.07,
+        "mawariashi_time": 7.86
+      },
+      "2": {
+        "chikusen_time": 7.63,
+        "isshu_time": 36.91,
+        "mawariashi_time": 8.06
+      },
+      "3": {
+        "chikusen_time": 7.56,
+        "isshu_time": 36.91,
+        "mawariashi_time": 8.23
+      },
+      "4": {
+        "chikusen_time": 7.65,
+        "isshu_time": 37.28,
+        "mawariashi_time": 8.05
+      },
+      "5": {
+        "chikusen_time": 7.7,
+        "isshu_time": 37.0,
+        "mawariashi_time": 7.8
+      },
+      "6": {
+        "chikusen_time": 7.67,
+        "isshu_time": 36.89,
+        "mawariashi_time": 7.93
+      }
+    }
+  },
+  {
+    "venue_code": 21,
+    "date": "2026-01-27",
+    "race_no": 4,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.58,
+        "isshu_time": 35.92,
+        "mawariashi_time": 7.75
+      },
+      "2": {
+        "chikusen_time": 7.64,
+        "isshu_time": 36.46,
+        "mawariashi_time": 7.83
+      },
+      "3": {
+        "chikusen_time": 7.69,
+        "isshu_time": 37.07,
+        "mawariashi_time": 8.04
+      },
+      "4": {
+        "chikusen_time": 7.63,
+        "isshu_time": 36.32,
+        "mawariashi_time": 7.84
+      },
+      "5": {
+        "chikusen_time": 7.61,
+        "isshu_time": 36.57,
+        "mawariashi_time": 8.13
+      },
+      "6": {
+        "chikusen_time": 7.59,
+        "isshu_time": 36.71,
+        "mawariashi_time": 7.9
+      }
+    }
+  },
+  {
+    "venue_code": 21,
+    "date": "2026-01-27",
+    "race_no": 5,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.62,
+        "isshu_time": 36.03,
+        "mawariashi_time": 7.59
+      },
+      "2": {
+        "chikusen_time": 7.78,
+        "isshu_time": 36.69,
+        "mawariashi_time": 7.85
+      },
+      "3": {
+        "chikusen_time": 7.76,
+        "isshu_time": 36.97,
+        "mawariashi_time": 8.08
+      },
+      "4": {
+        "chikusen_time": 7.67,
+        "isshu_time": 36.39,
+        "mawariashi_time": 7.93
+      },
+      "5": {
+        "chikusen_time": 7.75,
+        "isshu_time": 36.79,
+        "mawariashi_time": 7.91
+      },
+      "6": {
+        "chikusen_time": 7.7,
+        "isshu_time": 36.66,
+        "mawariashi_time": 7.97
+      }
+    }
+  },
+  {
+    "venue_code": 21,
+    "date": "2026-01-27",
+    "race_no": 6,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.7,
+        "isshu_time": 36.56,
+        "mawariashi_time": 7.9
+      },
+      "2": {
+        "chikusen_time": 7.62,
+        "isshu_time": 36.46,
+        "mawariashi_time": 7.74
+      },
+      "3": {
+        "chikusen_time": 7.75,
+        "isshu_time": 37.16,
+        "mawariashi_time": 7.71
+      },
+      "4": {
+        "chikusen_time": 7.74,
+        "isshu_time": 36.99,
+        "mawariashi_time": 7.93
+      },
+      "5": {
+        "chikusen_time": 7.64,
+        "isshu_time": 36.37,
+        "mawariashi_time": 7.65
+      },
+      "6": {
+        "chikusen_time": 7.7,
+        "isshu_time": 36.36,
+        "mawariashi_time": 7.69
+      }
+    }
+  },
+  {
+    "venue_code": 21,
+    "date": "2026-01-27",
+    "race_no": 7,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.69,
+        "isshu_time": 36.8,
+        "mawariashi_time": 7.89
+      },
+      "2": {
+        "chikusen_time": 7.67,
+        "isshu_time": 37.73,
+        "mawariashi_time": 8.11
+      },
+      "3": {
+        "chikusen_time": 7.7,
+        "isshu_time": 37.17,
+        "mawariashi_time": 8.05
+      },
+      "4": {
+        "chikusen_time": 7.65,
+        "isshu_time": 36.69,
+        "mawariashi_time": 7.83
+      },
+      "5": {
+        "chikusen_time": 7.73,
+        "isshu_time": 36.79,
+        "mawariashi_time": 7.8
+      }
+    }
+  },
+  {
+    "venue_code": 21,
+    "date": "2026-01-27",
+    "race_no": 8,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.57,
+        "isshu_time": 36.68,
+        "mawariashi_time": 8.3
+      },
+      "2": {
+        "chikusen_time": 7.61,
+        "isshu_time": 37.1,
+        "mawariashi_time": 8.08
+      },
+      "3": {
+        "chikusen_time": 7.64,
+        "isshu_time": 37.19,
+        "mawariashi_time": 8.16
+      },
+      "4": {
+        "chikusen_time": 7.64,
+        "isshu_time": 37.03,
+        "mawariashi_time": 8.31
+      },
+      "5": {
+        "chikusen_time": 7.72,
+        "isshu_time": 36.66,
+        "mawariashi_time": 8.04
+      },
+      "6": {
+        "chikusen_time": 7.74,
+        "isshu_time": 36.98,
+        "mawariashi_time": 8.2
+      }
+    }
+  },
+  {
+    "venue_code": 21,
+    "date": "2026-01-27",
+    "race_no": 9,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.69,
+        "isshu_time": 36.73,
+        "mawariashi_time": 7.68
+      },
+      "2": {
+        "chikusen_time": 7.76,
+        "isshu_time": 36.46,
+        "mawariashi_time": 7.81
+      },
+      "3": {
+        "chikusen_time": 7.68,
+        "isshu_time": 36.58,
+        "mawariashi_time": 8.09
+      },
+      "4": {
+        "chikusen_time": 7.63,
+        "isshu_time": 37.04,
+        "mawariashi_time": 8.34
+      },
+      "5": {
+        "chikusen_time": 7.83,
+        "isshu_time": 37.58,
+        "mawariashi_time": 8.27
+      },
+      "6": {
+        "chikusen_time": 7.72,
+        "isshu_time": 37.52,
+        "mawariashi_time": 8.35
+      }
+    }
+  },
+  {
+    "venue_code": 21,
+    "date": "2026-01-27",
+    "race_no": 10,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.73,
+        "isshu_time": 36.26,
+        "mawariashi_time": 7.89
+      },
+      "2": {
+        "chikusen_time": 7.74,
+        "isshu_time": 37.22,
+        "mawariashi_time": 8.2
+      },
+      "3": {
+        "chikusen_time": 7.77,
+        "isshu_time": 36.7,
+        "mawariashi_time": 8.16
+      },
+      "4": {
+        "chikusen_time": 7.78,
+        "isshu_time": 37.32,
+        "mawariashi_time": 8.31
+      },
+      "5": {
+        "chikusen_time": 7.63,
+        "isshu_time": 36.56,
+        "mawariashi_time": 8.1
+      },
+      "6": {
+        "chikusen_time": 7.68,
+        "isshu_time": 36.38,
+        "mawariashi_time": 7.98
+      }
+    }
+  },
+  {
+    "venue_code": 21,
+    "date": "2026-01-27",
+    "race_no": 11,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.72,
+        "isshu_time": 36.4,
+        "mawariashi_time": 7.77
+      },
+      "2": {
+        "chikusen_time": 7.72,
+        "isshu_time": 36.62,
+        "mawariashi_time": 7.99
+      },
+      "3": {
+        "chikusen_time": 7.6,
+        "isshu_time": 37.28,
+        "mawariashi_time": 8.24
+      },
+      "4": {
+        "chikusen_time": 7.61,
+        "isshu_time": 36.12,
+        "mawariashi_time": 7.98
+      },
+      "5": {
+        "chikusen_time": 7.74,
+        "isshu_time": 36.84,
+        "mawariashi_time": 8.27
+      },
+      "6": {
+        "chikusen_time": 7.71,
+        "isshu_time": 37.16,
+        "mawariashi_time": 8.04
+      }
+    }
+  },
+  {
+    "venue_code": 21,
+    "date": "2026-01-27",
+    "race_no": 12,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.72,
+        "isshu_time": 36.72,
+        "mawariashi_time": 7.95
+      },
+      "2": {
+        "chikusen_time": 7.75,
+        "isshu_time": 36.43,
+        "mawariashi_time": 7.93
+      },
+      "3": {
+        "chikusen_time": 7.74,
+        "isshu_time": 36.88,
+        "mawariashi_time": 8.22
+      },
+      "4": {
+        "chikusen_time": 7.77,
+        "isshu_time": 36.68,
+        "mawariashi_time": 7.95
+      },
+      "5": {
+        "chikusen_time": 7.67,
+        "isshu_time": 37.22,
+        "mawariashi_time": 7.92
+      },
+      "6": {
+        "chikusen_time": 7.71,
+        "isshu_time": 36.87,
+        "mawariashi_time": 8.28
+      }
+    }
+  },
+  {
+    "venue_code": 22,
+    "date": "2026-01-27",
+    "race_no": 1,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.6,
+        "isshu_time": 37.1,
+        "mawariashi_time": 5.47
+      },
+      "2": {
+        "chikusen_time": 7.67,
+        "isshu_time": 37.3,
+        "mawariashi_time": 5.57
+      },
+      "3": {
+        "chikusen_time": 7.63,
+        "isshu_time": 37.07,
+        "mawariashi_time": 5.53
+      },
+      "4": {
+        "chikusen_time": 7.73,
+        "isshu_time": 37.2,
+        "mawariashi_time": 5.37
+      },
+      "5": {
+        "chikusen_time": 7.7,
+        "isshu_time": 37.43,
+        "mawariashi_time": 5.67
+      },
+      "6": {
+        "chikusen_time": 7.6,
+        "isshu_time": 37.37,
+        "mawariashi_time": 5.43
+      }
+    }
+  },
+  {
+    "venue_code": 22,
+    "date": "2026-01-27",
+    "race_no": 2,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.7,
+        "isshu_time": 36.6,
+        "mawariashi_time": 5.57
+      },
+      "2": {
+        "chikusen_time": 7.69,
+        "isshu_time": 37.33,
+        "mawariashi_time": 5.7
+      },
+      "3": {
+        "chikusen_time": 7.67,
+        "isshu_time": 37.43,
+        "mawariashi_time": 5.63
+      },
+      "4": {
+        "chikusen_time": 7.67,
+        "isshu_time": 37.3,
+        "mawariashi_time": 5.57
+      },
+      "5": {
+        "chikusen_time": 7.73,
+        "isshu_time": 37.52,
+        "mawariashi_time": 5.68
+      },
+      "6": {
+        "chikusen_time": 7.63,
+        "isshu_time": 38.08,
+        "mawariashi_time": 5.87
+      }
+    }
+  },
+  {
+    "venue_code": 22,
+    "date": "2026-01-27",
+    "race_no": 3,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.77,
+        "isshu_time": 37.4,
+        "mawariashi_time": 5.73
+      },
+      "2": {
+        "chikusen_time": 7.65,
+        "isshu_time": 37.9,
+        "mawariashi_time": 5.7
+      },
+      "3": {
+        "chikusen_time": 7.57,
+        "isshu_time": 37.18,
+        "mawariashi_time": 5.78
+      },
+      "4": {
+        "chikusen_time": 7.7,
+        "isshu_time": 37.6,
+        "mawariashi_time": 5.77
+      },
+      "5": {
+        "chikusen_time": 7.7,
+        "isshu_time": 37.59,
+        "mawariashi_time": 5.75
+      },
+      "6": {
+        "chikusen_time": 7.66,
+        "isshu_time": 37.29,
+        "mawariashi_time": 5.52
+      }
+    }
+  },
+  {
+    "venue_code": 22,
+    "date": "2026-01-27",
+    "race_no": 4,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.73,
+        "isshu_time": 37.85,
+        "mawariashi_time": 5.76
+      },
+      "2": {
+        "chikusen_time": 7.67,
+        "isshu_time": 37.0,
+        "mawariashi_time": 5.51
+      },
+      "3": {
+        "chikusen_time": 7.67,
+        "isshu_time": 36.64,
+        "mawariashi_time": 5.37
+      },
+      "4": {
+        "chikusen_time": 7.53,
+        "isshu_time": 36.63,
+        "mawariashi_time": 5.49
+      },
+      "5": {
+        "chikusen_time": 7.74,
+        "isshu_time": 37.69,
+        "mawariashi_time": 6.47
+      },
+      "6": {
+        "chikusen_time": 7.73,
+        "isshu_time": 37.63,
+        "mawariashi_time": 5.54
+      }
+    }
+  },
+  {
+    "venue_code": 22,
+    "date": "2026-01-27",
+    "race_no": 5,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.64,
+        "isshu_time": 36.61,
+        "mawariashi_time": 5.69
+      },
+      "2": {
+        "chikusen_time": 7.63,
+        "isshu_time": 37.0,
+        "mawariashi_time": 6.01
+      },
+      "3": {
+        "chikusen_time": 7.67,
+        "isshu_time": 36.91,
+        "mawariashi_time": 5.7
+      },
+      "4": {
+        "chikusen_time": 7.62,
+        "isshu_time": 37.1,
+        "mawariashi_time": 5.6
+      },
+      "5": {
+        "chikusen_time": 7.54,
+        "isshu_time": 36.91,
+        "mawariashi_time": 5.7
+      },
+      "6": {
+        "chikusen_time": 7.68,
+        "isshu_time": 37.29,
+        "mawariashi_time": 5.55
+      }
+    }
+  },
+  {
+    "venue_code": 22,
+    "date": "2026-01-27",
+    "race_no": 6,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.68,
+        "isshu_time": 38.08,
+        "mawariashi_time": 5.99
+      },
+      "2": {
+        "chikusen_time": 7.67,
+        "isshu_time": 37.29,
+        "mawariashi_time": 5.5
+      },
+      "3": {
+        "chikusen_time": 7.63,
+        "isshu_time": 36.88,
+        "mawariashi_time": 5.48
+      },
+      "4": {
+        "chikusen_time": 7.7,
+        "isshu_time": 37.67,
+        "mawariashi_time": 5.7
+      },
+      "5": {
+        "chikusen_time": 7.73,
+        "isshu_time": 36.84,
+        "mawariashi_time": 5.4
+      },
+      "6": {
+        "chikusen_time": 7.67,
+        "isshu_time": 36.74,
+        "mawariashi_time": 5.36
+      }
+    }
+  },
+  {
+    "venue_code": 22,
+    "date": "2026-01-27",
+    "race_no": 7,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.77,
+        "isshu_time": 37.35,
+        "mawariashi_time": 5.7
+      },
+      "2": {
+        "chikusen_time": 7.69,
+        "isshu_time": 37.33,
+        "mawariashi_time": 5.6
+      },
+      "3": {
+        "chikusen_time": 7.77,
+        "isshu_time": 37.43,
+        "mawariashi_time": 5.83
+      },
+      "4": {
+        "chikusen_time": 7.73,
+        "isshu_time": 37.57,
+        "mawariashi_time": 5.63
+      },
+      "5": {
+        "chikusen_time": 7.63,
+        "isshu_time": 37.31,
+        "mawariashi_time": 5.79
+      },
+      "6": {
+        "chikusen_time": 7.69,
+        "isshu_time": 37.83,
+        "mawariashi_time": 5.8
+      }
+    }
+  },
+  {
+    "venue_code": 22,
+    "date": "2026-01-27",
+    "race_no": 8,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.77,
+        "isshu_time": 36.99,
+        "mawariashi_time": 5.49
+      },
+      "2": {
+        "chikusen_time": 7.57,
+        "isshu_time": 37.03,
+        "mawariashi_time": 5.39
+      },
+      "3": {
+        "chikusen_time": 7.67,
+        "isshu_time": 37.23,
+        "mawariashi_time": 5.47
+      },
+      "4": {
+        "chikusen_time": 7.57,
+        "isshu_time": 37.33,
+        "mawariashi_time": 5.8
+      },
+      "5": {
+        "chikusen_time": 7.68,
+        "isshu_time": 37.67,
+        "mawariashi_time": 5.83
+      },
+      "6": {
+        "chikusen_time": 7.63,
+        "isshu_time": 36.87,
+        "mawariashi_time": 5.63
+      }
+    }
+  },
+  {
+    "venue_code": 22,
+    "date": "2026-01-27",
+    "race_no": 9,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.71,
+        "isshu_time": 37.41,
+        "mawariashi_time": 5.44
+      },
+      "2": {
+        "chikusen_time": 7.6,
+        "isshu_time": 37.43,
+        "mawariashi_time": 5.53
+      },
+      "3": {
+        "chikusen_time": 7.68,
+        "isshu_time": 37.47,
+        "mawariashi_time": 5.54
+      },
+      "4": {
+        "chikusen_time": 7.73,
+        "isshu_time": 37.25,
+        "mawariashi_time": 5.8
+      },
+      "5": {
+        "chikusen_time": 7.6,
+        "isshu_time": 37.43,
+        "mawariashi_time": 5.73
+      },
+      "6": {
+        "chikusen_time": 7.63,
+        "isshu_time": 37.97,
+        "mawariashi_time": 5.73
+      }
+    }
+  },
+  {
+    "venue_code": 22,
+    "date": "2026-01-27",
+    "race_no": 10,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.73,
+        "isshu_time": 37.06,
+        "mawariashi_time": 5.73
+      },
+      "2": {
+        "chikusen_time": 7.67,
+        "isshu_time": 36.7,
+        "mawariashi_time": 5.33
+      },
+      "3": {
+        "chikusen_time": 7.6,
+        "isshu_time": 37.29,
+        "mawariashi_time": 5.64
+      },
+      "4": {
+        "chikusen_time": 7.6,
+        "isshu_time": 38.33,
+        "mawariashi_time": 6.07
+      },
+      "5": {
+        "chikusen_time": 7.7,
+        "isshu_time": 37.17,
+        "mawariashi_time": 5.57
+      },
+      "6": {
+        "chikusen_time": 7.53,
+        "isshu_time": 37.47,
+        "mawariashi_time": 5.67
+      }
+    }
+  },
+  {
+    "venue_code": 22,
+    "date": "2026-01-27",
+    "race_no": 11,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.63,
+        "isshu_time": 36.67,
+        "mawariashi_time": 5.47
+      },
+      "2": {
+        "chikusen_time": 7.67,
+        "isshu_time": 37.0,
+        "mawariashi_time": 5.33
+      },
+      "3": {
+        "chikusen_time": 7.62,
+        "isshu_time": 37.05,
+        "mawariashi_time": 5.42
+      },
+      "4": {
+        "chikusen_time": 7.67,
+        "isshu_time": 36.97,
+        "mawariashi_time": 5.47
+      },
+      "5": {
+        "chikusen_time": 7.57,
+        "isshu_time": 36.74,
+        "mawariashi_time": 5.6
+      },
+      "6": {
+        "chikusen_time": 7.6,
+        "isshu_time": 37.63,
+        "mawariashi_time": 5.9
+      }
+    }
+  },
+  {
+    "venue_code": 22,
+    "date": "2026-01-27",
+    "race_no": 12,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.63,
+        "isshu_time": 37.1,
+        "mawariashi_time": 5.43
+      },
+      "2": {
+        "chikusen_time": 7.73,
+        "isshu_time": 37.13,
+        "mawariashi_time": 5.53
+      },
+      "3": {
+        "chikusen_time": 7.83,
+        "isshu_time": 37.73,
+        "mawariashi_time": 5.63
+      },
+      "4": {
+        "chikusen_time": 7.67,
+        "isshu_time": 37.27,
+        "mawariashi_time": 5.4
+      },
+      "5": {
+        "chikusen_time": 7.77,
+        "isshu_time": 38.11,
+        "mawariashi_time": 5.49
+      },
+      "6": {
+        "chikusen_time": 7.67,
+        "isshu_time": 37.33,
+        "mawariashi_time": 5.7
+      }
+    }
+  },
+  {
+    "venue_code": 24,
+    "date": "2026-01-27",
+    "race_no": 1,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.2,
+        "isshu_time": 36.59,
+        "mawariashi_time": 6.25
+      },
+      "2": {
+        "chikusen_time": 7.29,
+        "isshu_time": 36.77,
+        "mawariashi_time": 6.17
+      },
+      "3": {
+        "chikusen_time": 7.27,
+        "isshu_time": 37.33,
+        "mawariashi_time": 6.37
+      },
+      "4": {
+        "chikusen_time": 7.33,
+        "isshu_time": 37.16,
+        "mawariashi_time": 6.23
+      },
+      "5": {
+        "chikusen_time": 7.2,
+        "isshu_time": 36.81,
+        "mawariashi_time": 6.06
+      },
+      "6": {
+        "chikusen_time": 7.17,
+        "isshu_time": 37.87,
+        "mawariashi_time": 6.04
+      }
+    }
+  },
+  {
+    "venue_code": 24,
+    "date": "2026-01-27",
+    "race_no": 2,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.17,
+        "isshu_time": 36.49,
+        "mawariashi_time": 6.14
+      },
+      "2": {
+        "chikusen_time": 7.2,
+        "isshu_time": 36.87,
+        "mawariashi_time": 6.2
+      },
+      "3": {
+        "chikusen_time": 7.24,
+        "isshu_time": 37.03,
+        "mawariashi_time": 6.2
+      },
+      "4": {
+        "chikusen_time": 7.23,
+        "isshu_time": 36.97,
+        "mawariashi_time": 6.3
+      },
+      "5": {
+        "chikusen_time": 7.38,
+        "isshu_time": 36.93,
+        "mawariashi_time": 6.2
+      },
+      "6": {
+        "chikusen_time": 7.17,
+        "isshu_time": 36.7,
+        "mawariashi_time": 6.2
+      }
+    }
+  },
+  {
+    "venue_code": 24,
+    "date": "2026-01-27",
+    "race_no": 3,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.15,
+        "isshu_time": 37.33,
+        "mawariashi_time": 6.87
+      },
+      "2": {
+        "chikusen_time": 7.17,
+        "isshu_time": 36.8,
+        "mawariashi_time": 6.47
+      },
+      "3": {
+        "chikusen_time": 7.17,
+        "isshu_time": 36.17,
+        "mawariashi_time": 6.3
+      },
+      "4": {
+        "chikusen_time": 7.17,
+        "isshu_time": 37.4,
+        "mawariashi_time": 6.27
+      },
+      "5": {
+        "chikusen_time": 7.23,
+        "isshu_time": 37.09,
+        "mawariashi_time": 6.4
+      },
+      "6": {
+        "chikusen_time": 7.13,
+        "isshu_time": 36.77,
+        "mawariashi_time": 6.13
+      }
+    }
+  },
+  {
+    "venue_code": 24,
+    "date": "2026-01-27",
+    "race_no": 4,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.26,
+        "isshu_time": 36.76,
+        "mawariashi_time": 6.03
+      },
+      "2": {
+        "chikusen_time": 7.2,
+        "isshu_time": 36.87,
+        "mawariashi_time": 6.17
+      },
+      "3": {
+        "chikusen_time": 7.3,
+        "isshu_time": 37.37,
+        "mawariashi_time": 6.3
+      },
+      "4": {
+        "chikusen_time": 7.27,
+        "isshu_time": 37.1,
+        "mawariashi_time": 6.2
+      },
+      "5": {
+        "chikusen_time": 7.13,
+        "isshu_time": 37.23,
+        "mawariashi_time": 6.2
+      },
+      "6": {
+        "chikusen_time": 7.17,
+        "isshu_time": 37.9,
+        "mawariashi_time": 6.37
+      }
+    }
+  },
+  {
+    "venue_code": 24,
+    "date": "2026-01-27",
+    "race_no": 5,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.1,
+        "isshu_time": 36.58,
+        "mawariashi_time": 5.77
+      },
+      "2": {
+        "chikusen_time": 7.13,
+        "isshu_time": 36.83,
+        "mawariashi_time": 6.07
+      },
+      "3": {
+        "chikusen_time": 7.27,
+        "isshu_time": 37.58,
+        "mawariashi_time": 6.32
+      },
+      "4": {
+        "chikusen_time": 7.26,
+        "isshu_time": 37.06,
+        "mawariashi_time": 6.35
+      },
+      "5": {
+        "chikusen_time": 7.27,
+        "isshu_time": 37.17,
+        "mawariashi_time": 6.3
+      },
+      "6": {
+        "chikusen_time": 7.2,
+        "isshu_time": 36.57,
+        "mawariashi_time": 6.27
+      }
+    }
+  },
+  {
+    "venue_code": 24,
+    "date": "2026-01-27",
+    "race_no": 6,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.07,
+        "isshu_time": 36.07,
+        "mawariashi_time": 6.03
+      },
+      "2": {
+        "chikusen_time": 7.23,
+        "isshu_time": 37.3,
+        "mawariashi_time": 6.33
+      },
+      "3": {
+        "chikusen_time": 7.27,
+        "isshu_time": 37.2,
+        "mawariashi_time": 6.33
+      },
+      "4": {
+        "chikusen_time": 7.23,
+        "isshu_time": 37.13,
+        "mawariashi_time": 6.37
+      },
+      "5": {
+        "chikusen_time": 7.17,
+        "isshu_time": 37.2,
+        "mawariashi_time": 6.3
+      },
+      "6": {
+        "chikusen_time": 7.07,
+        "isshu_time": 36.87,
+        "mawariashi_time": 6.37
+      }
+    }
+  },
+  {
+    "venue_code": 24,
+    "date": "2026-01-27",
+    "race_no": 7,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.17,
+        "isshu_time": 37.2,
+        "mawariashi_time": 6.13
+      },
+      "2": {
+        "chikusen_time": 7.17,
+        "isshu_time": 36.83,
+        "mawariashi_time": 6.23
+      },
+      "3": {
+        "chikusen_time": 7.1,
+        "isshu_time": 36.7,
+        "mawariashi_time": 6.43
+      },
+      "4": {
+        "chikusen_time": 7.17,
+        "isshu_time": 36.87,
+        "mawariashi_time": 6.27
+      },
+      "5": {
+        "chikusen_time": 7.17,
+        "isshu_time": 36.77,
+        "mawariashi_time": 6.13
+      },
+      "6": {
+        "chikusen_time": 7.23,
+        "isshu_time": 37.6,
+        "mawariashi_time": 6.57
+      }
+    }
+  },
+  {
+    "venue_code": 24,
+    "date": "2026-01-27",
+    "race_no": 8,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.1,
+        "isshu_time": 36.63,
+        "mawariashi_time": 5.95
+      },
+      "2": {
+        "chikusen_time": 7.13,
+        "isshu_time": 37.07,
+        "mawariashi_time": 6.21
+      },
+      "3": {
+        "chikusen_time": 7.17,
+        "isshu_time": 37.37,
+        "mawariashi_time": 6.53
+      },
+      "4": {
+        "chikusen_time": 7.13,
+        "isshu_time": 36.6,
+        "mawariashi_time": 6.13
+      },
+      "5": {
+        "chikusen_time": 7.23,
+        "isshu_time": 37.19,
+        "mawariashi_time": 6.14
+      },
+      "6": {
+        "chikusen_time": 7.13,
+        "isshu_time": 36.53,
+        "mawariashi_time": 6.07
+      }
+    }
+  },
+  {
+    "venue_code": 24,
+    "date": "2026-01-27",
+    "race_no": 9,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.14,
+        "isshu_time": 37.6,
+        "mawariashi_time": 6.2
+      },
+      "2": {
+        "chikusen_time": 7.17,
+        "isshu_time": 36.47,
+        "mawariashi_time": 6.33
+      },
+      "3": {
+        "chikusen_time": 7.27,
+        "isshu_time": 36.73,
+        "mawariashi_time": 6.17
+      },
+      "4": {
+        "chikusen_time": 7.27,
+        "isshu_time": 37.03,
+        "mawariashi_time": 6.6
+      },
+      "5": {
+        "chikusen_time": 7.17,
+        "isshu_time": 37.0,
+        "mawariashi_time": 6.27
+      },
+      "6": {
+        "chikusen_time": 7.1,
+        "isshu_time": 36.79,
+        "mawariashi_time": 6.44
+      }
+    }
+  },
+  {
+    "venue_code": 24,
+    "date": "2026-01-27",
+    "race_no": 10,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.11,
+        "isshu_time": 36.2,
+        "mawariashi_time": 6.1
+      },
+      "2": {
+        "chikusen_time": 7.13,
+        "isshu_time": 35.97,
+        "mawariashi_time": 5.9
+      },
+      "3": {
+        "chikusen_time": 7.22,
+        "isshu_time": 36.97,
+        "mawariashi_time": 6.27
+      },
+      "4": {
+        "chikusen_time": 7.18,
+        "isshu_time": 36.6,
+        "mawariashi_time": 6.27
+      },
+      "5": {
+        "chikusen_time": 7.13,
+        "isshu_time": 36.93,
+        "mawariashi_time": 6.3
+      },
+      "6": {
+        "chikusen_time": 7.23,
+        "isshu_time": 36.7,
+        "mawariashi_time": 6.33
+      }
+    }
+  },
+  {
+    "venue_code": 24,
+    "date": "2026-01-27",
+    "race_no": 11,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.26,
+        "isshu_time": 36.33,
+        "mawariashi_time": 5.9
+      },
+      "2": {
+        "chikusen_time": 7.2,
+        "isshu_time": 36.93,
+        "mawariashi_time": 6.57
+      },
+      "3": {
+        "chikusen_time": 7.18,
+        "isshu_time": 37.33,
+        "mawariashi_time": 6.33
+      },
+      "4": {
+        "chikusen_time": 7.28,
+        "isshu_time": 37.33,
+        "mawariashi_time": 6.27
+      },
+      "5": {
+        "chikusen_time": 7.13,
+        "isshu_time": 36.63,
+        "mawariashi_time": 6.17
+      },
+      "6": {
+        "chikusen_time": 7.2,
+        "isshu_time": 37.23,
+        "mawariashi_time": 6.27
+      }
+    }
+  },
+  {
+    "venue_code": 24,
+    "date": "2026-01-27",
+    "race_no": 12,
+    "racers": {
+      "1": {
+        "chikusen_time": 7.3,
+        "isshu_time": 37.5,
+        "mawariashi_time": 6.47
+      },
+      "2": {
+        "chikusen_time": 7.13,
+        "isshu_time": 36.53,
+        "mawariashi_time": 6.47
+      },
+      "3": {
+        "chikusen_time": 7.23,
+        "isshu_time": 36.83,
+        "mawariashi_time": 6.5
+      },
+      "4": {
+        "chikusen_time": 7.08,
+        "isshu_time": 36.8,
+        "mawariashi_time": 6.7
+      },
+      "5": {
+        "chikusen_time": 7.21,
+        "isshu_time": 37.33,
+        "mawariashi_time": 6.53
+      },
+      "6": {
+        "chikusen_time": 7.07,
+        "isshu_time": 36.4,
+        "mawariashi_time": 6.2
+      }
+    }
+  }
+]

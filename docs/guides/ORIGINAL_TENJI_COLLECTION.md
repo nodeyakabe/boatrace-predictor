@@ -6,6 +6,17 @@ Boatersサイトから各競艇場のオリジナル展示データを自動収�
 
 **重要**: オリジナル展示データは**前日分のみ取得可能**なため、毎日の自動収集が必須です。
 
+**システム状態**: ✅ 稼働中（2026-01-16時点）
+- 13場から156レース、933艇分のデータ収集に成功（成功率92.9%）
+- 各場ごとのブラウザ再起動により安定性確保
+- DB保存も正常動作
+
+**重要な制約**:
+- **江戸川競艇場（03場）はオリジナル展示データを公開していません**
+- 理由: 河川水面のため計測機器設置不可
+- 参考: [江戸川競艇マニア - オリジナル展示タイムなし](https://edogawa-mania.net/tenji/)
+- 開催場14場のうち、江戸川を除く13場から収集可能（これが理論上の最大値）
+
 ## 取得データ
 
 各艇ごとに以下のデータを取得:
@@ -141,6 +152,13 @@ pip install webdriver-manager
 - **開催確認**: その日にレースが開催されているか確認
 - **ブラウザ表示**: `--show-browser`で実際の画面を確認
 
+### Seleniumセッションエラー
+
+長時間の連続実行でセッションエラーが発生する場合:
+- **対策済み**: 2026-01-16時点で、各場ごとにブラウザを再起動するように改善済み
+- エラー例: `invalid session id`, `session deleted`, `Read timed out`
+- これらのエラーは場ごとのブラウザ再起動により解決されます
+
 ### DB保存エラー
 
 ```bash
@@ -148,6 +166,8 @@ pip install webdriver-manager
 # exhibition_dataテーブルが存在するか確認
 python -c "import sqlite3; conn = sqlite3.connect('data/boatrace.db'); cursor = conn.cursor(); print(cursor.execute('SELECT COUNT(*) FROM exhibition_data').fetchone())"
 ```
+
+- **Path オブジェクトエラー**: 2026-01-16時点で修正済み（Path → 文字列変換）
 
 ## データ確認
 

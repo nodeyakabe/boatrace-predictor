@@ -112,7 +112,7 @@ def collect_and_save(venues, target_date, race_range, headless, update_existing,
 
     # DBに保存
     print("DBへの保存を開始...")
-    save_tenji_data(temp_json, db_path, update_existing=update_existing)
+    save_tenji_data(str(temp_json), str(db_path), update_existing=update_existing)
 
     # 永久保存用にコピー
     final_json = project_root / 'data' / 'tenji' / 'boaters' / f'tenji_{target_date.replace("-", "")}.json'

@@ -118,8 +118,8 @@ def save_predictions_batch(predictions_list, db_path):
             race_id = item['race_id']
             predictions = item['data']
 
-            # 既存データを削除
-            cursor.execute('DELETE FROM race_predictions WHERE race_id = ?', (race_id,))
+            # 既存のbefore予測データのみを削除（advanceは保持）
+            cursor.execute("DELETE FROM race_predictions WHERE race_id = ? AND prediction_type = 'before'", (race_id,))
 
             for pred in predictions:
                 cursor.execute("""
