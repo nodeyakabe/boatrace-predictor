@@ -57,8 +57,11 @@ models_backup_*/
 nul
 
 # Temp analysis files
+temp/
+backups/
 temp/analysis/
 temp/check_*.py
+temp_*.py
 
 # Japanese named temp files (data completion scripts - run locally)
 補完_高度分析データ*.py
