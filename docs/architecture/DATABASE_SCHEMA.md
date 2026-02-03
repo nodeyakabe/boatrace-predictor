@@ -87,6 +87,63 @@
 
 ---
 
+## ⭐ テーブル活用状況一覧
+
+**最終更新**: 2026-01-30
+
+このセクションではテーブルの活用状況を一覧で確認できます。Claude Codeが効率的にデータを活用できるよう、充足率・活用状況・重要度を明記しています。
+
+### 最重要テーブル（★★★）
+
+| テーブル名 | 件数 | 充足率 | 活用状況 | 備考 |
+|-----------|------|:-----:|:-------:|------|
+| **races** | 133,327 | 100% | ✅ 使用中 | 全クエリの起点 |
+| **entries** | 799,824 | 98% | ✅ 使用中 | 選手・モーター情報 |
+| **results** | 779,318 | 97% | ✅ 使用中 | 着順・決まり手 |
+| **race_predictions** | 196,692 | 25% | ✅ 使用中 | 予測データ（2020-2025年の25%） |
+| **trifecta_odds** | 1,424,376 | 60% | ✅ 使用中 | 3連単オッズ（2021/2023年が低い） |
+| **payouts** | 1,027,127 | 89% | ✅ 使用中 | 払戻金 |
+
+### 中重要テーブル（★★）
+
+| テーブル名 | 件数 | 充足率 | 活用状況 | 備考 |
+|-----------|------|:-----:|:-------:|------|
+| **race_details** | 790,680 | 98% | ✅ 使用中 | 展示タイム、チルト |
+| **race_conditions** | 130,792 | 98% | ✅ 使用中 | 天候・風・波 |
+| **player_escape_stats** | 104,757 | 100% | ✅ 使用中 | 選手別逃げ率（指標データ） |
+| **stadium_attack_stats** | 168 | 100% | ✅ 使用中 | 会場別まくり率・差し率（指標データ） |
+| **racers** | 1,602 | 100% | ✅ 使用中 | 選手マスタ |
+| **venues** | 24 | 100% | ✅ 使用中 | 会場マスタ |
+| **rdmdb_tide** | 6,475,040 | 100% | 🟡 未活用 | 潮位データ（活用検討中） |
+
+### 低重要・未使用テーブル（★）
+
+| テーブル名 | 件数 | 充足率 | 活用状況 | 備考 |
+|-----------|------|:-----:|:-------:|------|
+| **exhibition_data** | 861 | 1% | 🔄 収集中 | オリジナル展示（前日のみ取得可能） |
+| **win_odds** | 0 | 0% | ❌ 未収集 | 単勝オッズ（未実装） |
+| **exacta_odds** | 0 | 0% | ❌ 未収集 | 2連単オッズ（未実装） |
+| **venue_attack_patterns** | 0 | 0% | ❌ 未使用 | 会場攻撃パターン（空テーブル） |
+| **motor_features** | 0 | 0% | ❌ 未使用 | モーター特徴量（空テーブル） |
+| **racer_attack_patterns** | 0 | 0% | ❌ 未使用 | 選手攻撃パターン（空テーブル） |
+| **venue_racer_patterns** | 0 | 0% | ❌ 未使用 | 会場別選手パターン（空テーブル） |
+| **recommendations** | 0 | 0% | ❌ 未使用 | 推奨レース（空テーブル） |
+
+### データ充足率の詳細
+
+**2021年・2023年の充足率が低い理由**:
+- 2021年: オッズ17.0%、結果25.9% → データ補完作業予定（P1.5）
+- 2023年: オッズ16.2%、結果26.9% → データ補完作業予定（P1.5）
+- データ補完後: サンプル数が5倍に増加、バックテストの信頼性が大幅向上
+
+**その他の充足率**:
+- 2020年: オッズ99.7%、結果100%（ほぼ完全）
+- 2022年: オッズ99.9%、結果100%（ほぼ完全）
+- 2024年: オッズ99.8%、結果100%（ほぼ完全）
+- 2025年: オッズ95.1%、結果100%（収集中）
+
+---
+
 ## データベース概要
 
 - **総テーブル数**: 35
@@ -2051,3 +2108,134 @@ ORDER BY p.rank_prediction;
 - **予想順位**: `race_predictions.rank_prediction`
 - **平均ST**: `entries.avg_st`
 - **F/L回数**: `entries.f_count`, `entries.l_count`
+
+---
+
+## ⚠️ よくある計算ミスと対策
+
+**最終更新**: 2026-01-30
+
+このセクションでは、過去に発生した計算ミスのパターンと対策を記載します。分析スクリプト作成時に必ず参照してください。
+
+### 🚨 1-2-3固定オッズ問題（★★★★★ 超重要）
+
+#### 問題の説明
+
+分析スクリプトで「予測順位ベースのオッズ」ではなく「枠番固定オッズ（1号艇-2号艇-3号艇）」を取得していた。
+
+#### 誤った実装例
+
+❌ **誤り**: 枠番固定オッズを取得
+```sql
+-- 1号艇-2号艇-3号艇の固定オッズを取得（間違い）
+SELECT
+    rp.race_id,
+    rp.confidence,
+    t.odds
+FROM race_predictions rp
+JOIN trifecta_odds t ON rp.race_id = t.race_id
+    AND t.combination = '1-2-3'  -- ←これが間違い
+WHERE rp.prediction_type = 'before' AND rp.rank_prediction = 1;
+```
+
+**問題点**:
+- 予測が「4-3-2」（4号艇1着、3号艇2着、2号艇3着）でも、オッズは「1-2-3」を取得してしまう
+- 実際の買い目と異なるオッズで分析するため、ROIが大幅に乖離する
+
+#### 正しい実装例
+
+✅ **正しい**: 予測順位ベースのオッズを取得
+```sql
+-- CTE（Common Table Expression）で予測組み合わせを構築
+WITH prediction_combos AS (
+    -- 予測1着-予測2着-予測3着の組み合わせを構築
+    SELECT
+        rp1.race_id,
+        rp1.confidence,
+        CAST(rp1.pit_number AS TEXT) || '-' ||
+        CAST(rp2.pit_number AS TEXT) || '-' ||
+        CAST(rp3.pit_number AS TEXT) as pred_combo
+    FROM race_predictions rp1
+    -- 予測2着を取得
+    JOIN race_predictions rp2 ON rp1.race_id = rp2.race_id
+        AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+    -- 予測3着を取得
+    JOIN race_predictions rp3 ON rp1.race_id = rp3.race_id
+        AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+    WHERE rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+),
+actual_combos AS (
+    -- 実際の結果組み合わせを構築（実際1着-実際2着-実際3着）
+    SELECT
+        race_id,
+        CAST(MAX(CASE WHEN rank = '1' THEN pit_number END) AS TEXT) || '-' ||
+        CAST(MAX(CASE WHEN rank = '2' THEN pit_number END) AS TEXT) || '-' ||
+        CAST(MAX(CASE WHEN rank = '3' THEN pit_number END) AS TEXT) as actual_combo
+    FROM results
+    WHERE rank IN ('1', '2', '3')
+    GROUP BY race_id
+)
+-- 予測組み合わせのオッズを取得
+SELECT
+    pc.race_id,
+    pc.confidence,
+    pc.pred_combo,
+    ac.actual_combo,
+    t.odds,
+    CASE WHEN pc.pred_combo = ac.actual_combo THEN 1 ELSE 0 END as is_hit
+FROM prediction_combos pc
+-- 予測組み合わせと一致するオッズを取得
+JOIN trifecta_odds t ON pc.race_id = t.race_id
+                     AND t.combination = pc.pred_combo  -- ←これが正しい
+JOIN actual_combos ac ON pc.race_id = ac.race_id;
+```
+
+#### 影響
+
+**実例**: A×50倍+条件の分析
+- 誤った計算: ROI 396%（分析スクリプト）
+- 正しい計算: ROI 58.4%（standard_backtest.py）
+- **乖離**: -338pt
+
+**原因**:
+- 1号艇が1着になるレースは多い（インコース有利）
+- 「1-2-3」固定オッズは低くなりがち（平均15-20倍）
+- 実際の予測は多様（4-3-2、3-1-5など）で、オッズは高い（50-100倍）
+- 的中判定も間違う（予測4-3-2が的中しても、実際1-2-3でないと不的中扱い）
+
+#### 対策
+
+1. **分析スクリプトは必ずCTEパターンを使用**
+   - 予測組み合わせを動的に構築
+   - `combination = pc.pred_combo` で正しいオッズを取得
+
+2. **ROI 200%超えは計算ミスを疑う**
+   - 過去の購入条件は全てROI 100-200%の範囲
+   - ROI 300%超えは計算ミスの可能性が高い
+
+3. **standard_backtest.py で最終検証必須**
+   - 分析スクリプトの結果が良くても、必ず standard_backtest.py で検証
+   - standard_backtest.py は正しいロジックで実装済み
+
+4. **修正済みスクリプト一覧**（2026-01-30修正完了）
+   - `scripts/analysis/analyze_confidence_hit_patterns.py` (5箇所修正)
+   - `scripts/analysis/analyze_confidence_deep_dive.py` (9箇所修正)
+   - `scripts/analysis/analyze_meta_index_effect.py` (3箇所修正)
+   - `scripts/analysis/analyze_b_50_100_details.py` (1箇所修正)
+   - `scripts/analysis/analyze_b_50_100_details_v2.py` (1箇所修正)
+   - `scripts/analysis/analyze_bx50_100_miss_patterns.py` (2箇所修正)
+   - `scripts/analysis/analyze_bx50_100_comprehensive.py` (1箇所修正)
+
+---
+
+## 関連ドキュメント
+
+- **クイックリファレンス**: [docs/QUICK_REFERENCE.md](../QUICK_REFERENCE.md) - テーブル早見表・よく使うクエリ
+- **SQLクエリサンプル集**: [docs/guides/SQL_QUERY_SAMPLES.md](../guides/SQL_QUERY_SAMPLES.md) - 詳細なクエリ例
+- **予測ロジック**: [docs/architecture/PREDICTION_LOGIC.md](PREDICTION_LOGIC.md) - 予測アルゴリズム
+- **購入条件**: [docs/presets/BET_CONDITIONS.md](../presets/BET_CONDITIONS.md) - 10条件の詳細
+
+---
+
+**最終更新**: 2026-01-30
+**更新者**: Claude Sonnet 4.5（上位AI: Claude Opus 4.5）

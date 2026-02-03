@@ -1,23 +1,22 @@
 """
-メインスケジューラ
+メインスケジューラ（4ブロック構成 v2）
 
 常駐して以下のタスクを自動実行:
-- 毎朝5:00 前日のレース結果収集
-- 毎朝5:30 前日の確定オッズ取得（暫定オッズを上書き）
-- 毎朝6:10 前日の直前情報収集
-- 毎朝6:50 前日の直前予想生成
-- 毎朝7:10 前日のオリジナル展示データ収集
-- 毎朝7:40 本日のオッズ収集（暫定オッズ）
-- 毎朝8:20 本日の予想生成
-- 購入対象レースの締切10分前 直前情報取得・通知（動的スケジュール）
+- 毎朝5:00 Aブロック（前日データ完全収集）
+- 毎朝7:00 Cブロック（本日データ収集）
+- 毎朝8:00 Dブロック（本日予想生成）
+- 動的     各レース締切10分前通知
 
-【2段階オッズ収集システム】
-7:40に暫定オッズを取得して8:20に予測生成し、翌朝5:30に確定オッズで上書き。
-これにより、当日の予測は生成しつつ、バックテストには正確なデータを使用できます。
+【4ブロック構成のメリット】
+- 依存タスクを1スクリプトで順次実行（待機時間ゼロ）
+- エラーハンドリングが容易
+- ログが追いやすい
+- 手動再実行が簡単
 
-【スケジュール間隔】
-各処理間に20～40分の余裕を設定し、データ収集の完了を確実にします。
-特に本日オッズ収集→予想生成は40分の余裕を確保。
+【ブロック詳細】
+Aブロック: 結果→確定オッズ→直前情報→展示→直前予想（5タスク）
+Cブロック: レースデータ→オッズ（2タスク）
+Dブロック: 予想生成→通知スケジュール登録（2タスク）
 """
 
 import os
@@ -34,15 +33,11 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from scripts.automation.generate_daily_predictions import generate_todays_predictions
 from scripts.automation.monitor_race_timing import RaceMonitor
 from scripts.automation.notify import send_discord_notification, send_error_notification
-from scripts.automation.daily_tenji_collector import collect_previous_day_tenji
-from scripts.automation.fetch_today_odds import fetch_todays_odds
-from scripts.automation.fetch_yesterday_results import fetch_yesterday_results
-from scripts.automation.fetch_yesterday_beforeinfo import fetch_yesterday_beforeinfo
-from scripts.automation.generate_yesterday_before_predictions import generate_yesterday_before_predictions
-from scripts.automation.fetch_yesterday_final_odds import fetch_yesterday_final_odds
+from scripts.automation.block_a_yesterday_data import BlockARunner
+from scripts.automation.block_c_today_data import BlockCRunner
+from scripts.automation.block_d_today_prediction import BlockDRunner
 
 
 # グローバル変数
@@ -126,19 +121,45 @@ def signal_handler(signum, frame):
     running = False
 
 
-def morning_prediction_job():
-    """朝の予想生成ジョブ"""
-    print("\n" + "=" * 60)
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 朝の予想生成開始")
-    print("=" * 60)
-
+def block_a_job():
+    """Aブロック: 前日データ完全収集"""
     try:
-        success = generate_todays_predictions()
+        runner = BlockARunner()
+        success = runner.run_all()
+
+        if not success:
+            print("[WARNING] Aブロックでエラーが発生しましたが続行します")
+
+    except Exception as e:
+        error_msg = f"Aブロック実行中にエラー: {str(e)}"
+        print(f"[ERROR] {error_msg}")
+        send_error_notification("Aブロックエラー", error_msg)
+
+
+def block_c_job():
+    """Cブロック: 本日データ収集"""
+    try:
+        runner = BlockCRunner()
+        success = runner.run_all()
+
+        if not success:
+            print("[WARNING] Cブロックでエラーが発生しましたが続行します")
+
+    except Exception as e:
+        error_msg = f"Cブロック実行中にエラー: {str(e)}"
+        print(f"[ERROR] {error_msg}")
+        send_error_notification("Cブロックエラー", error_msg)
+
+
+def block_d_job():
+    """Dブロック: 本日予想生成 + レース通知スケジュール登録"""
+    try:
+        # Dブロック実行
+        runner = BlockDRunner()
+        success = runner.run_all()
 
         if success:
-            print("[OK] 朝の予想生成完了")
-
-            # 予想生成後、レース通知スケジュールを設定
+            # 予想生成成功後、レース通知スケジュールを設定
             print("\n購入対象レースの通知スケジュール設定中...")
             scheduled_count = schedule_race_notifications()
 
@@ -146,134 +167,16 @@ def morning_prediction_job():
                 print(f"[OK] {scheduled_count}レースの通知を予約")
             else:
                 print("[INFO] 予約する通知なし")
-
         else:
-            print("[ERROR] 朝の予想生成失敗")
+            print("[WARNING] Dブロックでエラーが発生しました")
 
     except Exception as e:
-        error_msg = f"朝の予想生成中にエラー: {str(e)}"
+        error_msg = f"Dブロック実行中にエラー: {str(e)}"
         print(f"[ERROR] {error_msg}")
-        send_error_notification("スケジューラエラー", error_msg)
+        send_error_notification("Dブロックエラー", error_msg)
 
 
-def tenji_collection_job():
-    """前日のオリジナル展示データ収集ジョブ（毎朝8:00）"""
-    print("\n" + "=" * 60)
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 前日オリジナル展示データ収集開始")
-    print("=" * 60)
-
-    try:
-        race_count = collect_previous_day_tenji(headless=True, update_existing=True)
-
-        if race_count > 0:
-            print(f"[OK] 前日オリジナル展示データ収集完了: {race_count}レース")
-        else:
-            print("[WARNING] 前日オリジナル展示データ収集: データなし")
-
-    except Exception as e:
-        error_msg = f"オリジナル展示データ収集中にエラー: {str(e)}"
-        print(f"[ERROR] {error_msg}")
-        send_error_notification("展示データ収集エラー", error_msg)
-
-
-def odds_collection_job():
-    """本日のオッズ収集ジョブ（毎朝8:15）"""
-    print("\n" + "=" * 60)
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 本日のオッズ収集開始")
-    print("=" * 60)
-
-    try:
-        race_count = fetch_todays_odds(headless=True)
-
-        if race_count > 0:
-            print(f"[OK] オッズ収集完了: {race_count}レース")
-        else:
-            print("[WARNING] オッズ収集: データなし")
-
-    except Exception as e:
-        error_msg = f"オッズ収集中にエラー: {str(e)}"
-        print(f"[ERROR] {error_msg}")
-        send_error_notification("オッズ収集エラー", error_msg)
-
-
-def results_collection_job():
-    """前日のレース結果収集ジョブ（毎朝7:00）"""
-    print("\n" + "=" * 60)
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 前日レース結果収集開始")
-    print("=" * 60)
-
-    try:
-        race_count = fetch_yesterday_results(headless=True)
-
-        if race_count > 0:
-            print(f"[OK] 前日レース結果収集完了: {race_count}レース")
-        else:
-            print("[INFO] 前日レース結果: 全て取得済み")
-
-    except Exception as e:
-        error_msg = f"前日レース結果収集中にエラー: {str(e)}"
-        print(f"[ERROR] {error_msg}")
-        send_error_notification("結果収集エラー", error_msg)
-
-
-def beforeinfo_collection_job():
-    """前日の直前情報収集ジョブ（毎朝7:30）"""
-    print("\n" + "=" * 60)
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 前日直前情報収集開始")
-    print("=" * 60)
-
-    try:
-        race_count = fetch_yesterday_beforeinfo(headless=True)
-
-        if race_count > 0:
-            print(f"[OK] 前日直前情報収集完了: {race_count}レース")
-        else:
-            print("[WARNING] 前日直前情報収集: データなし")
-
-    except Exception as e:
-        error_msg = f"前日直前情報収集中にエラー: {str(e)}"
-        print(f"[ERROR] {error_msg}")
-        send_error_notification("直前情報収集エラー", error_msg)
-
-
-def yesterday_before_prediction_job():
-    """前日の直前予想生成ジョブ（毎朝7:45）"""
-    print("\n" + "=" * 60)
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 前日直前予想生成開始")
-    print("=" * 60)
-
-    try:
-        race_count = generate_yesterday_before_predictions(force=False)
-
-        if race_count > 0:
-            print(f"[OK] 前日直前予想生成完了: {race_count}レース")
-        else:
-            print("[WARNING] 前日直前予想生成: データなし")
-
-    except Exception as e:
-        error_msg = f"前日直前予想生成中にエラー: {str(e)}"
-        print(f"[ERROR] {error_msg}")
-        send_error_notification("直前予想生成エラー", error_msg)
-
-
-def final_odds_collection_job():
-    """前日の確定オッズ取得ジョブ（毎朝7:05）"""
-    print("\n" + "=" * 60)
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 前日確定オッズ取得開始")
-    print("=" * 60)
-
-    try:
-        race_count = fetch_yesterday_final_odds(headless=True)
-
-        if race_count > 0:
-            print(f"[OK] 前日確定オッズ取得完了: {race_count}レース")
-        else:
-            print("[INFO] 前日確定オッズ: データなし")
-
-    except Exception as e:
-        error_msg = f"前日確定オッズ取得中にエラー: {str(e)}"
-        print(f"[ERROR] {error_msg}")
-        send_error_notification("確定オッズ取得エラー", error_msg)
+# 古いジョブ関数は削除（4ブロック構成に統合）
 
 
 def schedule_race_notifications():
@@ -360,18 +263,20 @@ def race_monitoring_job_for_race(race_id, venue_code, race_number):
 
 def startup_notification():
     """起動通知"""
-    message = f"""🤖 **ボートレース自動化システム起動**
+    message = f"""🤖 **ボートレース自動化システム起動（v2）**
 
 起動時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-**スケジュール:**
-- 毎朝 7:00 - 前日レース結果収集
-- 毎朝 7:30 - 前日直前情報収集
-- 毎朝 7:45 - 前日直前予想生成
-- 毎朝 8:00 - 前日オリジナル展示データ収集
-- 毎朝 8:15 - 本日のオッズ収集
-- 毎朝 8:30 - 予想生成 + レース通知スケジュール登録
-- 各レース締切10分前 - 直前情報取得・通知（動的スケジュール）
+**スケジュール（4ブロック構成）:**
+- 05:00 - Aブロック（前日データ完全収集）
+- 07:00 - Cブロック（本日データ収集）
+- 08:00 - Dブロック（予想生成+通知登録）
+- 動的 - 各レース締切10分前通知
+
+**ブロック詳細:**
+Aブロック: 結果→確定オッズ→直前情報→展示→直前予想
+Cブロック: レースデータ→オッズ
+Dブロック: 予想生成→通知スケジュール登録
 
 システムは正常稼働中です。
 """
@@ -380,13 +285,20 @@ def startup_notification():
 
 def shutdown_notification():
     """停止通知"""
-    message = f"""🛑 **ボートレース自動化システム停止**
+    message = f"""🛑 **ボートレース自動化システム停止（v2）**
 
 停止時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 システムを再起動する場合:
 ```
 python scripts/automation/daily_scheduler.py
+```
+
+手動でブロック実行する場合:
+```
+python scripts/automation/block_a_yesterday_data.py
+python scripts/automation/block_c_today_data.py
+python scripts/automation/block_d_today_prediction.py
 ```
 """
     send_discord_notification(message)
@@ -397,17 +309,14 @@ def print_status():
     global monitor
 
     print("\n" + "=" * 60)
-    print("ボートレース自動化システム")
+    print("ボートレース自動化システム（v2 - 4ブロック構成）")
     print("=" * 60)
     print(f"起動時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("\nスケジュール:")
-    print("  - 毎朝 7:00 - 前日レース結果収集")
-    print("  - 毎朝 7:30 - 前日直前情報収集")
-    print("  - 毎朝 7:45 - 前日直前予想生成")
-    print("  - 毎朝 8:00 - 前日オリジナル展示データ収集")
-    print("  - 毎朝 8:15 - 本日のオッズ収集")
-    print("  - 毎朝 8:30 - 予想生成 + レース通知スケジュール登録")
-    print("  - 各レース締切10分前 - 直前情報取得・通知（動的）")
+    print("  - 毎朝 5:00 - Aブロック（前日データ完全収集）")
+    print("  - 毎朝 7:00 - Cブロック（本日データ収集）")
+    print("  - 毎朝 8:00 - Dブロック（予想生成+通知登録）")
+    print("  - 動的 - 各レース締切10分前通知")
     print("\n操作:")
     print("  - Ctrl+C で停止")
     print("=" * 60 + "\n")
@@ -440,36 +349,20 @@ def main():
     startup_notification()
     print("[OK] 起動通知送信完了\n")
 
-    # スケジュール設定
+    # スケジュール設定（4ブロック構成）
     print("スケジュール設定中...")
 
-    # 毎朝5:00に前日のレース結果収集
-    schedule.every().day.at("05:00").do(results_collection_job)
-    print("[OK] 毎朝 5:00 - 前日レース結果収集")
+    # 毎朝5:00にAブロック（前日データ完全収集）
+    schedule.every().day.at("05:00").do(block_a_job)
+    print("[OK] 毎朝 5:00 - Aブロック（前日データ完全収集）")
 
-    # 毎朝5:30に前日の確定オッズ取得（暫定オッズを上書き）
-    schedule.every().day.at("05:30").do(final_odds_collection_job)
-    print("[OK] 毎朝 5:30 - 前日確定オッズ取得")
+    # 毎朝7:00にCブロック（本日データ収集）
+    schedule.every().day.at("07:00").do(block_c_job)
+    print("[OK] 毎朝 7:00 - Cブロック（本日データ収集）")
 
-    # 毎朝6:10に前日の直前情報収集
-    schedule.every().day.at("06:10").do(beforeinfo_collection_job)
-    print("[OK] 毎朝 6:10 - 前日直前情報収集")
-
-    # 毎朝6:50に前日の直前予想生成
-    schedule.every().day.at("06:50").do(yesterday_before_prediction_job)
-    print("[OK] 毎朝 6:50 - 前日直前予想生成")
-
-    # 毎朝7:10に前日のオリジナル展示データ収集
-    schedule.every().day.at("07:10").do(tenji_collection_job)
-    print("[OK] 毎朝 7:10 - 前日オリジナル展示データ収集")
-
-    # 毎朝7:40に本日のオッズ収集
-    schedule.every().day.at("07:40").do(odds_collection_job)
-    print("[OK] 毎朝 7:40 - 本日のオッズ収集")
-
-    # 毎朝8:20に予想生成 + レース通知スケジュール登録
-    schedule.every().day.at("08:20").do(morning_prediction_job)
-    print("[OK] 毎朝 8:20 - 予想生成 + レース通知スケジュール登録")
+    # 毎朝8:00にDブロック（予想生成+通知登録）
+    schedule.every().day.at("08:00").do(block_d_job)
+    print("[OK] 毎朝 8:00 - Dブロック（予想生成+通知登録）")
 
     print("\nシステム稼働開始...\n")
 

@@ -113,14 +113,14 @@ class CSVImporter:
 
                         cursor.execute('''
                             INSERT OR IGNORE INTO results
-                            (race_id, pit_number, finish_position, finish_time, start_timing)
+                            (race_id, pit_number, rank, is_invalid, kimarite)
                             VALUES (?, ?, ?, ?, ?)
                         ''', (
                             race_id,
                             int(row['pit_number']),
-                            int(row['finish_position']) if row.get('finish_position') else None,
-                            float(row['finish_time']) if row.get('finish_time') else None,
-                            float(row['start_timing']) if row.get('start_timing') else None
+                            row.get('rank', ''),
+                            int(row.get('is_invalid', 0)),
+                            row.get('kimarite', '')
                         ))
 
                         if cursor.rowcount > 0:
@@ -171,26 +171,35 @@ class CSVImporter:
 
                         cursor.execute('''
                             INSERT OR IGNORE INTO entries
-                            (race_id, pit_number, racer_id, racer_name, racer_class, weight,
-                             boat_no, motor_no, exhibition_time, national_win_rate, national_place_rate_2,
-                             national_place_rate_3, local_win_rate, local_place_rate_2, local_place_rate_3)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            (race_id, pit_number, racer_number, racer_name, racer_rank, racer_home,
+                             racer_age, racer_weight, motor_number, boat_number, win_rate, second_rate,
+                             third_rate, f_count, l_count, avg_st, local_win_rate, local_second_rate,
+                             local_third_rate, motor_second_rate, motor_third_rate, boat_second_rate, boat_third_rate)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (
                             race_id,
                             int(row['pit_number']),
-                            int(row['racer_id']) if row.get('racer_id') else None,
+                            row.get('racer_number', ''),
                             row.get('racer_name', ''),
-                            row.get('racer_class', ''),
-                            float(row['weight']) if row.get('weight') else None,
-                            int(row['boat_no']) if row.get('boat_no') else None,
-                            int(row['motor_no']) if row.get('motor_no') else None,
-                            float(row['exhibition_time']) if row.get('exhibition_time') else None,
-                            float(row['national_win_rate']) if row.get('national_win_rate') else None,
-                            float(row['national_place_rate_2']) if row.get('national_place_rate_2') else None,
-                            float(row['national_place_rate_3']) if row.get('national_place_rate_3') else None,
+                            row.get('racer_rank', ''),
+                            row.get('racer_home', ''),
+                            int(row['racer_age']) if row.get('racer_age') else None,
+                            float(row['racer_weight']) if row.get('racer_weight') else None,
+                            int(row['motor_number']) if row.get('motor_number') else None,
+                            int(row['boat_number']) if row.get('boat_number') else None,
+                            float(row['win_rate']) if row.get('win_rate') else None,
+                            float(row['second_rate']) if row.get('second_rate') else None,
+                            float(row['third_rate']) if row.get('third_rate') else None,
+                            int(row['f_count']) if row.get('f_count') else None,
+                            int(row['l_count']) if row.get('l_count') else None,
+                            float(row['avg_st']) if row.get('avg_st') else None,
                             float(row['local_win_rate']) if row.get('local_win_rate') else None,
-                            float(row['local_place_rate_2']) if row.get('local_place_rate_2') else None,
-                            float(row['local_place_rate_3']) if row.get('local_place_rate_3') else None
+                            float(row['local_second_rate']) if row.get('local_second_rate') else None,
+                            float(row['local_third_rate']) if row.get('local_third_rate') else None,
+                            float(row['motor_second_rate']) if row.get('motor_second_rate') else None,
+                            float(row['motor_third_rate']) if row.get('motor_third_rate') else None,
+                            float(row['boat_second_rate']) if row.get('boat_second_rate') else None,
+                            float(row['boat_third_rate']) if row.get('boat_third_rate') else None
                         ))
 
                         if cursor.rowcount > 0:

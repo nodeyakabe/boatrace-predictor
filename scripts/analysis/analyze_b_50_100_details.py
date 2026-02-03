@@ -33,6 +33,20 @@ def get_b_50_100_data(db_path: str):
         WHERE rank_prediction = 1
           AND prediction_type = 'before'
     ),
+    prediction_combos AS (
+        -- 予測組み合わせを文字列で取得
+        SELECT
+            p1.race_id,
+            CAST(p1.pit_number AS TEXT) || '-' ||
+            CAST(p2.pit_number AS TEXT) || '-' ||
+            CAST(p3.pit_number AS TEXT) as pred_combo
+        FROM race_predictions p1
+        JOIN race_predictions p2 ON p1.race_id = p2.race_id
+            AND p2.rank_prediction = 2 AND p2.prediction_type = 'before'
+        JOIN race_predictions p3 ON p1.race_id = p3.race_id
+            AND p3.rank_prediction = 3 AND p3.prediction_type = 'before'
+        WHERE p1.rank_prediction = 1 AND p1.prediction_type = 'before'
+    ),
     result_ranks AS (
         SELECT
             race_id,
@@ -90,9 +104,10 @@ def get_b_50_100_data(db_path: str):
     JOIN prediction_1st p ON r.id = p.race_id
     JOIN race_predictions p2 ON r.id = p2.race_id AND p2.rank_prediction = 2 AND p2.prediction_type = 'before'
     JOIN race_predictions p3 ON r.id = p3.race_id AND p3.rank_prediction = 3 AND p3.prediction_type = 'before'
+    JOIN prediction_combos pc ON r.id = pc.race_id
     JOIN entries e ON r.id = e.race_id AND e.pit_number = 1  -- 1コース選手の情報
     JOIN race_1st_2nd_3rd res ON r.id = res.race_id
-    JOIN trifecta_odds t ON r.id = t.race_id AND t.combination = '1-2-3'
+    JOIN trifecta_odds t ON r.id = t.race_id AND t.combination = pc.pred_combo
     LEFT JOIN trifecta_payout pay ON r.id = pay.race_id
     WHERE p.confidence = 'B'
       AND e.racer_rank IN ('A1', 'B1')

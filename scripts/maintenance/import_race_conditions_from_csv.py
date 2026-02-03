@@ -127,7 +127,7 @@ def insert_race_conditions(
                     row.get('weather') or None,
                     row.get('wind_direction') or None,
                     float(row['wind_speed']) if row.get('wind_speed') else None,
-                    int(row['wave_height']) if row.get('wave_height') else None,
+                    int(float(row['wave_height'])) if row.get('wave_height') else None,
                     float(row['temperature']) if row.get('temperature') else None,
                     float(row['water_temperature']) if row.get('water_temperature') else None,
                     race_id
@@ -144,7 +144,7 @@ def insert_race_conditions(
                     row.get('weather') or None,
                     row.get('wind_direction') or None,
                     float(row['wind_speed']) if row.get('wind_speed') else None,
-                    int(row['wave_height']) if row.get('wave_height') else None,
+                    int(float(row['wave_height'])) if row.get('wave_height') else None,
                     float(row['temperature']) if row.get('temperature') else None,
                     float(row['water_temperature']) if row.get('water_temperature') else None
                 ))

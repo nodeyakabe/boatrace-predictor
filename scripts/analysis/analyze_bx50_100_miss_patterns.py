@@ -92,11 +92,25 @@ def analyze_bx50_100_miss_patterns():
         FROM entries
         WHERE pit_number = 1
     ),
-    -- 1-2-3のオッズ
-    odds_123 AS (
-        SELECT race_id, odds
-        FROM trifecta_odds
-        WHERE combination = '1-2-3'
+    -- 予測組み合わせを取得
+    prediction_combos AS (
+        SELECT
+            p1.race_id,
+            CAST(p1.pit_number AS TEXT) || '-' ||
+            CAST(p2.pit_number AS TEXT) || '-' ||
+            CAST(p3.pit_number AS TEXT) as pred_combo
+        FROM race_predictions p1
+        JOIN race_predictions p2 ON p1.race_id = p2.race_id
+            AND p2.rank_prediction = 2 AND p2.prediction_type = 'before'
+        JOIN race_predictions p3 ON p1.race_id = p3.race_id
+            AND p3.rank_prediction = 3 AND p3.prediction_type = 'before'
+        WHERE p1.rank_prediction = 1 AND p1.prediction_type = 'before'
+    ),
+    -- 予測組み合わせのオッズ
+    odds_pred AS (
+        SELECT pc.race_id, t.odds
+        FROM prediction_combos pc
+        JOIN trifecta_odds t ON pc.race_id = t.race_id AND t.combination = pc.pred_combo
     ),
     -- 実際の結果（1-3着）
     actual_results AS (
@@ -141,7 +155,7 @@ def analyze_bx50_100_miss_patterns():
     LEFT JOIN pred_4th p4 ON r.id = p4.race_id
     LEFT JOIN pred_5th p5 ON r.id = p5.race_id
     INNER JOIN course1_rank c1 ON r.id = c1.race_id
-    INNER JOIN odds_123 o ON r.id = o.race_id
+    INNER JOIN odds_pred o ON r.id = o.race_id
     LEFT JOIN actual_results ar ON r.id = ar.race_id
     LEFT JOIN trifecta_payout tp ON r.id = tp.race_id
     WHERE
@@ -402,10 +416,23 @@ def analyze_bx50_100_miss_patterns():
         FROM entries
         WHERE pit_number = 1
     ),
-    odds_123 AS (
-        SELECT race_id, odds
-        FROM trifecta_odds
-        WHERE combination = '1-2-3'
+    prediction_combos AS (
+        SELECT
+            p1.race_id,
+            CAST(p1.pit_number AS TEXT) || '-' ||
+            CAST(p2.pit_number AS TEXT) || '-' ||
+            CAST(p3.pit_number AS TEXT) as pred_combo
+        FROM race_predictions p1
+        JOIN race_predictions p2 ON p1.race_id = p2.race_id
+            AND p2.rank_prediction = 2 AND p2.prediction_type = 'before'
+        JOIN race_predictions p3 ON p1.race_id = p3.race_id
+            AND p3.rank_prediction = 3 AND p3.prediction_type = 'before'
+        WHERE p1.rank_prediction = 1 AND p1.prediction_type = 'before'
+    ),
+    odds_pred AS (
+        SELECT pc.race_id, t.odds
+        FROM prediction_combos pc
+        JOIN trifecta_odds t ON pc.race_id = t.race_id AND t.combination = pc.pred_combo
     ),
     actual_1st AS (
         SELECT race_id, pit_number as actual_1st
@@ -419,7 +446,7 @@ def analyze_bx50_100_miss_patterns():
     FROM races r
     INNER JOIN pred_1st p1 ON r.id = p1.race_id
     INNER JOIN course1_rank c1 ON r.id = c1.race_id
-    INNER JOIN odds_123 o ON r.id = o.race_id
+    INNER JOIN odds_pred o ON r.id = o.race_id
     INNER JOIN actual_1st a1 ON r.id = a1.race_id
     WHERE
         p1.confidence = 'B'

@@ -143,29 +143,50 @@ def save_races_batch(db_path: Path, all_races_data: list):
     data_manager = FastDataManager(str(db_path))
     saved_count = 0
 
-    for item in all_races_data:
-        venue_code = item['venue_code']
-        race_date = item['race_date']
-        races_data = item['races_data']
+    try:
+        # トランザクション開始（重要：これがないとコミットされない）
+        data_manager.begin_batch()
 
-        for race_item in races_data:
-            try:
-                race_data = race_item['race']
-                result_data = race_item['result']
+        for item in all_races_data:
+            venue_code = item['venue_code']
+            race_date = item['race_date']
+            races_data = item['races_data']
 
-                race_id = data_manager.save_race_data_fast(race_data)
+            for race_item in races_data:
+                try:
+                    race_data = race_item['race']
+                    result_data = race_item['result']
 
-                if race_id and result_data:
-                    result_data['venue_code'] = venue_code
-                    result_data['race_date'] = race_date.replace('-', '')
-                    result_data['race_number'] = race_data['race_number']
-                    data_manager.save_race_result_fast(result_data)
-                    saved_count += 1
+                    race_id = data_manager.save_race_data_fast(race_data)
 
-            except Exception as e:
-                pass
+                    if race_id and result_data:
+                        result_data['venue_code'] = venue_code
+                        result_data['race_date'] = race_date.replace('-', '')
+                        result_data['race_number'] = race_data['race_number']
+                        data_manager.save_race_result_fast(result_data)
+                        saved_count += 1
 
-    data_manager.commit_batch()
+                except Exception as e:
+                    pass
+
+        # トランザクションコミット
+        data_manager.commit_batch()
+
+    except Exception as e:
+        print(f"バッチ保存エラー: {e}")
+        try:
+            data_manager.rollback_batch()
+        except:
+            pass
+        raise
+
+    finally:
+        # リソース解放
+        try:
+            data_manager.close()
+        except:
+            pass
+
     return saved_count
 
 

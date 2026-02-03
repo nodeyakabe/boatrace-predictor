@@ -56,7 +56,8 @@ def fetch_todays_odds(db_path=None, headless=True):
     print(f"  対象レース: {len(races)}レース")
 
     # オッズ収集
-    scraper = OddsScraper(headless=headless)
+    # OddsScraperはrequestsベースなのでheadlessパラメータは不要
+    scraper = OddsScraper()
     success_count = 0
     error_count = 0
 
@@ -90,14 +91,14 @@ def fetch_todays_odds(db_path=None, headless=True):
                 conn.close()
 
                 success_count += 1
-                print(f"  [{venue_code:02d}場 {race_number:2d}R] OK - {len(odds_data)}通り")
+                print(f"  [{int(venue_code):02d}場 {int(race_number):2d}R] OK - {len(odds_data)}通り")
 
             else:
-                print(f"  [{venue_code:02d}場 {race_number:2d}R] データなし")
+                print(f"  [{int(venue_code):02d}場 {int(race_number):2d}R] データなし")
 
         except Exception as e:
             error_count += 1
-            print(f"  [{venue_code:02d}場 {race_number:2d}R] エラー: {e}")
+            print(f"  [{int(venue_code):02d}場 {int(race_number):2d}R] エラー: {e}")
 
         # レート制限対策
         time.sleep(0.5)

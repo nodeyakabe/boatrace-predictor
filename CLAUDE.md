@@ -25,9 +25,47 @@
 | **DB構造** | [docs/architecture/DATABASE_SCHEMA.md](docs/architecture/DATABASE_SCHEMA.md) |
 | **データ収集** | [docs/guides/DATA_COLLECTION_MASTER.md](docs/guides/DATA_COLLECTION_MASTER.md) |
 
+### すぐに情報が必要なとき（★推奨）
+
+| 情報 | ドキュメント |
+|------|------------|
+| **テーブル早見表・よく使うクエリ** | [docs/QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md) |
+| **SQLクエリサンプル集（詳細）** | [docs/guides/SQL_QUERY_SAMPLES.md](docs/guides/SQL_QUERY_SAMPLES.md) |
+
 **注意**:
 - 日付付きドキュメント（`*_20251220.md`等）は過去ログ。最新情報ではない
 - 数値データはDBで直接確認すること
+
+## ⚠️ 参照してはいけないドキュメント
+
+以下のドキュメントは**過去ログ**であり、最新情報ではありません。参照すると誤認識の原因になります：
+
+### 1. 日付付きファイル（`*_2025*.md`, `*_2026*.md`）
+
+- 作成当時の分析結果であり、現在のシステムと乖離している可能性
+- 例: `docs/analysis/*_20251215.md` ～ `*_20251222.md`（約45ファイル）
+- 例: `docs/implementation/*_2025*.md`
+- 例: `docs/PROJECT_CLEANUP_LOG_20251222.md`
+- 例: `docs/DOCUMENT_CLEANUP_PROPOSAL_20260114.md`
+
+### 2. docs/implementation/ 配下のレポート
+
+- 完了済みの実装記録（過去ログ）
+- 参照するなら `docs/architecture/` の最新版を使用
+
+### 3. docs/archive/ 配下
+
+- 明示的にアーカイブされた古いドキュメント
+- 過去の経緯確認以外では参照不要
+
+### 4. docs/analysis/ 配下の古いレポート
+
+- 大半が過去の分析レポート
+- 最新の分析結果は `docs/performance/` を参照
+
+**例外（参照必須）**:
+- `docs/improvement_attempts/REJECTED_IDEAS.md` - 不採用案の確認に必須
+- `docs/guides/` 配下のガイド類 - ハウツー情報として有効
 
 ## よく使うコマンド
 
@@ -162,17 +200,25 @@ JOIN trifecta_odds t ON rp.race_id = t.race_id
 │   ├── backtest/       # バックテスト
 │   ├── analysis/       # 分析
 │   ├── data_collection/# データ収集
-│   └── maintenance/    # メンテナンス
+│   ├── maintenance/    # メンテナンス
+│   └── templates/      # スクリプトテンプレート
 ├── config/        # 設定
-├── docs/          # ドキュメント
+├── docs/          # ドキュメント（最新版）
 │   ├── architecture/        # システム設計・予測ロジック
 │   ├── performance/         # 年度別成績・テスト結果
 │   ├── presets/             # 購入条件・プリセット
 │   ├── improvement_attempts/ # 不採用案・検証履歴
 │   ├── guides/              # ガイド
-│   └── analysis/            # 分析レポート（過去ログ）
+│   ├── analysis/            # 最新の分析結果のみ
+│   ├── maintenance/         # メンテナンス記録
+│   └── archive/             # 過去ログ（★参照禁止）
+│       ├── analysis_2025/   # 2025年の分析レポート（51ファイル）
+│       ├── implementation/  # 完了済み実装レポート（29ファイル）
+│       └── reports_2025/    # 2025年のその他レポート（4ファイル）
 ├── ui/            # Streamlit UI
 ├── tests/         # テスト
 ├── data/          # データ（Git管理外）
 └── models/        # MLモデル（Git管理外）
 ```
+
+**重要**: docs/archive/ 配下は過去ログです。参照不要。

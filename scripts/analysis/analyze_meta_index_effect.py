@@ -91,30 +91,48 @@ def analyze_meta_index_vs_actual():
     # 1コース選手のメタ指数で購入判定を変えた場合の効果を検証
 
     query = """
-    WITH target_races AS (
+    WITH prediction_combos AS (
+        -- 予測組み合わせを取得（予測1着-予測2着-予測3着）
+        SELECT
+            rp1.race_id,
+            rp1.confidence,
+            CAST(rp1.pit_number AS TEXT) || '-' ||
+            CAST(rp2.pit_number AS TEXT) || '-' ||
+            CAST(rp3.pit_number AS TEXT) as pred_combo
+        FROM race_predictions rp1
+        JOIN race_predictions rp2 ON rp1.race_id = rp2.race_id
+            AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+        JOIN race_predictions rp3 ON rp1.race_id = rp3.race_id
+            AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+        WHERE rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+    ),
+    actual_combos AS (
+        -- 実際の結果組み合わせを取得
+        SELECT
+            race_id,
+            CAST(MAX(CASE WHEN rank = '1' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '2' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '3' THEN pit_number END) AS TEXT) as actual_combo
+        FROM results
+        WHERE rank IN ('1', '2', '3')
+        GROUP BY race_id
+    ),
+    target_races AS (
         -- B×50-100条件のレース（冬除外後）
         SELECT
-            rp.race_id,
+            pc.race_id,
             rc.race_date,
             rc.venue_code,
             e1.racer_number as c1_racer,
-            rp.confidence,
+            pc.confidence,
             t.odds,
-            CASE
-                WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN 1
-                ELSE 0
-            END as is_hit
-        FROM race_predictions rp
-        JOIN races rc ON rp.race_id = rc.id
-        JOIN entries e1 ON rp.race_id = e1.race_id AND e1.pit_number = 1
-        JOIN trifecta_odds t ON rp.race_id = t.race_id AND t.combination = '1-2-3'
-        JOIN results r1 ON rp.race_id = r1.race_id AND r1.pit_number = 1
-        JOIN results r2 ON rp.race_id = r2.race_id AND r2.pit_number = 2
-        JOIN results r3 ON rp.race_id = r3.race_id AND r3.pit_number = 3
-        WHERE rp.prediction_type = 'before'
-          AND rp.pit_number = 1
-          AND rp.rank_prediction = 1
-          AND rp.confidence = 'B'
+            CASE WHEN pc.pred_combo = ac.actual_combo THEN 1 ELSE 0 END as is_hit
+        FROM prediction_combos pc
+        JOIN races rc ON pc.race_id = rc.id
+        JOIN entries e1 ON pc.race_id = e1.race_id AND e1.pit_number = 1
+        JOIN trifecta_odds t ON pc.race_id = t.race_id AND t.combination = pc.pred_combo
+        JOIN actual_combos ac ON pc.race_id = ac.race_id
+        WHERE pc.confidence = 'B'
           AND t.odds BETWEEN 50 AND 100
           AND CAST(strftime('%m', rc.race_date) AS INTEGER) NOT IN (1, 2, 12)
           AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
@@ -258,23 +276,42 @@ def analyze_all_conditions():
     for name, where in conditions:
         # ベース
         base_query = f"""
+        WITH prediction_combos AS (
+            SELECT
+                rp1.race_id,
+                rp1.confidence,
+                CAST(rp1.pit_number AS TEXT) || '-' ||
+                CAST(rp2.pit_number AS TEXT) || '-' ||
+                CAST(rp3.pit_number AS TEXT) as pred_combo
+            FROM race_predictions rp1
+            JOIN race_predictions rp2 ON rp1.race_id = rp2.race_id
+                AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+            JOIN race_predictions rp3 ON rp1.race_id = rp3.race_id
+                AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+            WHERE rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+        ),
+        actual_combos AS (
+            SELECT
+                race_id,
+                CAST(MAX(CASE WHEN rank = '1' THEN pit_number END) AS TEXT) || '-' ||
+                CAST(MAX(CASE WHEN rank = '2' THEN pit_number END) AS TEXT) || '-' ||
+                CAST(MAX(CASE WHEN rank = '3' THEN pit_number END) AS TEXT) as actual_combo
+            FROM results
+            WHERE rank IN ('1', '2', '3')
+            GROUP BY race_id
+        )
         SELECT
-            CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN 1 ELSE 0 END as is_hit,
+            CASE WHEN pc.pred_combo = ac.actual_combo THEN 1 ELSE 0 END as is_hit,
             t.odds,
             pms.stability_entropy,
             pms.dominance_rate
-        FROM race_predictions rp
-        JOIN races rc ON rp.race_id = rc.id
-        JOIN entries e1 ON rp.race_id = e1.race_id AND e1.pit_number = 1
-        JOIN trifecta_odds t ON rp.race_id = t.race_id AND t.combination = '1-2-3'
-        JOIN results r1 ON rp.race_id = r1.race_id AND r1.pit_number = 1
-        JOIN results r2 ON rp.race_id = r2.race_id AND r2.pit_number = 2
-        JOIN results r3 ON rp.race_id = r3.race_id AND r3.pit_number = 3
+        FROM prediction_combos pc
+        JOIN races rc ON pc.race_id = rc.id
+        JOIN entries e1 ON pc.race_id = e1.race_id AND e1.pit_number = 1
+        JOIN trifecta_odds t ON pc.race_id = t.race_id AND t.combination = pc.pred_combo
+        JOIN actual_combos ac ON pc.race_id = ac.race_id
         LEFT JOIN player_meta_stats pms ON e1.racer_number = pms.player_id AND pms.stadium_id IS NULL
-        WHERE rp.prediction_type = 'before'
-          AND rp.pit_number = 1
-          AND rp.rank_prediction = 1
-          AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+        WHERE rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
           AND {where}
         """
 
@@ -315,23 +352,42 @@ def find_optimal_threshold():
 
     # B×50-100条件のデータ取得
     query = """
+    WITH prediction_combos AS (
+        SELECT
+            rp1.race_id,
+            rp1.confidence,
+            CAST(rp1.pit_number AS TEXT) || '-' ||
+            CAST(rp2.pit_number AS TEXT) || '-' ||
+            CAST(rp3.pit_number AS TEXT) as pred_combo
+        FROM race_predictions rp1
+        JOIN race_predictions rp2 ON rp1.race_id = rp2.race_id
+            AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+        JOIN race_predictions rp3 ON rp1.race_id = rp3.race_id
+            AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+        WHERE rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+    ),
+    actual_combos AS (
+        SELECT
+            race_id,
+            CAST(MAX(CASE WHEN rank = '1' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '2' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '3' THEN pit_number END) AS TEXT) as actual_combo
+        FROM results
+        WHERE rank IN ('1', '2', '3')
+        GROUP BY race_id
+    )
     SELECT
-        CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN 1 ELSE 0 END as is_hit,
+        CASE WHEN pc.pred_combo = ac.actual_combo THEN 1 ELSE 0 END as is_hit,
         t.odds,
         pms.stability_entropy,
         pms.dominance_rate
-    FROM race_predictions rp
-    JOIN races rc ON rp.race_id = rc.id
-    JOIN entries e1 ON rp.race_id = e1.race_id AND e1.pit_number = 1
-    JOIN trifecta_odds t ON rp.race_id = t.race_id AND t.combination = '1-2-3'
-    JOIN results r1 ON rp.race_id = r1.race_id AND r1.pit_number = 1
-    JOIN results r2 ON rp.race_id = r2.race_id AND r2.pit_number = 2
-    JOIN results r3 ON rp.race_id = r3.race_id AND r3.pit_number = 3
+    FROM prediction_combos pc
+    JOIN races rc ON pc.race_id = rc.id
+    JOIN entries e1 ON pc.race_id = e1.race_id AND e1.pit_number = 1
+    JOIN trifecta_odds t ON pc.race_id = t.race_id AND t.combination = pc.pred_combo
+    JOIN actual_combos ac ON pc.race_id = ac.race_id
     LEFT JOIN player_meta_stats pms ON e1.racer_number = pms.player_id AND pms.stadium_id IS NULL
-    WHERE rp.prediction_type = 'before'
-      AND rp.pit_number = 1
-      AND rp.rank_prediction = 1
-      AND rp.confidence = 'B'
+    WHERE pc.confidence = 'B'
       AND t.odds BETWEEN 50 AND 100
       AND CAST(strftime('%m', rc.race_date) AS INTEGER) NOT IN (1, 2, 12)
       AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'

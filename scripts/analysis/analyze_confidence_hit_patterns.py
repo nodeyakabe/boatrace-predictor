@@ -33,9 +33,37 @@ def analyze_confidence_odds_pattern():
     cursor = conn.cursor()
 
     query = """
-    WITH prediction_results AS (
+    WITH prediction_combos AS (
+        -- 予測組み合わせを取得（予測1着-予測2着-予測3着）
         SELECT
-            rp.confidence,
+            rp1.race_id,
+            rp1.confidence,
+            CAST(rp1.pit_number AS TEXT) || '-' ||
+            CAST(rp2.pit_number AS TEXT) || '-' ||
+            CAST(rp3.pit_number AS TEXT) as pred_combo
+        FROM race_predictions rp1
+        JOIN race_predictions rp2 ON rp1.race_id = rp2.race_id
+            AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+        JOIN race_predictions rp3 ON rp1.race_id = rp3.race_id
+            AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+        JOIN races rc ON rp1.race_id = rc.id
+        WHERE rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+          AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+    ),
+    actual_combos AS (
+        -- 実際の結果組み合わせを取得（実際1着-実際2着-実際3着）
+        SELECT
+            race_id,
+            CAST(MAX(CASE WHEN rank = '1' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '2' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '3' THEN pit_number END) AS TEXT) as actual_combo
+        FROM results
+        WHERE rank IN ('1', '2', '3')
+        GROUP BY race_id
+    ),
+    prediction_results AS (
+        SELECT
+            pc.confidence,
             t.odds,
             CASE
                 WHEN t.odds < 10 THEN '01: <10倍'
@@ -45,20 +73,10 @@ def analyze_confidence_odds_pattern():
                 WHEN t.odds < 100 THEN '05: 50-100倍'
                 ELSE '06: 100倍+'
             END as odds_band,
-            CASE
-                WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN 1
-                ELSE 0
-            END as is_hit
-        FROM race_predictions rp
-        JOIN races rc ON rp.race_id = rc.id
-        JOIN trifecta_odds t ON rp.race_id = t.race_id AND t.combination = '1-2-3'
-        JOIN results r1 ON rp.race_id = r1.race_id AND r1.pit_number = 1
-        JOIN results r2 ON rp.race_id = r2.race_id AND r2.pit_number = 2
-        JOIN results r3 ON rp.race_id = r3.race_id AND r3.pit_number = 3
-        WHERE rp.prediction_type = 'before'
-          AND rp.pit_number = 1
-          AND rp.rank_prediction = 1
-          AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+            CASE WHEN pc.pred_combo = ac.actual_combo THEN 1 ELSE 0 END as is_hit
+        FROM prediction_combos pc
+        JOIN trifecta_odds t ON pc.race_id = t.race_id AND t.combination = pc.pred_combo
+        JOIN actual_combos ac ON pc.race_id = ac.race_id
     )
     SELECT
         confidence,
@@ -105,27 +123,45 @@ def analyze_confidence_c1rank_pattern():
     cursor = conn.cursor()
 
     query = """
-    WITH prediction_results AS (
+    WITH prediction_combos AS (
+        -- 予測組み合わせを取得（予測1着-予測2着-予測3着）
         SELECT
-            rp.confidence,
+            rp1.race_id,
+            rp1.confidence,
+            CAST(rp1.pit_number AS TEXT) || '-' ||
+            CAST(rp2.pit_number AS TEXT) || '-' ||
+            CAST(rp3.pit_number AS TEXT) as pred_combo
+        FROM race_predictions rp1
+        JOIN race_predictions rp2 ON rp1.race_id = rp2.race_id
+            AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+        JOIN race_predictions rp3 ON rp1.race_id = rp3.race_id
+            AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+        JOIN races rc ON rp1.race_id = rc.id
+        WHERE rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+          AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+    ),
+    actual_combos AS (
+        -- 実際の結果組み合わせを取得
+        SELECT
+            race_id,
+            CAST(MAX(CASE WHEN rank = '1' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '2' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '3' THEN pit_number END) AS TEXT) as actual_combo
+        FROM results
+        WHERE rank IN ('1', '2', '3')
+        GROUP BY race_id
+    ),
+    prediction_results AS (
+        SELECT
+            pc.confidence,
             e1.racer_rank as c1_rank,
             t.odds,
-            CASE
-                WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN 1
-                ELSE 0
-            END as is_hit
-        FROM race_predictions rp
-        JOIN races rc ON rp.race_id = rc.id
-        JOIN entries e1 ON rp.race_id = e1.race_id AND e1.pit_number = 1
-        JOIN trifecta_odds t ON rp.race_id = t.race_id AND t.combination = '1-2-3'
-        JOIN results r1 ON rp.race_id = r1.race_id AND r1.pit_number = 1
-        JOIN results r2 ON rp.race_id = r2.race_id AND r2.pit_number = 2
-        JOIN results r3 ON rp.race_id = r3.race_id AND r3.pit_number = 3
-        WHERE rp.prediction_type = 'before'
-          AND rp.pit_number = 1
-          AND rp.rank_prediction = 1
-          AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
-          AND e1.racer_rank IN ('A1', 'A2', 'B1', 'B2')
+            CASE WHEN pc.pred_combo = ac.actual_combo THEN 1 ELSE 0 END as is_hit
+        FROM prediction_combos pc
+        JOIN trifecta_odds t ON pc.race_id = t.race_id AND t.combination = pc.pred_combo
+        JOIN actual_combos ac ON pc.race_id = ac.race_id
+        JOIN entries e1 ON pc.race_id = e1.race_id AND e1.pit_number = 1
+        WHERE e1.racer_rank IN ('A1', 'A2', 'B1', 'B2')
     )
     SELECT
         confidence,
@@ -277,30 +313,47 @@ def analyze_score_gap_hit_pattern():
 
     if sample and sample[0][0] is not None:
         query = """
-        WITH score_data AS (
+        WITH prediction_combos AS (
+            -- 予測組み合わせを取得（予測1着-予測2着-予測3着）
             SELECT
                 rp1.race_id,
                 rp1.confidence,
                 rp1.score - rp2.score as score_gap,
-                CASE
-                    WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN 1
-                    ELSE 0
-                END as is_hit,
-                t.odds
+                CAST(rp1.pit_number AS TEXT) || '-' ||
+                CAST(rp2.pit_number AS TEXT) || '-' ||
+                CAST(rp3.pit_number AS TEXT) as pred_combo
             FROM race_predictions rp1
             JOIN race_predictions rp2 ON rp1.race_id = rp2.race_id
                 AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+            JOIN race_predictions rp3 ON rp1.race_id = rp3.race_id
+                AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
             JOIN races rc ON rp1.race_id = rc.id
-            JOIN trifecta_odds t ON rp1.race_id = t.race_id AND t.combination = '1-2-3'
-            JOIN results r1 ON rp1.race_id = r1.race_id AND r1.pit_number = 1
-            JOIN results r2 ON rp1.race_id = r2.race_id AND r2.pit_number = 2
-            JOIN results r3 ON rp1.race_id = r3.race_id AND r3.pit_number = 3
-            WHERE rp1.prediction_type = 'before'
-              AND rp1.rank_prediction = 1
-              AND rp1.pit_number = 1
+            WHERE rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
               AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
               AND rp1.score IS NOT NULL
               AND rp2.score IS NOT NULL
+        ),
+        actual_combos AS (
+            -- 実際の結果組み合わせを取得
+            SELECT
+                race_id,
+                CAST(MAX(CASE WHEN rank = '1' THEN pit_number END) AS TEXT) || '-' ||
+                CAST(MAX(CASE WHEN rank = '2' THEN pit_number END) AS TEXT) || '-' ||
+                CAST(MAX(CASE WHEN rank = '3' THEN pit_number END) AS TEXT) as actual_combo
+            FROM results
+            WHERE rank IN ('1', '2', '3')
+            GROUP BY race_id
+        ),
+        score_data AS (
+            SELECT
+                pc.race_id,
+                pc.confidence,
+                pc.score_gap,
+                CASE WHEN pc.pred_combo = ac.actual_combo THEN 1 ELSE 0 END as is_hit,
+                t.odds
+            FROM prediction_combos pc
+            JOIN trifecta_odds t ON pc.race_id = t.race_id AND t.combination = pc.pred_combo
+            JOIN actual_combos ac ON pc.race_id = ac.race_id
         )
         SELECT
             confidence,
@@ -354,30 +407,48 @@ def analyze_hit_vs_miss_features():
 
     for conf in ['A', 'B', 'C', 'D']:
         query = f"""
-        WITH race_results AS (
+        WITH prediction_combos AS (
+            -- 予測組み合わせを取得（予測1着-予測2着-予測3着）
             SELECT
-                rp.race_id,
-                rp.confidence,
+                rp1.race_id,
+                rp1.confidence,
+                CAST(rp1.pit_number AS TEXT) || '-' ||
+                CAST(rp2.pit_number AS TEXT) || '-' ||
+                CAST(rp3.pit_number AS TEXT) as pred_combo
+            FROM race_predictions rp1
+            JOIN race_predictions rp2 ON rp1.race_id = rp2.race_id
+                AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+            JOIN race_predictions rp3 ON rp1.race_id = rp3.race_id
+                AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+            JOIN races rc ON rp1.race_id = rc.id
+            WHERE rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+              AND rp1.confidence = '{conf}'
+              AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+        ),
+        actual_combos AS (
+            -- 実際の結果組み合わせを取得
+            SELECT
+                race_id,
+                CAST(MAX(CASE WHEN rank = '1' THEN pit_number END) AS TEXT) || '-' ||
+                CAST(MAX(CASE WHEN rank = '2' THEN pit_number END) AS TEXT) || '-' ||
+                CAST(MAX(CASE WHEN rank = '3' THEN pit_number END) AS TEXT) as actual_combo
+            FROM results
+            WHERE rank IN ('1', '2', '3')
+            GROUP BY race_id
+        ),
+        race_results AS (
+            SELECT
+                pc.race_id,
+                pc.confidence,
                 e1.racer_rank as c1_rank,
                 e1.win_rate as c1_winrate,
                 e1.second_rate as c1_2nd_rate,
                 t.odds,
-                CASE
-                    WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN 1
-                    ELSE 0
-                END as is_hit
-            FROM race_predictions rp
-            JOIN races rc ON rp.race_id = rc.id
-            JOIN entries e1 ON rp.race_id = e1.race_id AND e1.pit_number = 1
-            JOIN trifecta_odds t ON rp.race_id = t.race_id AND t.combination = '1-2-3'
-            JOIN results r1 ON rp.race_id = r1.race_id AND r1.pit_number = 1
-            JOIN results r2 ON rp.race_id = r2.race_id AND r2.pit_number = 2
-            JOIN results r3 ON rp.race_id = r3.race_id AND r3.pit_number = 3
-            WHERE rp.prediction_type = 'before'
-              AND rp.pit_number = 1
-              AND rp.rank_prediction = 1
-              AND rp.confidence = '{conf}'
-              AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+                CASE WHEN pc.pred_combo = ac.actual_combo THEN 1 ELSE 0 END as is_hit
+            FROM prediction_combos pc
+            JOIN trifecta_odds t ON pc.race_id = t.race_id AND t.combination = pc.pred_combo
+            JOIN actual_combos ac ON pc.race_id = ac.race_id
+            JOIN entries e1 ON pc.race_id = e1.race_id AND e1.pit_number = 1
         )
         SELECT
             is_hit,
@@ -415,9 +486,37 @@ def analyze_high_hit_rate_conditions():
 
     # 複合条件での的中率を分析
     query = """
-    WITH race_data AS (
+    WITH prediction_combos AS (
+        -- 予測組み合わせを取得（予測1着-予測2着-予測3着）
         SELECT
-            rp.confidence,
+            rp1.race_id,
+            rp1.confidence,
+            CAST(rp1.pit_number AS TEXT) || '-' ||
+            CAST(rp2.pit_number AS TEXT) || '-' ||
+            CAST(rp3.pit_number AS TEXT) as pred_combo
+        FROM race_predictions rp1
+        JOIN race_predictions rp2 ON rp1.race_id = rp2.race_id
+            AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+        JOIN race_predictions rp3 ON rp1.race_id = rp3.race_id
+            AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+        JOIN races rc ON rp1.race_id = rc.id
+        WHERE rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+          AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+    ),
+    actual_combos AS (
+        -- 実際の結果組み合わせを取得
+        SELECT
+            race_id,
+            CAST(MAX(CASE WHEN rank = '1' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '2' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '3' THEN pit_number END) AS TEXT) as actual_combo
+        FROM results
+        WHERE rank IN ('1', '2', '3')
+        GROUP BY race_id
+    ),
+    race_data AS (
+        SELECT
+            pc.confidence,
             e1.racer_rank as c1_rank,
             CASE
                 WHEN t.odds < 20 THEN 'low'
@@ -430,22 +529,12 @@ def analyze_high_hit_rate_conditions():
                 ELSE 'low_wr'
             END as winrate_cat,
             t.odds,
-            CASE
-                WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN 1
-                ELSE 0
-            END as is_hit
-        FROM race_predictions rp
-        JOIN races rc ON rp.race_id = rc.id
-        JOIN entries e1 ON rp.race_id = e1.race_id AND e1.pit_number = 1
-        JOIN trifecta_odds t ON rp.race_id = t.race_id AND t.combination = '1-2-3'
-        JOIN results r1 ON rp.race_id = r1.race_id AND r1.pit_number = 1
-        JOIN results r2 ON rp.race_id = r2.race_id AND r2.pit_number = 2
-        JOIN results r3 ON rp.race_id = r3.race_id AND r3.pit_number = 3
-        WHERE rp.prediction_type = 'before'
-          AND rp.pit_number = 1
-          AND rp.rank_prediction = 1
-          AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
-          AND e1.racer_rank IN ('A1', 'A2', 'B1', 'B2')
+            CASE WHEN pc.pred_combo = ac.actual_combo THEN 1 ELSE 0 END as is_hit
+        FROM prediction_combos pc
+        JOIN trifecta_odds t ON pc.race_id = t.race_id AND t.combination = pc.pred_combo
+        JOIN actual_combos ac ON pc.race_id = ac.race_id
+        JOIN entries e1 ON pc.race_id = e1.race_id AND e1.pit_number = 1
+        WHERE e1.racer_rank IN ('A1', 'A2', 'B1', 'B2')
     )
     SELECT
         confidence,

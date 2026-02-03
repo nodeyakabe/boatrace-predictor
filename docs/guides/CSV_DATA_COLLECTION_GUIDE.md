@@ -305,6 +305,76 @@ SELECT COUNT(*) FROM entries WHERE race_id IN (SELECT id FROM races WHERE race_d
 
 ---
 
+## 成功事例
+
+### 事例1: wave_height補完プロジェクト（2026-01-29）
+
+**背景**:
+- wave_heightカバレッジ: 51.6%（113,757/220,413レース）
+- 補完対象: 2020-2023年の4年間（約22万レース）
+- 従来の直接DB投入では4-8日かかり、その間他の作業が不可能
+
+**実施内容**:
+
+```bash
+# 年別にCSV収集（2020年の例）
+python scripts/data_collection/fetch_race_conditions_to_csv.py \
+  --start 2020-01-01 --end 2020-12-31 \
+  --output data/csv/race_conditions/2020 \
+  --workers 12
+
+# 検証モードで確認
+python scripts/maintenance/import_race_conditions_from_csv.py \
+  --input data/csv/race_conditions/2020 \
+  --dry-run
+
+# DB投入
+python scripts/maintenance/import_race_conditions_from_csv.py \
+  --input data/csv/race_conditions/2020
+```
+
+**結果**:
+- ✅ **収集レース数**: 220,813件
+- ✅ **新規投入**: 109,595件のrace_conditions
+- ✅ **補完率向上**: 51.6% → **97.1%** (+45.5%)
+- ✅ **所要時間**: 約71.4時間（並列12ワーカー）
+- ✅ **DB負荷**: ゼロ（収集中も他の作業が可能）
+- ✅ **障害耐性**: 50タスクごと自動保存で途中障害に強い
+
+**教訓**:
+1. **月単位分割が効果的**: 1年分を一度に収集せず、月単位で実行すると管理しやすい
+2. **dry-runは必須**: 本番投入前の検証で問題を事前発見
+3. **バッチ保存が重要**: 50タスクごとの自動保存でネットワーク障害に耐性
+4. **wave_height型変換に注意**: CSVに`'1.0'`形式で保存される場合、`int(float(value))`で変換必要
+
+**詳細レポート**: [docs/DATA_QUALITY_IMPROVEMENT_FINAL_REPORT.md](../DATA_QUALITY_IMPROVEMENT_FINAL_REPORT.md)
+
+---
+
+### CSV方式採用チェックリスト
+
+以下の条件に当てはまる場合、CSV方式を採用してください：
+
+- [ ] 収集対象が1万レース以上
+- [ ] 推定所要時間が2時間以上
+- [ ] 収集中も他のDB操作を実行したい
+- [ ] ネットワーク障害のリスクがある（長時間実行）
+- [ ] 投入前にデータ検証したい
+
+---
+
+### 投入前検証チェックリスト
+
+dry-run実行時に以下を確認：
+
+- [ ] CSVファイルのエンコーディングが正しい（UTF-8）
+- [ ] 数値型カラムのフォーマットが正しい（例: wave_height=`'1.0'` → `int(float())`変換必要）
+- [ ] 外部キー制約違反がない（race_idが存在する）
+- [ ] 重複データの扱いが明確（skip or overwrite）
+- [ ] 投入件数が予想範囲内
+
+---
+
 ## まとめ
 
 CSV経由のデータ収集により:
@@ -313,5 +383,6 @@ CSV経由のデータ収集により:
 2. **他の作業と並行** してデータ収集を進められる
 3. **不整合防止機能** により安全にDB投入可能
 4. **高速なバルク投入** で数分で完了
+5. **実績**: wave_height補完で109,595件を71.4時間で収集・投入成功
 
 この方法を使うことで、数日かかるデータ収集作業も安心して実行できます。

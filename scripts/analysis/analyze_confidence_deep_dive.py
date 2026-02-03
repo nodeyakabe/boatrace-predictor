@@ -31,27 +31,47 @@ def analyze_a_high_odds_yearly():
 
     # 年度別検証
     query = """
+    WITH prediction_combos AS (
+        SELECT
+            rp1.race_id,
+            rp1.confidence,
+            CAST(rp1.pit_number AS TEXT) || '-' ||
+            CAST(rp2.pit_number AS TEXT) || '-' ||
+            CAST(rp3.pit_number AS TEXT) as pred_combo
+        FROM race_predictions rp1
+        JOIN race_predictions rp2 ON rp1.race_id = rp2.race_id
+            AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+        JOIN race_predictions rp3 ON rp1.race_id = rp3.race_id
+            AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+        JOIN races rc ON rp1.race_id = rc.id
+        WHERE rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+          AND rp1.confidence = 'A'
+          AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+    ),
+    actual_combos AS (
+        SELECT
+            race_id,
+            CAST(MAX(CASE WHEN rank = '1' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '2' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '3' THEN pit_number END) AS TEXT) as actual_combo
+        FROM results
+        WHERE rank IN ('1', '2', '3')
+        GROUP BY race_id
+    )
     SELECT
         strftime('%Y', rc.race_date) as year,
         COUNT(*) as total,
-        SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN 1 ELSE 0 END) as hits,
-        ROUND(100.0 * SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN 1 ELSE 0 END) / COUNT(*), 2) as hit_rate,
+        SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN 1 ELSE 0 END) as hits,
+        ROUND(100.0 * SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN 1 ELSE 0 END) / COUNT(*), 2) as hit_rate,
         ROUND(AVG(t.odds), 1) as avg_odds,
         SUM(t.odds * 100) as potential_return,
         COUNT(*) * 100 as investment,
-        SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN t.odds * 100 ELSE 0 END) as actual_return
-    FROM race_predictions rp
-    JOIN races rc ON rp.race_id = rc.id
-    JOIN trifecta_odds t ON rp.race_id = t.race_id AND t.combination = '1-2-3'
-    JOIN results r1 ON rp.race_id = r1.race_id AND r1.pit_number = 1
-    JOIN results r2 ON rp.race_id = r2.race_id AND r2.pit_number = 2
-    JOIN results r3 ON rp.race_id = r3.race_id AND r3.pit_number = 3
-    WHERE rp.prediction_type = 'before'
-      AND rp.pit_number = 1
-      AND rp.rank_prediction = 1
-      AND rp.confidence = 'A'
-      AND t.odds >= 50 AND t.odds < 100
-      AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+        SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN t.odds * 100 ELSE 0 END) as actual_return
+    FROM prediction_combos pc
+    JOIN races rc ON pc.race_id = rc.id
+    JOIN trifecta_odds t ON pc.race_id = t.race_id AND t.combination = pc.pred_combo
+    JOIN actual_combos ac ON pc.race_id = ac.race_id
+    WHERE t.odds >= 50 AND t.odds < 100
     GROUP BY year
     ORDER BY year
     """
@@ -91,23 +111,43 @@ def analyze_a_high_odds_yearly():
     print("【参考】A×100倍+ （サンプル少）")
 
     query2 = """
+    WITH prediction_combos AS (
+        SELECT
+            rp1.race_id,
+            rp1.confidence,
+            CAST(rp1.pit_number AS TEXT) || '-' ||
+            CAST(rp2.pit_number AS TEXT) || '-' ||
+            CAST(rp3.pit_number AS TEXT) as pred_combo
+        FROM race_predictions rp1
+        JOIN race_predictions rp2 ON rp1.race_id = rp2.race_id
+            AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+        JOIN race_predictions rp3 ON rp1.race_id = rp3.race_id
+            AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+        JOIN races rc ON rp1.race_id = rc.id
+        WHERE rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+          AND rp1.confidence = 'A'
+          AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+    ),
+    actual_combos AS (
+        SELECT
+            race_id,
+            CAST(MAX(CASE WHEN rank = '1' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '2' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '3' THEN pit_number END) AS TEXT) as actual_combo
+        FROM results
+        WHERE rank IN ('1', '2', '3')
+        GROUP BY race_id
+    )
     SELECT
         strftime('%Y', rc.race_date) as year,
         COUNT(*) as total,
-        SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN 1 ELSE 0 END) as hits,
-        SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN t.odds * 100 ELSE 0 END) - COUNT(*) * 100 as profit
-    FROM race_predictions rp
-    JOIN races rc ON rp.race_id = rc.id
-    JOIN trifecta_odds t ON rp.race_id = t.race_id AND t.combination = '1-2-3'
-    JOIN results r1 ON rp.race_id = r1.race_id AND r1.pit_number = 1
-    JOIN results r2 ON rp.race_id = r2.race_id AND r2.pit_number = 2
-    JOIN results r3 ON rp.race_id = r3.race_id AND r3.pit_number = 3
-    WHERE rp.prediction_type = 'before'
-      AND rp.pit_number = 1
-      AND rp.rank_prediction = 1
-      AND rp.confidence = 'A'
-      AND t.odds >= 100
-      AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+        SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN 1 ELSE 0 END) as hits,
+        SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN t.odds * 100 ELSE 0 END) - COUNT(*) * 100 as profit
+    FROM prediction_combos pc
+    JOIN races rc ON pc.race_id = rc.id
+    JOIN trifecta_odds t ON pc.race_id = t.race_id AND t.combination = pc.pred_combo
+    JOIN actual_combos ac ON pc.race_id = ac.race_id
+    WHERE t.odds >= 100
     GROUP BY year
     ORDER BY year
     """
@@ -139,6 +179,35 @@ def analyze_b_a1_improvement():
     # オッズ帯別で分解
     print("【オッズ帯別】")
     query = """
+    WITH prediction_combos AS (
+        SELECT
+            rp1.race_id,
+            rp1.confidence,
+            CAST(rp1.pit_number AS TEXT) || '-' ||
+            CAST(rp2.pit_number AS TEXT) || '-' ||
+            CAST(rp3.pit_number AS TEXT) as pred_combo
+        FROM race_predictions rp1
+        JOIN race_predictions rp2 ON rp1.race_id = rp2.race_id
+            AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+        JOIN race_predictions rp3 ON rp1.race_id = rp3.race_id
+            AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+        JOIN races rc ON rp1.race_id = rc.id
+        JOIN entries e1 ON rp1.race_id = e1.race_id AND e1.pit_number = 1
+        WHERE rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+          AND rp1.confidence = 'B'
+          AND e1.racer_rank = 'A1'
+          AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+    ),
+    actual_combos AS (
+        SELECT
+            race_id,
+            CAST(MAX(CASE WHEN rank = '1' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '2' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '3' THEN pit_number END) AS TEXT) as actual_combo
+        FROM results
+        WHERE rank IN ('1', '2', '3')
+        GROUP BY race_id
+    )
     SELECT
         CASE
             WHEN t.odds < 10 THEN '01: <10倍'
@@ -149,23 +218,13 @@ def analyze_b_a1_improvement():
             ELSE '06: 50倍+'
         END as odds_band,
         COUNT(*) as total,
-        SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN 1 ELSE 0 END) as hits,
+        SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN 1 ELSE 0 END) as hits,
         ROUND(AVG(t.odds), 1) as avg_odds,
-        SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN t.odds * 100 ELSE 0 END) as returns,
+        SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN t.odds * 100 ELSE 0 END) as returns,
         COUNT(*) * 100 as investment
-    FROM race_predictions rp
-    JOIN races rc ON rp.race_id = rc.id
-    JOIN entries e1 ON rp.race_id = e1.race_id AND e1.pit_number = 1
-    JOIN trifecta_odds t ON rp.race_id = t.race_id AND t.combination = '1-2-3'
-    JOIN results r1 ON rp.race_id = r1.race_id AND r1.pit_number = 1
-    JOIN results r2 ON rp.race_id = r2.race_id AND r2.pit_number = 2
-    JOIN results r3 ON rp.race_id = r3.race_id AND r3.pit_number = 3
-    WHERE rp.prediction_type = 'before'
-      AND rp.pit_number = 1
-      AND rp.rank_prediction = 1
-      AND rp.confidence = 'B'
-      AND e1.racer_rank = 'A1'
-      AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+    FROM prediction_combos pc
+    JOIN trifecta_odds t ON pc.race_id = t.race_id AND t.combination = pc.pred_combo
+    JOIN actual_combos ac ON pc.race_id = ac.race_id
     GROUP BY odds_band
     ORDER BY odds_band
     """
@@ -187,28 +246,48 @@ def analyze_b_a1_improvement():
     # 会場別で分解
     print("\n【会場別（上位10）】")
     query2 = """
+    WITH prediction_combos AS (
+        SELECT
+            rp1.race_id,
+            rp1.confidence,
+            CAST(rp1.pit_number AS TEXT) || '-' ||
+            CAST(rp2.pit_number AS TEXT) || '-' ||
+            CAST(rp3.pit_number AS TEXT) as pred_combo
+        FROM race_predictions rp1
+        JOIN race_predictions rp2 ON rp1.race_id = rp2.race_id
+            AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+        JOIN race_predictions rp3 ON rp1.race_id = rp3.race_id
+            AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+        JOIN races rc ON rp1.race_id = rc.id
+        JOIN entries e1 ON rp1.race_id = e1.race_id AND e1.pit_number = 1
+        WHERE rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+          AND rp1.confidence = 'B'
+          AND e1.racer_rank = 'A1'
+          AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+    ),
+    actual_combos AS (
+        SELECT
+            race_id,
+            CAST(MAX(CASE WHEN rank = '1' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '2' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '3' THEN pit_number END) AS TEXT) as actual_combo
+        FROM results
+        WHERE rank IN ('1', '2', '3')
+        GROUP BY race_id
+    )
     SELECT
         rc.venue_code,
         COUNT(*) as total,
-        SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN 1 ELSE 0 END) as hits,
-        SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN t.odds * 100 ELSE 0 END) as returns,
+        SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN 1 ELSE 0 END) as hits,
+        SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN t.odds * 100 ELSE 0 END) as returns,
         COUNT(*) * 100 as investment
-    FROM race_predictions rp
-    JOIN races rc ON rp.race_id = rc.id
-    JOIN entries e1 ON rp.race_id = e1.race_id AND e1.pit_number = 1
-    JOIN trifecta_odds t ON rp.race_id = t.race_id AND t.combination = '1-2-3'
-    JOIN results r1 ON rp.race_id = r1.race_id AND r1.pit_number = 1
-    JOIN results r2 ON rp.race_id = r2.race_id AND r2.pit_number = 2
-    JOIN results r3 ON rp.race_id = r3.race_id AND r3.pit_number = 3
-    WHERE rp.prediction_type = 'before'
-      AND rp.pit_number = 1
-      AND rp.rank_prediction = 1
-      AND rp.confidence = 'B'
-      AND e1.racer_rank = 'A1'
-      AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+    FROM prediction_combos pc
+    JOIN races rc ON pc.race_id = rc.id
+    JOIN trifecta_odds t ON pc.race_id = t.race_id AND t.combination = pc.pred_combo
+    JOIN actual_combos ac ON pc.race_id = ac.race_id
     GROUP BY rc.venue_code
     HAVING COUNT(*) >= 30
-    ORDER BY (SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN t.odds * 100 ELSE 0 END) * 1.0 / (COUNT(*) * 100)) DESC
+    ORDER BY (SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN t.odds * 100 ELSE 0 END) * 1.0 / (COUNT(*) * 100)) DESC
     LIMIT 10
     """
 
@@ -244,25 +323,45 @@ def analyze_b_a1_improvement():
         print("\n【黒字会場限定での年度別】")
         venues_str = ','.join(map(str, black_venues))
         query3 = f"""
+        WITH prediction_combos AS (
+            SELECT
+                rp1.race_id,
+                rp1.confidence,
+                CAST(rp1.pit_number AS TEXT) || '-' ||
+                CAST(rp2.pit_number AS TEXT) || '-' ||
+                CAST(rp3.pit_number AS TEXT) as pred_combo
+            FROM race_predictions rp1
+            JOIN race_predictions rp2 ON rp1.race_id = rp2.race_id
+                AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+            JOIN race_predictions rp3 ON rp1.race_id = rp3.race_id
+                AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+            JOIN races rc ON rp1.race_id = rc.id
+            JOIN entries e1 ON rp1.race_id = e1.race_id AND e1.pit_number = 1
+            WHERE rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+              AND rp1.confidence = 'B'
+              AND e1.racer_rank = 'A1'
+              AND rc.venue_code IN ({venues_str})
+              AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+        ),
+        actual_combos AS (
+            SELECT
+                race_id,
+                CAST(MAX(CASE WHEN rank = '1' THEN pit_number END) AS TEXT) || '-' ||
+                CAST(MAX(CASE WHEN rank = '2' THEN pit_number END) AS TEXT) || '-' ||
+                CAST(MAX(CASE WHEN rank = '3' THEN pit_number END) AS TEXT) as actual_combo
+            FROM results
+            WHERE rank IN ('1', '2', '3')
+            GROUP BY race_id
+        )
         SELECT
             strftime('%Y', rc.race_date) as year,
             COUNT(*) as total,
-            SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN 1 ELSE 0 END) as hits,
-            SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN t.odds * 100 ELSE 0 END) - COUNT(*) * 100 as profit
-        FROM race_predictions rp
-        JOIN races rc ON rp.race_id = rc.id
-        JOIN entries e1 ON rp.race_id = e1.race_id AND e1.pit_number = 1
-        JOIN trifecta_odds t ON rp.race_id = t.race_id AND t.combination = '1-2-3'
-        JOIN results r1 ON rp.race_id = r1.race_id AND r1.pit_number = 1
-        JOIN results r2 ON rp.race_id = r2.race_id AND r2.pit_number = 2
-        JOIN results r3 ON rp.race_id = r3.race_id AND r3.pit_number = 3
-        WHERE rp.prediction_type = 'before'
-          AND rp.pit_number = 1
-          AND rp.rank_prediction = 1
-          AND rp.confidence = 'B'
-          AND e1.racer_rank = 'A1'
-          AND rc.venue_code IN ({venues_str})
-          AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+            SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN 1 ELSE 0 END) as hits,
+            SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN t.odds * 100 ELSE 0 END) - COUNT(*) * 100 as profit
+        FROM prediction_combos pc
+        JOIN races rc ON pc.race_id = rc.id
+        JOIN trifecta_odds t ON pc.race_id = t.race_id AND t.combination = pc.pred_combo
+        JOIN actual_combos ac ON pc.race_id = ac.race_id
         GROUP BY year
         ORDER BY year
         """
@@ -329,6 +428,33 @@ def explain_hit_vs_miss():
     print("【D条件 × 1C2連率フィルター効果】")
 
     query = """
+    WITH prediction_combos AS (
+        SELECT
+            rp1.race_id,
+            rp1.confidence,
+            CAST(rp1.pit_number AS TEXT) || '-' ||
+            CAST(rp2.pit_number AS TEXT) || '-' ||
+            CAST(rp3.pit_number AS TEXT) as pred_combo
+        FROM race_predictions rp1
+        JOIN race_predictions rp2 ON rp1.race_id = rp2.race_id
+            AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+        JOIN race_predictions rp3 ON rp1.race_id = rp3.race_id
+            AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+        JOIN races rc ON rp1.race_id = rc.id
+        WHERE rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+          AND rp1.confidence = 'D'
+          AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+    ),
+    actual_combos AS (
+        SELECT
+            race_id,
+            CAST(MAX(CASE WHEN rank = '1' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '2' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '3' THEN pit_number END) AS TEXT) as actual_combo
+        FROM results
+        WHERE rank IN ('1', '2', '3')
+        GROUP BY race_id
+    )
     SELECT
         CASE
             WHEN e1.second_rate >= 40 THEN '40%以上'
@@ -337,22 +463,14 @@ def explain_hit_vs_miss():
             ELSE '20%未満'
         END as rate_band,
         COUNT(*) as total,
-        SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN 1 ELSE 0 END) as hits,
+        SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN 1 ELSE 0 END) as hits,
         ROUND(AVG(t.odds), 1) as avg_odds,
-        SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN t.odds * 100 ELSE 0 END) as returns,
+        SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN t.odds * 100 ELSE 0 END) as returns,
         COUNT(*) * 100 as investment
-    FROM race_predictions rp
-    JOIN races rc ON rp.race_id = rc.id
-    JOIN entries e1 ON rp.race_id = e1.race_id AND e1.pit_number = 1
-    JOIN trifecta_odds t ON rp.race_id = t.race_id AND t.combination = '1-2-3'
-    JOIN results r1 ON rp.race_id = r1.race_id AND r1.pit_number = 1
-    JOIN results r2 ON rp.race_id = r2.race_id AND r2.pit_number = 2
-    JOIN results r3 ON rp.race_id = r3.race_id AND r3.pit_number = 3
-    WHERE rp.prediction_type = 'before'
-      AND rp.pit_number = 1
-      AND rp.rank_prediction = 1
-      AND rp.confidence = 'D'
-      AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+    FROM prediction_combos pc
+    JOIN entries e1 ON pc.race_id = e1.race_id AND e1.pit_number = 1
+    JOIN trifecta_odds t ON pc.race_id = t.race_id AND t.combination = pc.pred_combo
+    JOIN actual_combos ac ON pc.race_id = ac.race_id
     GROUP BY rate_band
     ORDER BY rate_band DESC
     """
@@ -389,26 +507,46 @@ def analyze_high_roi_conditions():
     print("【A×A2×50倍+ 年度別検証】")
 
     query = """
+    WITH prediction_combos AS (
+        SELECT
+            rp1.race_id,
+            rp1.confidence,
+            CAST(rp1.pit_number AS TEXT) || '-' ||
+            CAST(rp2.pit_number AS TEXT) || '-' ||
+            CAST(rp3.pit_number AS TEXT) as pred_combo
+        FROM race_predictions rp1
+        JOIN race_predictions rp2 ON rp1.race_id = rp2.race_id
+            AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+        JOIN race_predictions rp3 ON rp1.race_id = rp3.race_id
+            AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+        JOIN races rc ON rp1.race_id = rc.id
+        JOIN entries e1 ON rp1.race_id = e1.race_id AND e1.pit_number = 1
+        WHERE rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+          AND rp1.confidence = 'A'
+          AND e1.racer_rank = 'A2'
+          AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+    ),
+    actual_combos AS (
+        SELECT
+            race_id,
+            CAST(MAX(CASE WHEN rank = '1' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '2' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '3' THEN pit_number END) AS TEXT) as actual_combo
+        FROM results
+        WHERE rank IN ('1', '2', '3')
+        GROUP BY race_id
+    )
     SELECT
         strftime('%Y', rc.race_date) as year,
         COUNT(*) as total,
-        SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN 1 ELSE 0 END) as hits,
-        SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN t.odds * 100 ELSE 0 END) - COUNT(*) * 100 as profit,
-        ROUND(100.0 * SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN t.odds * 100 ELSE 0 END) / (COUNT(*) * 100), 1) as roi
-    FROM race_predictions rp
-    JOIN races rc ON rp.race_id = rc.id
-    JOIN entries e1 ON rp.race_id = e1.race_id AND e1.pit_number = 1
-    JOIN trifecta_odds t ON rp.race_id = t.race_id AND t.combination = '1-2-3'
-    JOIN results r1 ON rp.race_id = r1.race_id AND r1.pit_number = 1
-    JOIN results r2 ON rp.race_id = r2.race_id AND r2.pit_number = 2
-    JOIN results r3 ON rp.race_id = r3.race_id AND r3.pit_number = 3
-    WHERE rp.prediction_type = 'before'
-      AND rp.pit_number = 1
-      AND rp.rank_prediction = 1
-      AND rp.confidence = 'A'
-      AND e1.racer_rank = 'A2'
-      AND t.odds >= 50
-      AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+        SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN 1 ELSE 0 END) as hits,
+        SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN t.odds * 100 ELSE 0 END) - COUNT(*) * 100 as profit,
+        ROUND(100.0 * SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN t.odds * 100 ELSE 0 END) / (COUNT(*) * 100), 1) as roi
+    FROM prediction_combos pc
+    JOIN races rc ON pc.race_id = rc.id
+    JOIN trifecta_odds t ON pc.race_id = t.race_id AND t.combination = pc.pred_combo
+    JOIN actual_combos ac ON pc.race_id = ac.race_id
+    WHERE t.odds >= 50
     GROUP BY year
     ORDER BY year
     """
@@ -439,26 +577,46 @@ def analyze_high_roi_conditions():
     print("\n【A×A1×50倍+ 年度別検証】")
 
     query2 = """
+    WITH prediction_combos AS (
+        SELECT
+            rp1.race_id,
+            rp1.confidence,
+            CAST(rp1.pit_number AS TEXT) || '-' ||
+            CAST(rp2.pit_number AS TEXT) || '-' ||
+            CAST(rp3.pit_number AS TEXT) as pred_combo
+        FROM race_predictions rp1
+        JOIN race_predictions rp2 ON rp1.race_id = rp2.race_id
+            AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+        JOIN race_predictions rp3 ON rp1.race_id = rp3.race_id
+            AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+        JOIN races rc ON rp1.race_id = rc.id
+        JOIN entries e1 ON rp1.race_id = e1.race_id AND e1.pit_number = 1
+        WHERE rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+          AND rp1.confidence = 'A'
+          AND e1.racer_rank = 'A1'
+          AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+    ),
+    actual_combos AS (
+        SELECT
+            race_id,
+            CAST(MAX(CASE WHEN rank = '1' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '2' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '3' THEN pit_number END) AS TEXT) as actual_combo
+        FROM results
+        WHERE rank IN ('1', '2', '3')
+        GROUP BY race_id
+    )
     SELECT
         strftime('%Y', rc.race_date) as year,
         COUNT(*) as total,
-        SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN 1 ELSE 0 END) as hits,
-        SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN t.odds * 100 ELSE 0 END) - COUNT(*) * 100 as profit,
-        ROUND(100.0 * SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN t.odds * 100 ELSE 0 END) / (COUNT(*) * 100), 1) as roi
-    FROM race_predictions rp
-    JOIN races rc ON rp.race_id = rc.id
-    JOIN entries e1 ON rp.race_id = e1.race_id AND e1.pit_number = 1
-    JOIN trifecta_odds t ON rp.race_id = t.race_id AND t.combination = '1-2-3'
-    JOIN results r1 ON rp.race_id = r1.race_id AND r1.pit_number = 1
-    JOIN results r2 ON rp.race_id = r2.race_id AND r2.pit_number = 2
-    JOIN results r3 ON rp.race_id = r3.race_id AND r3.pit_number = 3
-    WHERE rp.prediction_type = 'before'
-      AND rp.pit_number = 1
-      AND rp.rank_prediction = 1
-      AND rp.confidence = 'A'
-      AND e1.racer_rank = 'A1'
-      AND t.odds >= 50
-      AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+        SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN 1 ELSE 0 END) as hits,
+        SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN t.odds * 100 ELSE 0 END) - COUNT(*) * 100 as profit,
+        ROUND(100.0 * SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN t.odds * 100 ELSE 0 END) / (COUNT(*) * 100), 1) as roi
+    FROM prediction_combos pc
+    JOIN races rc ON pc.race_id = rc.id
+    JOIN trifecta_odds t ON pc.race_id = t.race_id AND t.combination = pc.pred_combo
+    JOIN actual_combos ac ON pc.race_id = ac.race_id
+    WHERE t.odds >= 50
     GROUP BY year
     ORDER BY year
     """
@@ -488,26 +646,46 @@ def analyze_high_roi_conditions():
     # A×(A1+A2)×50倍+合計
     print("\n【A×(A1+A2)×50倍+ 合算】")
     query3 = """
+    WITH prediction_combos AS (
+        SELECT
+            rp1.race_id,
+            rp1.confidence,
+            CAST(rp1.pit_number AS TEXT) || '-' ||
+            CAST(rp2.pit_number AS TEXT) || '-' ||
+            CAST(rp3.pit_number AS TEXT) as pred_combo
+        FROM race_predictions rp1
+        JOIN race_predictions rp2 ON rp1.race_id = rp2.race_id
+            AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+        JOIN race_predictions rp3 ON rp1.race_id = rp3.race_id
+            AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+        JOIN races rc ON rp1.race_id = rc.id
+        JOIN entries e1 ON rp1.race_id = e1.race_id AND e1.pit_number = 1
+        WHERE rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+          AND rp1.confidence = 'A'
+          AND e1.racer_rank IN ('A1', 'A2')
+          AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+    ),
+    actual_combos AS (
+        SELECT
+            race_id,
+            CAST(MAX(CASE WHEN rank = '1' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '2' THEN pit_number END) AS TEXT) || '-' ||
+            CAST(MAX(CASE WHEN rank = '3' THEN pit_number END) AS TEXT) as actual_combo
+        FROM results
+        WHERE rank IN ('1', '2', '3')
+        GROUP BY race_id
+    )
     SELECT
         strftime('%Y', rc.race_date) as year,
         COUNT(*) as total,
-        SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN 1 ELSE 0 END) as hits,
-        SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN t.odds * 100 ELSE 0 END) - COUNT(*) * 100 as profit,
-        ROUND(100.0 * SUM(CASE WHEN r1.rank = '1' AND r2.rank = '2' AND r3.rank = '3' THEN t.odds * 100 ELSE 0 END) / (COUNT(*) * 100), 1) as roi
-    FROM race_predictions rp
-    JOIN races rc ON rp.race_id = rc.id
-    JOIN entries e1 ON rp.race_id = e1.race_id AND e1.pit_number = 1
-    JOIN trifecta_odds t ON rp.race_id = t.race_id AND t.combination = '1-2-3'
-    JOIN results r1 ON rp.race_id = r1.race_id AND r1.pit_number = 1
-    JOIN results r2 ON rp.race_id = r2.race_id AND r2.pit_number = 2
-    JOIN results r3 ON rp.race_id = r3.race_id AND r3.pit_number = 3
-    WHERE rp.prediction_type = 'before'
-      AND rp.pit_number = 1
-      AND rp.rank_prediction = 1
-      AND rp.confidence = 'A'
-      AND e1.racer_rank IN ('A1', 'A2')
-      AND t.odds >= 50 AND t.odds < 100
-      AND rc.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+        SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN 1 ELSE 0 END) as hits,
+        SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN t.odds * 100 ELSE 0 END) - COUNT(*) * 100 as profit,
+        ROUND(100.0 * SUM(CASE WHEN pc.pred_combo = ac.actual_combo THEN t.odds * 100 ELSE 0 END) / (COUNT(*) * 100), 1) as roi
+    FROM prediction_combos pc
+    JOIN races rc ON pc.race_id = rc.id
+    JOIN trifecta_odds t ON pc.race_id = t.race_id AND t.combination = pc.pred_combo
+    JOIN actual_combos ac ON pc.race_id = ac.race_id
+    WHERE t.odds >= 50 AND t.odds < 100
     GROUP BY year
     ORDER BY year
     """
