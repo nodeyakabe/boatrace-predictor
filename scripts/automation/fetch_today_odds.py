@@ -71,19 +71,14 @@ def fetch_todays_odds(db_path=None, headless=True):
                 cursor = conn.cursor()
 
                 for combo, odds in odds_data.items():
-                    pit1, pit2, pit3 = combo.split('-')
-
                     cursor.execute("""
                         INSERT OR REPLACE INTO trifecta_odds
-                        (race_id, pit1, pit2, pit3, odds, combination, fetched_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        (race_id, combination, odds, fetched_at)
+                        VALUES (?, ?, ?, ?)
                     """, (
                         race_id,
-                        int(pit1),
-                        int(pit2),
-                        int(pit3),
-                        odds,
                         combo,
+                        odds,
                         datetime.now().isoformat()
                     ))
 

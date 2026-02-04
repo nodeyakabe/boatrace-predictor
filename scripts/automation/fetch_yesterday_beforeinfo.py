@@ -66,6 +66,8 @@ def fetch_yesterday_beforeinfo(headless: bool = True) -> int:
         errors = []
 
         for race in races:
+            venue_code = None
+            race_number = None
             try:
                 venue_code = f"{race['venue_code']:02d}"
                 race_number = race['race_number']
@@ -96,7 +98,10 @@ def fetch_yesterday_beforeinfo(headless: bool = True) -> int:
                 time.sleep(0.3)
 
             except Exception as e:
-                error_msg = f"直前情報取得エラー: 会場={venue_code}, 日付={date_str}, R={race_number}, エラー={str(e)}"
+                # venue_codeがNoneの場合はrace辞書から取得
+                venue_str = venue_code if venue_code else f"{race.get('venue_code', '??'):02d}"
+                race_num_str = race_number if race_number else race.get('race_number', '?')
+                error_msg = f"直前情報取得エラー: 会場={venue_str}, 日付={date_str}, R={race_num_str}, エラー={str(e)}"
                 errors.append(error_msg)
                 print(f"[WARNING] {error_msg}")
                 continue

@@ -433,7 +433,8 @@ scripts/data_collection/
 ---
 
 **関連ドキュメント**:
+- [DATA_COLLECTION_OPTIMIZATION_GUIDE.md](DATA_COLLECTION_OPTIMIZATION_GUIDE.md) - 最適化ガイド **(推奨)**
 - [DATA_COLLECTION_MASTER.md](DATA_COLLECTION_MASTER.md) - マスターガイド
 - [CSV_DATA_COLLECTION_GUIDE.md](CSV_DATA_COLLECTION_GUIDE.md) - CSV方式の詳細
 
-**最終更新**: 2026-01-15
+**最終更新**: 2026-02-04

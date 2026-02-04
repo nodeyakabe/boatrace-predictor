@@ -186,6 +186,7 @@ JOIN trifecta_odds t ON rp.race_id = t.race_id
 
 ### 詳細ドキュメント
 
+- **最適化ガイド**: [docs/guides/DATA_COLLECTION_OPTIMIZATION_GUIDE.md](docs/guides/DATA_COLLECTION_OPTIMIZATION_GUIDE.md) **(推奨)**
 - **マスターガイド**: [docs/guides/DATA_COLLECTION_MASTER.md](docs/guides/DATA_COLLECTION_MASTER.md)
 - **スクリプトカタログ**: [docs/guides/DATA_COLLECTION_SCRIPTS_CATALOG.md](docs/guides/DATA_COLLECTION_SCRIPTS_CATALOG.md)
 - **CSV方式詳細**: [docs/guides/CSV_DATA_COLLECTION_GUIDE.md](docs/guides/CSV_DATA_COLLECTION_GUIDE.md)

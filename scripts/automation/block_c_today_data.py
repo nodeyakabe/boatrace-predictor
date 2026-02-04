@@ -59,9 +59,14 @@ class BlockCRunner:
             print(f"  [OK]\n")
 
             if race_count == 0:
-                # レース休止日の場合はここで正常終了
-                print("[INFO] 本日はレース休止日です\n")
-                self._finalize(is_rest_day=True)
+                # 0レースの場合、データ取得失敗の可能性
+                print("[WARNING] レースデータ未取得（0件）")
+                print("[INFO] ネットワークエラーまたは一時的な取得失敗の可能性があります。")
+                print("[INFO] 8:00のDブロック実行時に再度データ収集を試みます。\n")
+
+                self.results["レースデータ収集"]["warning"] = "データ取得失敗（再試行予定）"
+                # 休止日通知は送らず、エラー警告として扱う
+                self._finalize(is_rest_day=False, data_fetch_failed=True)
                 return True
 
         except Exception as e:
@@ -118,7 +123,7 @@ class BlockCRunner:
         self.end_time = datetime.now()
         return self._finalize()
 
-    def _finalize(self, is_rest_day: bool = False) -> bool:
+    def _finalize(self, is_rest_day: bool = False, data_fetch_failed: bool = False) -> bool:
         """最終結果をサマリー表示・通知"""
         self.end_time = datetime.now()
         total_elapsed = (self.end_time - self.start_time).total_seconds()
@@ -132,15 +137,26 @@ class BlockCRunner:
         print("=" * 80 + "\n")
 
         # Discord通知
-        self._send_notification(success_count, total_count, total_elapsed, is_rest_day)
+        self._send_notification(success_count, total_count, total_elapsed, is_rest_day, data_fetch_failed)
 
         return len(self.errors) == 0
 
-    def _send_notification(self, success_count: int, total_count: int, elapsed: float, is_rest_day: bool):
+    def _send_notification(self, success_count: int, total_count: int, elapsed: float, is_rest_day: bool, data_fetch_failed: bool = False):
         """Discord通知送信"""
         today = datetime.now().strftime('%Y-%m-%d')
 
-        if is_rest_day:
+        if data_fetch_failed:
+            message = f"""⚠️ **Cブロック完了: データ取得失敗**
+
+対象日: {today}
+完了時刻: {self.end_time.strftime('%Y-%m-%d %H:%M:%S')}
+
+**警告:** 本日のレースデータが未取得（0件）です。
+ネットワークエラーまたは一時的な取得失敗の可能性があります。
+
+**対応:** 8:00のDブロック実行時に自動的に再収集を試みます。
+"""
+        elif is_rest_day:
             message = f"""ℹ️ **Cブロック完了: 本日はレース休止日**
 
 対象日: {today}
