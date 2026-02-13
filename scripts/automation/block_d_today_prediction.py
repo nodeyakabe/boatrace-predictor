@@ -80,7 +80,7 @@ class BlockDRunner:
         """
         try:
             db_path = project_root / 'data' / 'boatrace.db'
-            conn = sqlite3.connect(db_path)
+            conn = sqlite3.connect(db_path, timeout=30.0)
             cursor = conn.cursor()
 
             cursor.execute("SELECT COUNT(*) FROM races WHERE race_date = ?", (today,))

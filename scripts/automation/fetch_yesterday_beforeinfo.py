@@ -69,7 +69,8 @@ def fetch_yesterday_beforeinfo(headless: bool = True) -> int:
             venue_code = None
             race_number = None
             try:
-                venue_code = f"{race['venue_code']:02d}"
+                # venue_codeを安全に整数に変換してフォーマット
+                venue_code = f"{int(race['venue_code']):02d}"
                 race_number = race['race_number']
 
                 # 直前情報を取得
@@ -99,7 +100,13 @@ def fetch_yesterday_beforeinfo(headless: bool = True) -> int:
 
             except Exception as e:
                 # venue_codeがNoneの場合はrace辞書から取得
-                venue_str = venue_code if venue_code else f"{race.get('venue_code', '??'):02d}"
+                if venue_code:
+                    venue_str = venue_code
+                else:
+                    try:
+                        venue_str = f"{int(race.get('venue_code', 0)):02d}"
+                    except (ValueError, TypeError):
+                        venue_str = "??"
                 race_num_str = race_number if race_number else race.get('race_number', '?')
                 error_msg = f"直前情報取得エラー: 会場={venue_str}, 日付={date_str}, R={race_num_str}, エラー={str(e)}"
                 errors.append(error_msg)

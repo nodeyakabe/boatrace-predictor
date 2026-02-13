@@ -283,7 +283,83 @@ CONDITIONS = [
         'description': 'D×5コース予測×A2除外（ROI 176.6%）',
         'use_pattern_h': True,  # パターンH
     },
+    # ----------------------------------------------------------------
+    # B2条件（市場との差を活用）
+    # ----------------------------------------------------------------
+    # 【2026-02-12追加】B2×20-30倍（予測1-3位のB2級）
+    # 検証結果: 785件, ROI 135.0%, +109,960円, 黒字5/6年
+    # 年度別: 2020:-25,960円, 2021-2025:連続黒字
+    {
+        'name': 'B2×20-30倍（予測1-3位）',
+        'confidence': None,  # 全信頼度
+        'c1_rank': ['A1', 'A2', 'B1', 'B2'],  # 全級別（predicted_rank_has_classで絞る）
+        'predicted_rank_has_class': ['B2級'],  # 予測1-3位のいずれかがB2級
+        'predicted_rank_range': [1, 3],
+        'odds_min': 20,
+        'odds_max': 30,
+        'venue_filter': None,
+        'description': 'B2級×20-30倍（予測1-3位）（市場の過小評価を活用）',
+        'use_pattern_h': False,  # 1点買い
+    },
 ]
+
+# ============================================================
+# RJ条件定義（データ補完後の再検証用）
+# ============================================================
+# config/review_conditions.json の条件をテスト可能な形式で定義
+# 使用方法: python scripts/backtest/standard_backtest.py --rj-condition RJ-3 --full
+
+RJ_CONDITIONS = {
+    # RJ-3: 連帯率フィルター（Motor40%+）
+    'RJ-3': {
+        'name': 'B×10-30×穴源×会場+Motor40%',
+        'confidence': 'B',
+        'c1_rank': ['A1', 'A2', 'B1'],
+        'odds_min': 10,
+        'odds_max': 30,
+        'venue_filter': [6, 7, 8, 10, 15, 19],  # 浜名湖,蒲郡,常滑,三国,丸亀,下関
+        'bias_max': -0.3,
+        'p1_motor_second_rate_min': 40,
+        'description': 'RJ-3: B×10-30倍×穴源×会場+モーター2連対率40%+',
+        'use_pattern_h': False,  # 1点買い
+    },
+    # RJ-4: D×A1×モーター40%+
+    'RJ-4-A1': {
+        'name': 'D×A1×Motor40%+',
+        'confidence': 'D',
+        'c1_rank': ['A1'],
+        'odds_min': 10,
+        'odds_max': 999,
+        'venue_filter': None,
+        'motor_min': 40,
+        'description': 'RJ-4: D×A1級×モーター40%+（全オッズ帯）',
+        'use_pattern_h': True,  # パターンH
+    },
+    # RJ-4: D×A2×モーター40%+
+    'RJ-4-A2': {
+        'name': 'D×A2×Motor40%+',
+        'confidence': 'D',
+        'c1_rank': ['A2'],
+        'odds_min': 10,
+        'odds_max': 999,
+        'venue_filter': None,
+        'motor_min': 40,
+        'description': 'RJ-4: D×A2級×モーター40%+（全オッズ帯）',
+        'use_pattern_h': True,  # パターンH
+    },
+    # RJ-5: A×A2×モーター40%+
+    'RJ-5': {
+        'name': 'A×A2×Motor40%+',
+        'confidence': 'A',
+        'c1_rank': ['A2'],
+        'odds_min': 10,
+        'odds_max': 999,
+        'venue_filter': None,
+        'motor_min': 40,
+        'description': 'RJ-5: A×A2級×モーター40%+（全オッズ帯）',
+        'use_pattern_h': False,  # 1点買い
+    },
+}
 
 # ============================================================
 # パターンH: 3点買い定義（1-2軸傾斜: 200円/100円/100円）
@@ -319,6 +395,11 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
     """
     c1_rank_str = "','".join(cond['c1_rank'])
     use_pattern_h = cond.get('use_pattern_h', True)  # デフォルトはパターンH
+
+    # 信頼度フィルター（2026-02-12追加: Noneの場合は全信頼度対象）
+    confidence_clause = ""
+    if cond.get('confidence') is not None:
+        confidence_clause = f"AND rp.confidence = '{cond['confidence']}'"
 
     # 各種フィルター条件
     venue_clause = ""
@@ -385,6 +466,23 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
         """
         motor_rate_clause = f"AND e_motor.motor_second_rate >= {cond['p1_motor_second_rate_min']} "
 
+    # 予測順位別級別フィルター（2026-02-12追加：B2条件対応）
+    predicted_rank_class_clause = ""
+    if cond.get('predicted_rank_has_class') and cond.get('predicted_rank_range'):
+        class_list = "','".join(cond['predicted_rank_has_class'])
+        rank_min, rank_max = cond['predicted_rank_range']
+        predicted_rank_class_clause = f"""
+        AND EXISTS (
+            SELECT 1
+            FROM race_predictions rp_class
+            LEFT JOIN racers r_class ON rp_class.racer_number = r_class.racer_number
+            WHERE rp_class.race_id = r.id
+            AND rp_class.prediction_type = 'before'
+            AND rp_class.rank_prediction BETWEEN {rank_min} AND {rank_max}
+            AND r_class.rank IN ('{class_list}')
+        )
+        """
+
     if use_pattern_h:
         # パターンH: 3点買い（1-2-3: 200円, 1-2-4: 100円, 1-2-5: 100円）
         query = f'''
@@ -412,7 +510,7 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
             {bias_join}
             {motor_rate_join}
             WHERE rp.rank_prediction = 1
-            AND rp.confidence = '{cond["confidence"]}'
+            {confidence_clause}
             AND e1.racer_rank IN ('{c1_rank_str}')
             AND r.race_date >= '{date_start}'
             AND r.race_date < '{date_end}'
@@ -426,6 +524,7 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
             {escape_rate_clause}
             {bias_clause}
             {motor_rate_clause}
+            {predicted_rank_class_clause}
         ),
         race_with_results AS (
             SELECT
@@ -516,7 +615,7 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
             {bias_join}
             {motor_rate_join}
             WHERE rp.rank_prediction = 1
-            AND rp.confidence = '{cond["confidence"]}'
+            {confidence_clause}
             AND e1.racer_rank IN ('{c1_rank_str}')
             AND r.race_date >= '{date_start}'
             AND r.race_date < '{date_end}'
@@ -530,6 +629,7 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
             {escape_rate_clause}
             {bias_clause}
             {motor_rate_clause}
+            {predicted_rank_class_clause}
         ),
         race_bets AS (
             SELECT
@@ -611,8 +711,17 @@ def analyze_condition(cursor, cond: Dict, date_start: str, date_end: str) -> Dic
     }
 
 
-def analyze_monthly(cursor, year: int) -> List[Dict]:
-    """月別の成績を分析"""
+def analyze_monthly(cursor, year: int, conditions: List[Dict] = None) -> List[Dict]:
+    """月別の成績を分析
+
+    Args:
+        cursor: DBカーソル
+        year: 対象年度
+        conditions: 条件リスト（Noneの場合はCONDITIONSを使用）
+    """
+    if conditions is None:
+        conditions = CONDITIONS
+
     monthly_results = []
 
     for month in range(1, 13):
@@ -627,7 +736,7 @@ def analyze_monthly(cursor, year: int) -> List[Dict]:
         total_investment = 0
         total_payout = 0
 
-        for cond in CONDITIONS:
+        for cond in conditions:
             result = analyze_condition(cursor, cond, month_start, month_end)
             total_bets += result['bets']
             total_hits += result['hits']
@@ -681,8 +790,17 @@ def analyze_condition_monthly(cursor, cond: Dict, year: int) -> List[Dict]:
     return monthly_results
 
 
-def analyze_yearly(cursor, years: List[int]) -> List[Dict]:
-    """年度別の成績を分析"""
+def analyze_yearly(cursor, years: List[int], conditions: List[Dict] = None) -> List[Dict]:
+    """年度別の成績を分析
+
+    Args:
+        cursor: DBカーソル
+        years: 対象年度リスト
+        conditions: 条件リスト（Noneの場合はCONDITIONSを使用）
+    """
+    if conditions is None:
+        conditions = CONDITIONS
+
     yearly_results = []
 
     for year in years:
@@ -694,7 +812,7 @@ def analyze_yearly(cursor, years: List[int]) -> List[Dict]:
         total_investment = 0
         total_payout = 0
 
-        for cond in CONDITIONS:
+        for cond in conditions:
             result = analyze_condition(cursor, cond, year_start, year_end)
             total_bets += result['bets']
             total_hits += result['hits']
@@ -745,16 +863,33 @@ def analyze_condition_yearly(cursor, cond: Dict, years: List[int]) -> List[Dict]
     return yearly_results
 
 
-def run_backtest(year: int = 2025, full_test: bool = False) -> Dict:
-    """バックテストを実行"""
+def run_backtest(year: int = 2025, full_test: bool = False, rj_condition: Optional[str] = None) -> Dict:
+    """バックテストを実行
+
+    Args:
+        year: 対象年度
+        full_test: 6年間全体テスト
+        rj_condition: RJ条件ID（例: 'RJ-3', 'RJ-4-A1'）
+    """
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
 
+    # RJ条件が指定された場合は、その条件のみをテスト
+    if rj_condition:
+        if rj_condition not in RJ_CONDITIONS:
+            raise ValueError(f"Unknown RJ condition: {rj_condition}. Available: {', '.join(RJ_CONDITIONS.keys())}")
+        test_conditions = [RJ_CONDITIONS[rj_condition]]
+        test_type = f'rj_{rj_condition}'
+    else:
+        test_conditions = CONDITIONS
+        test_type = 'full' if full_test else 'detail'
+
     results = {
-        'test_type': 'full' if full_test else 'detail',
+        'test_type': test_type,
         'date': datetime.now().isoformat(),
         'pattern': PATTERN_H_CONFIG['name'],
         'pattern_description': PATTERN_H_CONFIG['description'],
+        'rj_condition': rj_condition,
         'conditions': [],
         'total': {},
     }
@@ -767,7 +902,7 @@ def run_backtest(year: int = 2025, full_test: bool = False) -> Dict:
         results['year_end'] = years[-1]
 
         # 年度別サマリー
-        results['yearly'] = analyze_yearly(cursor, years)
+        results['yearly'] = analyze_yearly(cursor, years, test_conditions)
 
         # 条件別パフォーマンス（6年間合計）
         year_start = f"{years[0]}-01-01"
@@ -778,7 +913,7 @@ def run_backtest(year: int = 2025, full_test: bool = False) -> Dict:
         total_investment = 0
         total_payout = 0
 
-        for cond in CONDITIONS:
+        for cond in test_conditions:
             cond_result = analyze_condition(cursor, cond, year_start, year_end)
             # 年度別内訳を追加
             cond_result['yearly'] = analyze_condition_yearly(cursor, cond, years)
@@ -807,7 +942,7 @@ def run_backtest(year: int = 2025, full_test: bool = False) -> Dict:
             }
 
         # 2025年の月別サマリーを追加（--full時も表示するため）
-        results['monthly_2025'] = analyze_monthly(cursor, 2025)
+        results['monthly_2025'] = analyze_monthly(cursor, 2025, test_conditions)
     else:
         # 詳細テスト（特定年）
         results['year'] = year
@@ -815,7 +950,7 @@ def run_backtest(year: int = 2025, full_test: bool = False) -> Dict:
         year_end = f"{year + 1}-01-01"
 
         # 月別サマリー
-        results['monthly'] = analyze_monthly(cursor, year)
+        results['monthly'] = analyze_monthly(cursor, year, test_conditions)
 
         # 条件別パフォーマンス
         total_bets = 0
@@ -823,7 +958,7 @@ def run_backtest(year: int = 2025, full_test: bool = False) -> Dict:
         total_investment = 0
         total_payout = 0
 
-        for cond in CONDITIONS:
+        for cond in test_conditions:
             cond_result = analyze_condition(cursor, cond, year_start, year_end)
             # 月別内訳を追加
             cond_result['monthly'] = analyze_condition_monthly(cursor, cond, year)
@@ -858,17 +993,29 @@ def run_backtest(year: int = 2025, full_test: bool = False) -> Dict:
 def print_results(data: Dict):
     """結果を表示"""
     print("=" * 90)
-    print("標準化バックテスト結果")
+    if data.get('rj_condition'):
+        print(f"RJ条件テスト結果: {data['rj_condition']}")
+    else:
+        print("標準化バックテスト結果")
     print("=" * 90)
     print(f"実行日時: {data['date'][:19]}")
+
     # 買い目方式の説明
-    pattern_h_count = sum(1 for c in CONDITIONS if c.get('use_pattern_h', True))
-    single_bet_count = len(CONDITIONS) - pattern_h_count
-    print(f"買い目方式: パターンH（3点買い400円）×{pattern_h_count}条件 / 1点買い（100円）×{single_bet_count}条件")
+    if data.get('rj_condition'):
+        # RJ条件テスト時は、テスト中の条件の情報のみ表示
+        test_cond = data['conditions'][0] if data['conditions'] else {}
+        print(f"テスト条件: {test_cond.get('description', 'N/A')}")
+    else:
+        pattern_h_count = sum(1 for c in CONDITIONS if c.get('use_pattern_h', True))
+        single_bet_count = len(CONDITIONS) - pattern_h_count
+        print(f"買い目方式: パターンH（3点買い400円）×{pattern_h_count}条件 / 1点買い（100円）×{single_bet_count}条件")
     print()
 
-    if data['test_type'] == 'full':
-        print(f"対象期間: {data['year_start']}年〜{data['year_end']}年（6年間）")
+    if data['test_type'] == 'full' or data['test_type'].startswith('rj_'):
+        if 'year_start' in data:
+            print(f"対象期間: {data['year_start']}年〜{data['year_end']}年（6年間）")
+        else:
+            print(f"対象期間: 2020年〜2025年（6年間）")
     else:
         print(f"対象期間: {data['year']}年")
 
@@ -1041,16 +1188,22 @@ def main():
   python scripts/backtest/standardized_backtest.py --year 2024  # 2024年テスト
   python scripts/backtest/standardized_backtest.py --save-baseline  # ベースライン保存
   python scripts/backtest/standardized_backtest.py --compare        # ベースライン比較
+
+  # RJ条件テスト（データ補完後の再検証用）
+  python scripts/backtest/standardized_backtest.py --rj-condition RJ-3 --full
+  python scripts/backtest/standardized_backtest.py --rj-condition RJ-4-A1 --full
+  python scripts/backtest/standardized_backtest.py --rj-condition RJ-5 --full
         '''
     )
     parser.add_argument('--year', type=int, default=2025, help='対象年度（デフォルト: 2025）')
     parser.add_argument('--full', action='store_true', help='6年間全体テストを実行')
+    parser.add_argument('--rj-condition', type=str, help='RJ条件ID（例: RJ-3, RJ-4-A1, RJ-5）')
     parser.add_argument('--save-baseline', action='store_true', help='結果をベースラインとして保存')
     parser.add_argument('--compare', action='store_true', help='ベースラインと比較')
     args = parser.parse_args()
 
     print("バックテストを実行中...")
-    data = run_backtest(args.year, args.full)
+    data = run_backtest(args.year, args.full, args.rj_condition)
     print_results(data)
 
     if args.save_baseline:

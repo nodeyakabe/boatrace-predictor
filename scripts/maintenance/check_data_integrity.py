@@ -353,7 +353,12 @@ def main():
 
     if args.month:
         # YYYY-MM形式
-        year, month = map(int, args.month.split('-'))
+        if '-' in args.month:
+            year, month = map(int, args.month.split('-'))
+        else:
+            print(f"エラー: --monthオプションはYYYY-MM形式で指定してください（例: --month 2024-01）")
+            print(f"または --year と --month-num を使用してください（例: --year 2024 --month-num 1）")
+            sys.exit(1)
     elif args.year and args.month_num:
         year = args.year
         month = args.month_num

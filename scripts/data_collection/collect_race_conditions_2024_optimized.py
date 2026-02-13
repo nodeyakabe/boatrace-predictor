@@ -103,12 +103,9 @@ def save_race_conditions(db_path, race_id, weather):
         conn = sqlite3.connect(db_path, timeout=30.0)
         cursor = conn.cursor()
 
-        # 既存データ削除
-        cursor.execute('DELETE FROM race_conditions WHERE race_id = ?', (race_id,))
-
-        # 新規挿入
+        # UPSERT操作
         cursor.execute('''
-            INSERT INTO race_conditions (
+            INSERT OR REPLACE INTO race_conditions (
                 race_id, temperature, water_temperature,
                 wind_speed, wind_direction, wave_height, weather
             ) VALUES (?, ?, ?, ?, ?, ?, ?)

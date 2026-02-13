@@ -32,7 +32,7 @@ from queue import Queue
 
 warnings.filterwarnings('ignore')
 
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.scraper.beforeinfo_scraper import BeforeInfoScraper
@@ -154,18 +154,13 @@ def _save_batch(cursor, batch):
 
             for pit in range(1, 7):
                 cursor.execute('''
-                    UPDATE race_details
-                    SET exhibition_time = COALESCE(?, exhibition_time),
-                        tilt_angle = COALESCE(?, tilt_angle),
-                        parts_replacement = COALESCE(?, parts_replacement),
-                        adjusted_weight = COALESCE(?, adjusted_weight),
-                        st_time = COALESCE(?, st_time),
-                        exhibition_course = COALESCE(?, exhibition_course),
-                        prev_race_course = COALESCE(?, prev_race_course),
-                        prev_race_st = COALESCE(?, prev_race_st),
-                        prev_race_rank = COALESCE(?, prev_race_rank)
-                    WHERE race_id = ? AND pit_number = ?
+                    INSERT OR REPLACE INTO race_details (
+                        race_id, pit_number, exhibition_time, tilt_angle,
+                        parts_replacement, adjusted_weight, st_time,
+                        exhibition_course, prev_race_course, prev_race_st, prev_race_rank
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
+                    race_id, pit,
                     exhibition_times.get(pit),
                     tilt_angles.get(pit),
                     parts.get(pit, '') or None,
@@ -174,16 +169,14 @@ def _save_batch(cursor, batch):
                     courses.get(pit),
                     prev_race.get(pit, {}).get('course'),
                     prev_race.get(pit, {}).get('st'),
-                    prev_race.get(pit, {}).get('rank'),
-                    race_id, pit
+                    prev_race.get(pit, {}).get('rank')
                 ))
 
             # race_conditions更新
             weather = beforeinfo.get('weather', {})
             if weather:
-                cursor.execute('DELETE FROM race_conditions WHERE race_id = ?', (race_id,))
                 cursor.execute('''
-                    INSERT INTO race_conditions (
+                    INSERT OR REPLACE INTO race_conditions (
                         race_id, temperature, water_temperature,
                         wind_speed, wind_direction, wave_height, weather
                     ) VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -217,7 +210,7 @@ def get_already_collected_races(db_path):
     return collected
 
 
-def main(test_mode=False, test_count=100, resume=True, worker_count=12):
+def main(test_mode=False, test_count=100, resume=True, worker_count=12, start_date='2020-01-01', end_date='2023-12-31'):
     """
     メイン処理
 
@@ -226,11 +219,14 @@ def main(test_mode=False, test_count=100, resume=True, worker_count=12):
         test_count: テストモード時の処理件数
         resume: 収集済みをスキップするか
         worker_count: 並列ワーカー数
+        start_date: 開始日（YYYY-MM-DD形式）
+        end_date: 終了日（YYYY-MM-DD形式）
     """
     print("=" * 80)
-    print("2020-2023年 直前情報一括収集（最適化版）")
+    print("直前情報一括収集（最適化版）")
     print("=" * 80)
     print(f"開始時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"対象期間: {start_date} ～ {end_date}")
     print(f"モード: {'テスト' if test_mode else '本番'}")
     print(f"ワーカー数: {worker_count}")
     print(f"再開モード: {'有効' if resume else '無効'}")
@@ -242,10 +238,10 @@ def main(test_mode=False, test_count=100, resume=True, worker_count=12):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT r.id, r.venue_code, r.race_date, r.race_number
         FROM races r
-        WHERE r.race_date >= '2020-01-01' AND r.race_date < '2024-01-01'
+        WHERE r.race_date >= '{start_date}' AND r.race_date <= '{end_date}'
         ORDER BY r.race_date, r.venue_code, r.race_number
     """)
 
@@ -408,11 +404,13 @@ def main(test_mode=False, test_count=100, resume=True, worker_count=12):
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description='2020-2023年直前情報収集（最適化版）')
+    parser = argparse.ArgumentParser(description='直前情報収集（最適化版）')
     parser.add_argument('--test', action='store_true', help='テストモード（100件のみ）')
     parser.add_argument('--test-count', type=int, default=100, help='テスト件数')
     parser.add_argument('--no-resume', action='store_true', help='最初から収集（収集済みもスキップしない）')
     parser.add_argument('--workers', type=int, default=12, help='並列ワーカー数')
+    parser.add_argument('--start', type=str, default='2020-01-01', help='開始日（YYYY-MM-DD形式）')
+    parser.add_argument('--end', type=str, default='2023-12-31', help='終了日（YYYY-MM-DD形式）')
 
     args = parser.parse_args()
 
@@ -420,7 +418,9 @@ if __name__ == "__main__":
         test_mode=args.test,
         test_count=args.test_count,
         resume=not args.no_resume,
-        worker_count=args.workers
+        worker_count=args.workers,
+        start_date=args.start,
+        end_date=args.end
     )
 
     sys.exit(0 if success else 1)

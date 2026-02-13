@@ -422,8 +422,8 @@ def save_to_csv(output_dir: Path, all_races_data: list):
                             writer_payouts.writerow(payout_row)
 
                     # オッズデータ
-                    if odds_data and odds_data.get('odds'):
-                        for combination, odds_value in odds_data['odds'].items():
+                    if odds_data:
+                        for combination, odds_value in odds_data.items():
                             odds_row = {
                                 'venue_code': venue_code,
                                 'race_date': race_date,

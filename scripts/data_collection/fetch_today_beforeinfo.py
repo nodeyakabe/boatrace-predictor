@@ -3,6 +3,7 @@
 """
 
 from src.scraper.beforeinfo_scraper import BeforeInfoScraper
+from src.scraper.schedule_scraper import ScheduleScraper
 from datetime import datetime
 import sqlite3
 import time
@@ -51,16 +52,31 @@ def main():
     today_date = datetime.now().strftime('%Y-%m-%d')  # YYYY-MM-DD形式
     today_yyyymmdd = datetime.now().strftime('%Y%m%d')  # YYYYMMDD形式
 
-    # 今日開催されている会場リスト
-    venues = ['03', '05', '06', '07', '10', '13', '14', '15', '17', '19', '21']
+    # 今日開催されている会場リストを取得
+    print('='*60)
+    print(f'直前情報取得開始: {today_date}')
+    print('='*60)
+
+    try:
+        schedule_scraper = ScheduleScraper()
+        today_schedule = schedule_scraper.get_today_schedule()
+        schedule_scraper.close()
+
+        if today_schedule:
+            venues = sorted(today_schedule.keys())
+            print(f'\n本日開催: {len(venues)}会場 ({", ".join(venues)})')
+        else:
+            print('\n⚠️ 開催スケジュール取得失敗 → フォールバック')
+            # フォールバック: 全24会場を試行
+            venues = [f'{i:02d}' for i in range(1, 25)]
+    except Exception as e:
+        print(f'\n⚠️ スケジュール取得エラー: {e} → フォールバック')
+        # フォールバック: 全24会場を試行
+        venues = [f'{i:02d}' for i in range(1, 25)]
 
     total_success = 0
     total_skip = 0
     total_errors = 0
-
-    print('='*60)
-    print(f'直前情報取得開始: {today_date}')
-    print('='*60)
 
     for venue_code in venues:
         print(f'\n会場 {venue_code}:')

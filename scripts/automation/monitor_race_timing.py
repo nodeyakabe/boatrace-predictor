@@ -23,6 +23,7 @@ from scripts.automation.notify import (
 )
 from src.betting.bet_target_evaluator import BetTargetEvaluator, BetStatus
 from src.betting.multi_bet_generator import MultiBetPattern
+from src.scraper.beforeinfo_scraper import BeforeInfoScraper
 
 
 class RaceMonitor:
@@ -186,7 +187,7 @@ class RaceMonitor:
                 confidence
             FROM race_predictions
             WHERE race_id = ?
-              AND prediction_type = 'advance'
+              AND prediction_type = 'before'
             ORDER BY rank_prediction
         """, (race_id,))
 
@@ -254,6 +255,50 @@ class RaceMonitor:
         deadline_datetime_str = f"{date_str} {deadline_str}"
         return datetime.strptime(deadline_datetime_str, '%Y-%m-%d %H:%M')
 
+    def _fetch_beforeinfo_for_race(self, race: Dict) -> bool:
+        """
+        特定レースの直前情報を取得してDBに保存
+
+        Args:
+            race: レース情報（venue_code, date, race_number, race_id を含む）
+
+        Returns:
+            bool: 取得成功ならTrue
+        """
+        try:
+            venue_code = race['venue_code']
+            race_date_yyyymmdd = race['date'].replace('-', '')  # YYYY-MM-DD -> YYYYMMDD
+            race_number = race['race_number']
+            race_id = race['race_id']
+
+            # BeforeInfoScraperで直前情報を取得
+            scraper = BeforeInfoScraper()
+            result = scraper.get_race_beforeinfo(
+                venue_code,
+                race_date_yyyymmdd,
+                race_number
+            )
+
+            if result and result.get('is_published'):
+                # DBに保存
+                success = scraper.save_to_db(race_id, result)
+                scraper.close()
+
+                if success:
+                    print(f"  直前情報取得成功: 会場{venue_code} {race_number}R")
+                    return True
+                else:
+                    print(f"  [WARNING] DB保存失敗: 会場{venue_code} {race_number}R")
+                    return False
+            else:
+                print(f"  [WARNING] 直前情報未公開: 会場{venue_code} {race_number}R")
+                scraper.close()
+                return False
+
+        except Exception as e:
+            print(f"  [ERROR] 直前情報取得エラー: {e}")
+            return False
+
     def check_and_fetch_direct_info(self, race: Dict) -> bool:
         """
         直前情報取得が必要かチェックし、必要なら取得して再評価
@@ -279,21 +324,19 @@ class RaceMonitor:
             print(f"直前情報取得: {race_id} (締切まであと{time_until_deadline:.0f}分)")
 
             try:
-                # 直前情報取得スクリプトを実行
-                # TODO: 実際の直前情報取得スクリプトへのパス
-                # result = subprocess.run(
-                #     ["python", "scripts/data_collection/fetch_direct_info.py", race_id],
-                #     capture_output=True,
-                #     text=True,
-                #     timeout=60
-                # )
+                # 直前情報取得を実行
+                success = self._fetch_beforeinfo_for_race(race)
 
-                self.fetched_direct_info.add(race_id)
+                if success:
+                    self.fetched_direct_info.add(race_id)
 
-                # 直前情報取得後、購入判定を再評価
-                self._reevaluate_after_beforeinfo(race)
+                    # 直前情報取得後、購入判定を再評価
+                    self._reevaluate_after_beforeinfo(race)
 
-                return True
+                    return True
+                else:
+                    print(f"  [WARNING] 直前情報取得失敗: {race_id}")
+                    return False
 
             except Exception as e:
                 print(f"[ERROR] 直前情報取得エラー: {race_id} - {e}")

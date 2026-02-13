@@ -34,6 +34,7 @@ sys.path.insert(0, str(ROOT_DIR))
 
 from src.scraper.race_scraper_v2 import RaceScraperV2
 from src.scraper.result_scraper import ResultScraper
+from src.scraper.schedule_scraper import ScheduleScraper
 
 # 全24競艇場コード
 ALL_VENUES = [
@@ -73,6 +74,57 @@ def get_date_range(start_date: str, end_date: str):
     return dates
 
 
+def get_schedule_for_period(start_date: str, end_date: str):
+    """
+    期間内の開催スケジュールを取得
+
+    Returns:
+        dict: {
+            '20260104': ['01', '02', '03', ...],  # その日に開催している会場リスト
+            '20260105': ['01', '04', '05', ...],
+            ...
+        }
+        または None (失敗時のフォールバック用)
+    """
+    try:
+        scraper = ScheduleScraper()
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+
+        print("\n=== 開催スケジュール取得中 ===")
+        venue_schedule = scraper.get_schedule_for_period(start_dt, end_dt)
+        scraper.close()
+
+        # 日付ごとのスケジュールに変換
+        date_schedule = {}
+        for venue_code, dates in venue_schedule.items():
+            for date_str in dates:
+                if date_str not in date_schedule:
+                    date_schedule[date_str] = []
+                date_schedule[date_str].append(venue_code)
+
+        # 各日付の会場リストをソート
+        for date_str in date_schedule:
+            date_schedule[date_str].sort()
+
+        # 統計表示
+        total_venue_days = sum(len(venues) for venues in date_schedule.values())
+        days_count = len(date_schedule)
+        avg_venues = total_venue_days / days_count if days_count > 0 else 0
+
+        print(f"  期間: {start_date} ～ {end_date}")
+        print(f"  開催日数: {days_count}日")
+        print(f"  総会場日数: {total_venue_days} (平均 {avg_venues:.1f}会場/日)")
+        print()
+
+        return date_schedule
+
+    except Exception as e:
+        print(f"⚠️ 開催スケジュール取得エラー: {e}")
+        print("   → フォールバックモードで全会場を対象とします")
+        return None  # フォールバック用
+
+
 def check_existing_data(db_path: Path, race_date: str):
     """指定日の既存データを確認"""
     conn = sqlite3.connect(db_path)
@@ -102,6 +154,7 @@ def fetch_venue_day_parallel(args):
     race_date_yyyymmdd = race_date.replace('-', '')
     success_count = 0
     races_data = []
+    incomplete_results = []  # 不完全結果の追跡
 
     for race_number in range(1, 13):
         max_retries = 3
@@ -119,6 +172,14 @@ def fetch_venue_day_parallel(args):
                 # 結果取得
                 result_data = result_scraper.get_race_result(venue_code, race_date_yyyymmdd, race_number)
 
+                # 過去レースで結果が不完全な場合は警告
+                if result_data and result_data.get('results'):
+                    result_count = len(result_data['results'])
+                    if result_count < 6:
+                        incomplete_results.append(
+                            f"{venue_code} {race_date_yyyymmdd} R{race_number} (取得: {result_count}/6艇)"
+                        )
+
                 races_data.append({
                     'race': race_data,
                     'result': result_data
@@ -133,7 +194,7 @@ def fetch_venue_day_parallel(args):
                     time.sleep(2 ** retry)  # 指数バックオフ: 1秒, 2秒, 4秒
                 # 最終リトライでも失敗したらパス
 
-    return venue_code, race_date, success_count, races_data
+    return venue_code, race_date, success_count, races_data, incomplete_results
 
 
 def save_races_batch(db_path: Path, all_races_data: list):
@@ -239,16 +300,38 @@ def main():
     print("\n=== データ取得開始 ===")
     start_time = time.time()
 
-    # 全タスクを作成（日付×会場）
-    tasks = []
-    for date in missing_dates:
-        for venue_code in ALL_VENUES:
-            tasks.append((venue_code, date, db_path))
+    # 開催スケジュール取得（改善版）
+    date_schedule = get_schedule_for_period(args.start, args.end)
 
-    print(f"総タスク数: {len(tasks)} (日付{len(missing_dates)} × 会場{len(ALL_VENUES)})")
+    # タスク作成
+    tasks = []
+    if date_schedule:
+        # スケジュール取得成功: 開催日のみ
+        for date in missing_dates:
+            date_yyyymmdd = date.replace('-', '')
+            venue_codes = date_schedule.get(date_yyyymmdd, [])
+            for venue_code in venue_codes:
+                tasks.append((venue_code, date, db_path))
+
+        total_possible_tasks = len(missing_dates) * len(ALL_VENUES)
+        reduction_rate = (1 - len(tasks) / total_possible_tasks) * 100 if total_possible_tasks > 0 else 0
+
+        print(f"総タスク数: {len(tasks)} (開催日のみ)")
+        print(f"  従来方式: {total_possible_tasks}タスク (全日×全会場)")
+        print(f"  改善版: {len(tasks)}タスク (開催日のみ)")
+        print(f"  削減率: {reduction_rate:.1f}%")
+    else:
+        # フォールバック: 全会場対象（従来方式）
+        print("⚠️ 開催スケジュール取得失敗 → 従来方式（全会場）で実行")
+        for date in missing_dates:
+            for venue_code in ALL_VENUES:
+                tasks.append((venue_code, date, db_path))
+        print(f"総タスク数: {len(tasks)} (日付{len(missing_dates)} × 会場{len(ALL_VENUES)})")
+
     print()
 
     all_results = []
+    all_incomplete_results = []  # 不完全結果の追跡
     completed = 0
     total_races = 0
 
@@ -257,7 +340,7 @@ def main():
 
         for future in as_completed(futures):
             completed += 1
-            venue_code, race_date, success_count, races_data = future.result()
+            venue_code, race_date, success_count, races_data, incomplete_results = future.result()
 
             if success_count > 0:
                 all_results.append({
@@ -266,6 +349,9 @@ def main():
                     'races_data': races_data
                 })
                 total_races += success_count
+
+            # 不完全な結果を記録
+            all_incomplete_results.extend(incomplete_results)
 
             if completed % 50 == 0 or completed == len(tasks):
                 elapsed = time.time() - start_time
@@ -297,6 +383,19 @@ def main():
         print(f"  {date}: {race_count}レース, 結果{result_count}件 {status}")
     if len(missing_dates) > 5:
         print(f"  ... 他{len(missing_dates)-5}日")
+
+    # 不完全な結果の警告
+    if all_incomplete_results:
+        print("\n" + "=" * 70)
+        print("⚠️ 警告: 不完全な結果が検出されました")
+        print("=" * 70)
+        print(f"該当レース数: {len(all_incomplete_results)}")
+        print("\n最初の10件:")
+        for i, msg in enumerate(all_incomplete_results[:10], 1):
+            print(f"  {i}. {msg}")
+        if len(all_incomplete_results) > 10:
+            print(f"  ... 他{len(all_incomplete_results) - 10}件")
+        print("\n過去のレースで結果が6艇未満の場合、データ取得に問題がある可能性があります。")
 
 
 if __name__ == '__main__':

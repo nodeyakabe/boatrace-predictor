@@ -665,7 +665,8 @@ class BeforeInfoScraper:
             db_path = os.path.join(project_root, 'data/boatrace.db')
 
         try:
-            conn = sqlite3.connect(db_path)
+            # 並列処理対策: タイムアウトを30秒に延長
+            conn = sqlite3.connect(db_path, timeout=30.0)
             cursor = conn.cursor()
 
             # race_detailsテーブルに選手ごとのデータを保存

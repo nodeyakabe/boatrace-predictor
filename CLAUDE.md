@@ -25,6 +25,14 @@
 | **DB構造** | [docs/architecture/DATABASE_SCHEMA.md](docs/architecture/DATABASE_SCHEMA.md) |
 | **データ収集** | [docs/guides/DATA_COLLECTION_MASTER.md](docs/guides/DATA_COLLECTION_MASTER.md) |
 
+### ⚠️ データ分析前の必読資料
+
+| 目的 | ドキュメント |
+|------|------------|
+| **データ分析前のチェックリスト** | [docs/guides/DATA_ANALYSIS_CHECKLIST.md](docs/guides/DATA_ANALYSIS_CHECKLIST.md) ⭐**必読** |
+
+**重要**: データ分析を開始する前に、必ずチェックリストで見落としがないか確認してください。
+
 ### すぐに情報が必要なとき（★推奨）
 
 | 情報 | ドキュメント |
@@ -158,8 +166,8 @@ JOIN trifecta_odds t ON rp.race_id = t.race_id
 | やりたいこと | 推奨スクリプト |
 |-------------|---------------|
 | **過去全データ（2020-2025）** | `python scripts/data_collection/auto_fetch_2020_2025.py` |
-| **特定期間のデータ** | `python scripts/data_collection/fetch_historical_data_parallel.py --start 2024-01-01 --end 2024-12-31` |
-| **大量CSV収集（DB負荷なし）** | `python scripts/data_collection/fetch_to_csv_parallel_improved.py --start 2020-01-01 --end 2020-12-31 --output data/csv/2020` |
+| **特定期間のデータ** ✅ **開催スケジュール最適化済み** | `python scripts/data_collection/fetch_historical_data_parallel.py --start 2024-01-01 --end 2024-12-31` |
+| **大量CSV収集（DB負荷なし）** ✅ **開催スケジュール最適化済み** | `python scripts/data_collection/fetch_to_csv_parallel_improved.py --start 2020-01-01 --end 2020-12-31 --output data/csv/2020` |
 | **決まり手補完** | `python scripts/data_collection/補完_決まり手データ_改善版.py` |
 | **レース詳細補完** | `python scripts/data_collection/補完_レース詳細データ_改善版v4.py` |
 | **オッズ収集** | `python scripts/data_collection/fetch_odds_parallel_safe.py --start 2024-01-01 --end 2024-12-31` |

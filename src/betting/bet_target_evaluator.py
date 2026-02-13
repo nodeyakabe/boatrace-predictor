@@ -337,9 +337,34 @@ class BetTargetEvaluator:
         ],
     }
 
+    # ============================================================
+    # B2級特別条件（2026年2月12日追加 - 市場の過小評価を活用）
+    # ============================================================
+    # B2級は実力不足と市場に認識されているが、条件次第で収益化可能
+    # 戦略: 「除外すべき級別」→「条件付きで活用する級別」への転換
+    #
+    # 【2026-02-12追加】B2×20-30倍（予測1-3位）
+    # - 6年間バックテスト: 880件, ROI 133.1%, 収支 +29,170円
+    # - 黒字年数: 5/6年（2020年のみ-6,490円、2021-2025年連続黒字）
+    # - 直近4年連続黒字の安定性
+    # - 予測1-3位のいずれかがB2級の場合に適用
+    # ============================================================
+    B2_SPECIAL_CONDITIONS = {
+        'B2×20-30': {
+            'odds_min': 20,
+            'odds_max': 30,
+            'expected_roi': 133.1,
+            'bet_amount': 100,
+            'description': 'B2×20-30倍（予測1-3位のいずれかがB2級）',
+            'use_pattern_h': False,  # 1点買い推奨
+        }
+    }
+
     # 除外条件
-    # - B2級のみ除外（B1級は高配当範囲で超優秀なため使用）
-    EXCLUDED_C1_RANKS = ['B2']
+    # 【2026-02-12更新】B2級を除外から撤回（条件付きで活用可能）
+    # - B1級は高配当範囲で超優秀なため使用
+    # - B2級は特別条件（B2_SPECIAL_CONDITIONS）で活用
+    EXCLUDED_C1_RANKS = []  # 除外なし
 
     # ============================================================
     # 2連単 購入条件定義（2025年12月追加）
@@ -909,6 +934,45 @@ class BetTargetEvaluator:
         if first_pred_racer:
             bias_index = self._get_player_bias_index(str(first_pred_racer))
 
+        # ============================================================
+        # B2級特別条件チェック（2026-02-12追加）
+        # ============================================================
+        # 予測1-3位のいずれかがB2級の場合、B2特別条件をチェック
+        # 条件: オッズ20-30倍、予測1-3位にB2級が含まれる
+        # ============================================================
+        # 予測1-3位のピット番号（コース番号）を取得
+        pred_pit_numbers = old_pred[:3]  # [1着予測, 2着予測, 3着予測]
+
+        # 予測1-3位の選手の級別をentriesから取得し、B2級が含まれているかチェック
+        has_b2_in_top3 = False
+        for pit_num in pred_pit_numbers:
+            entry = next((e for e in entries if e.get('pit_number') == pit_num), None)
+            if entry and entry.get('racer_rank') == 'B2級':
+                has_b2_in_top3 = True
+                break
+
+        # B2条件に該当する場合
+        if has_b2_in_top3:
+            cond = self.B2_SPECIAL_CONDITIONS.get('B2×20-30')
+            if cond and old_odds >= cond['odds_min'] and old_odds <= cond['odds_max']:
+                # B2条件を満たす
+                return BetTarget(
+                    status=BetStatus.TARGET_CONFIRMED if has_beforeinfo else BetStatus.TARGET_ADVANCE,
+                    confidence=confidence,
+                    method='従来方式',
+                    combination=old_combo,
+                    odds=old_odds,
+                    odds_range=f"{cond['odds_min']}-{cond['odds_max']}倍",
+                    c1_rank=c1_rank,
+                    expected_roi=cond['expected_roi'],
+                    bet_amount=cond['bet_amount'],
+                    reason=f"{cond['description']}（{confidence}×{old_odds:.1f}倍）",
+                    use_pattern_h=cond['use_pattern_h'],
+                )
+
+        # ============================================================
+        # 通常の購入対象判定（B2条件に該当しない場合）
+        # ============================================================
         # 基本的な購入対象判定
         bet_target = self.evaluate(
             confidence=confidence,

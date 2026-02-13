@@ -80,6 +80,12 @@ def import_races(conn: sqlite3.Connection, races_data: List[Dict], overwrite: bo
     for row in races_data:
         venue_code = row['venue_code']
         race_date = row['race_date']
+
+        # 日付形式変換: YYYY-MM-DD → YYYYMMDD (DB統一形式)
+        # ※現在はYYYY-MM-DD形式で統一済みのため、この変換は不要
+        # if '-' in race_date and len(race_date) == 10:
+        #     race_date = race_date.replace('-', '')
+
         race_number = int(row['race_number'])
 
         # 既存レコードをチェック
@@ -158,6 +164,12 @@ def import_entries(conn: sqlite3.Connection, entries_data: List[Dict], overwrite
     for row in entries_data:
         venue_code = row['venue_code']
         race_date = row['race_date']
+
+        # 日付形式変換: YYYY-MM-DD → YYYYMMDD (DB統一形式)
+        # ※現在はYYYY-MM-DD形式で統一済みのため、この変換は不要
+        # if '-' in race_date and len(race_date) == 10:
+        #     race_date = race_date.replace('-', '')
+
         race_number = int(row['race_number'])
         pit_number = int(row['pit_number'])
 
@@ -240,6 +252,12 @@ def import_results(conn: sqlite3.Connection, results_data: List[Dict], overwrite
     for row in results_data:
         venue_code = row['venue_code']
         race_date = row['race_date']
+
+        # 日付形式変換: YYYY-MM-DD → YYYYMMDD (DB統一形式)
+        # ※現在はYYYY-MM-DD形式で統一済みのため、この変換は不要
+        # if '-' in race_date and len(race_date) == 10:
+        #     race_date = race_date.replace('-', '')
+
         race_number = int(row['race_number'])
         pit_number = int(row['pit_number'])
 
@@ -296,6 +314,12 @@ def import_payouts(conn: sqlite3.Connection, payouts_data: List[Dict], overwrite
     for row in payouts_data:
         venue_code = row['venue_code']
         race_date = row['race_date']
+
+        # 日付形式変換: YYYY-MM-DD → YYYYMMDD (DB統一形式)
+        # ※現在はYYYY-MM-DD形式で統一済みのため、この変換は不要
+        # if '-' in race_date and len(race_date) == 10:
+        #     race_date = race_date.replace('-', '')
+
         race_number = int(row['race_number'])
         bet_type = row['bet_type']
         combination = row['combination']
@@ -359,6 +383,11 @@ def import_trifecta_odds(conn: sqlite3.Connection, odds_data: List[Dict], overwr
     for row in odds_data:
         venue_code = row['venue_code']
         race_date = row['race_date']
+
+        # 日付形式変換: YYYYMMDD → YYYY-MM-DD
+        if len(race_date) == 8 and race_date.isdigit():
+            race_date = f"{race_date[:4]}-{race_date[4:6]}-{race_date[6:8]}"
+
         race_number = int(row['race_number'])
         combination = row['combination']
 
@@ -419,6 +448,12 @@ def import_race_conditions(conn: sqlite3.Connection, conditions_data: List[Dict]
     for row in conditions_data:
         venue_code = row['venue_code']
         race_date = row['race_date']
+
+        # 日付形式変換: YYYY-MM-DD → YYYYMMDD (DB統一形式)
+        # ※現在はYYYY-MM-DD形式で統一済みのため、この変換は不要
+        # if '-' in race_date and len(race_date) == 10:
+        #     race_date = race_date.replace('-', '')
+
         race_number = int(row['race_number'])
 
         # race_idを取得
@@ -478,6 +513,11 @@ def import_race_details(conn: sqlite3.Connection, details_data: List[Dict], over
     for row in details_data:
         venue_code = row['venue_code']
         race_date = row['race_date']
+
+        # 日付形式変換: YYYYMMDD → YYYY-MM-DD
+        if len(race_date) == 8 and race_date.isdigit():
+            race_date = f"{race_date[:4]}-{race_date[4:6]}-{race_date[6:8]}"
+
         race_number = int(row['race_number'])
         pit_number = int(row['pit_number'])
 
@@ -507,8 +547,8 @@ def import_race_details(conn: sqlite3.Connection, details_data: List[Dict], over
             cursor.execute("""
                 INSERT INTO race_details (
                     race_id, pit_number, exhibition_time, tilt_angle,
-                    parts_replacement, actual_course, st_time
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    parts_replacement, actual_course, st_time, adjusted_weight
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 race_id,
                 pit_number,
@@ -516,7 +556,8 @@ def import_race_details(conn: sqlite3.Connection, details_data: List[Dict], over
                 float(row['tilt_angle']) if row.get('tilt_angle') else None,
                 row.get('parts_replacement') or None,
                 int(row['actual_course']) if row.get('actual_course') else None,
-                float(row['st_time']) if row.get('st_time') else None
+                float(row['st_time']) if row.get('st_time') else None,
+                float(row['adjusted_weight']) if row.get('adjusted_weight') else None
             ))
             inserted += 1
 

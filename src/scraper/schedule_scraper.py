@@ -6,6 +6,7 @@
 import requests
 from bs4 import BeautifulSoup
 import re
+import time
 from datetime import datetime, timedelta
 
 
@@ -26,13 +27,14 @@ class ScheduleScraper:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         })
 
-    def get_monthly_schedule(self, year, month):
+    def get_monthly_schedule(self, year, month, max_retries=3):
         """
         指定月の開催スケジュールを取得
 
         Args:
             year: 年（例: 2024）
             month: 月（例: 10）
+            max_retries: 最大リトライ回数（デフォルト: 3）
 
         Returns:
             dict: {
@@ -46,52 +48,87 @@ class ScheduleScraper:
             "ym": f"{year}{month:02d}"
         }
 
-        try:
-            response = self.session.get(
-                self.base_url,
-                params=params,
-                timeout=15
-            )
-            response.raise_for_status()
+        for retry in range(max_retries):
+            try:
+                # タイムアウトを段階的に増加（15秒 → 20秒 → 30秒）
+                timeout = 15 + (retry * 5)
 
-            soup = BeautifulSoup(response.text, 'html.parser')
+                response = self.session.get(
+                    self.base_url,
+                    params=params,
+                    timeout=timeout
+                )
+                response.raise_for_status()
 
-            # リンクからjcdとhdを抽出
-            links = soup.find_all('a', href=True)
+                soup = BeautifulSoup(response.text, 'html.parser')
 
-            schedule = {}
+                # リンクからjcdとhdを抽出
+                links = soup.find_all('a', href=True)
 
-            for link in links:
-                href = link.get('href', '')
+                schedule = {}
 
-                # jcd=XX と hd=YYYYMMDD を含むリンクを探す
-                if 'jcd=' in href and 'hd=' in href:
-                    # jcdを抽出
-                    jcd_match = re.search(r'jcd=(\d+)', href)
-                    # hdを抽出
-                    hd_match = re.search(r'hd=(\d{8})', href)
+                for link in links:
+                    href = link.get('href', '')
 
-                    if jcd_match and hd_match:
-                        venue_code = jcd_match.group(1)
-                        date_str = hd_match.group(1)
+                    # jcd=XX と hd=YYYYMMDD を含むリンクを探す
+                    if 'jcd=' in href and 'hd=' in href:
+                        # jcdを抽出
+                        jcd_match = re.search(r'jcd=(\d+)', href)
+                        # hdを抽出
+                        hd_match = re.search(r'hd=(\d{8})', href)
 
-                        # 指定月のデータのみ
-                        if date_str.startswith(f"{year}{month:02d}"):
-                            if venue_code not in schedule:
-                                schedule[venue_code] = []
+                        if jcd_match and hd_match:
+                            venue_code = jcd_match.group(1)
+                            date_str = hd_match.group(1)
 
-                            if date_str not in schedule[venue_code]:
-                                schedule[venue_code].append(date_str)
+                            # 指定月のデータのみ
+                            if date_str.startswith(f"{year}{month:02d}"):
+                                if venue_code not in schedule:
+                                    schedule[venue_code] = []
 
-            # 各競艇場の日付をソート
-            for venue_code in schedule:
-                schedule[venue_code].sort()
+                                if date_str not in schedule[venue_code]:
+                                    schedule[venue_code].append(date_str)
 
-            return schedule
+                # 各競艇場の日付をソート
+                for venue_code in schedule:
+                    schedule[venue_code].sort()
 
-        except Exception as e:
-            print(f"月間スケジュール取得エラー ({year}/{month}): {e}")
-            return {}
+                return schedule
+
+            except requests.exceptions.Timeout as e:
+                if retry < max_retries - 1:
+                    print(f"⚠️ タイムアウト ({year}/{month}) - リトライ {retry + 1}/{max_retries}")
+                    time.sleep(2 ** retry)  # 指数バックオフ
+                else:
+                    print(f"❌ タイムアウト ({year}/{month}) - 最大リトライ到達")
+                    return {}
+
+            except requests.exceptions.HTTPError as e:
+                status_code = e.response.status_code if e.response else None
+                if status_code in [500, 502, 503, 504]:  # サーバーエラーはリトライ
+                    if retry < max_retries - 1:
+                        print(f"⚠️ HTTPエラー {status_code} ({year}/{month}) - リトライ {retry + 1}/{max_retries}")
+                        time.sleep(2 ** retry)
+                    else:
+                        print(f"❌ HTTPエラー {status_code} ({year}/{month}) - 最大リトライ到達")
+                        return {}
+                else:
+                    print(f"❌ HTTPエラー {status_code} ({year}/{month}) - リトライ不可")
+                    return {}
+
+            except requests.exceptions.RequestException as e:
+                if retry < max_retries - 1:
+                    print(f"⚠️ ネットワークエラー ({year}/{month}) - リトライ {retry + 1}/{max_retries}")
+                    time.sleep(2 ** retry)
+                else:
+                    print(f"❌ ネットワークエラー ({year}/{month}): {e}")
+                    return {}
+
+            except Exception as e:
+                print(f"❌ 予期しないエラー ({year}/{month}): {e}")
+                return {}
+
+        return {}
 
     def get_schedule_for_period(self, start_date, end_date):
         """

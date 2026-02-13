@@ -36,7 +36,7 @@ def fetch_todays_odds(db_path=None, headless=True):
     print(f"本日のオッズ収集開始: {today}")
 
     # 本日のレース一覧を取得
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0)
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -62,12 +62,21 @@ def fetch_todays_odds(db_path=None, headless=True):
     error_count = 0
 
     for race_id, venue_code, race_number in races:
+        # venue_codeとrace_numberを安全に整数に変換
+        try:
+            venue_int = int(venue_code)
+            race_int = int(race_number)
+        except (ValueError, TypeError):
+            error_count += 1
+            print(f"  [??場 ??R] エラー: 無効なデータ (venue={venue_code}, race={race_number})")
+            continue
+
         try:
             odds_data = scraper.get_trifecta_odds(venue_code, today, race_number)
 
             if odds_data:
                 # DB保存
-                conn = sqlite3.connect(db_path)
+                conn = sqlite3.connect(db_path, timeout=30.0)
                 cursor = conn.cursor()
 
                 for combo, odds in odds_data.items():
@@ -86,14 +95,14 @@ def fetch_todays_odds(db_path=None, headless=True):
                 conn.close()
 
                 success_count += 1
-                print(f"  [{int(venue_code):02d}場 {int(race_number):2d}R] OK - {len(odds_data)}通り")
+                print(f"  [{venue_int:02d}場 {race_int:2d}R] OK - {len(odds_data)}通り")
 
             else:
-                print(f"  [{int(venue_code):02d}場 {int(race_number):2d}R] データなし")
+                print(f"  [{venue_int:02d}場 {race_int:2d}R] データなし")
 
         except Exception as e:
             error_count += 1
-            print(f"  [{int(venue_code):02d}場 {int(race_number):2d}R] エラー: {e}")
+            print(f"  [{venue_int:02d}場 {race_int:2d}R] エラー: {e}")
 
         # レート制限対策
         time.sleep(0.5)

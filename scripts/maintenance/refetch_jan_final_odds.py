@@ -71,13 +71,10 @@ def refetch_january_final_odds():
             odds_data = scraper.get_trifecta_odds(venue_str, date_yyyymmdd, race_number)
 
             if odds_data and len(odds_data) > 0:
-                # 既存オッズを削除
-                cursor.execute('DELETE FROM trifecta_odds WHERE race_id = ?', (race_id,))
-
-                # 新しい確定オッズを挿入
+                # 確定オッズを挿入（更新）
                 for combination, odds in odds_data.items():
                     cursor.execute('''
-                        INSERT INTO trifecta_odds (race_id, combination, odds, fetched_at)
+                        INSERT OR REPLACE INTO trifecta_odds (race_id, combination, odds, fetched_at)
                         VALUES (?, ?, ?, ?)
                     ''', (race_id, combination, odds, datetime.now().isoformat()))
 

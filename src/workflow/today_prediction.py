@@ -105,27 +105,21 @@ class TodayPredictionWorkflow:
                 result['success'] = True
                 return result
 
-            # Step 2-3: 並列実行（DBビュー更新、直前情報取得、オッズ取得）
-            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                # 3つの独立した処理を並列実行
+            # Step 2-3: 並列実行（DBビュー更新、オッズ取得）
+            # 注: 直前情報は monitor_race_timing.py が各レース20分前に取得
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                # 2つの独立した処理を並列実行
                 future_db_views = executor.submit(self.update_db_views)
-                future_beforeinfo = executor.submit(self.fetch_beforeinfo, today_schedule)
                 future_odds = executor.submit(self.fetch_odds, today_schedule)
 
                 # 完了を待機
-                concurrent.futures.wait([future_db_views, future_beforeinfo, future_odds])
+                concurrent.futures.wait([future_db_views, future_odds])
 
                 # 結果を取得（エラーがあっても続行）
                 try:
                     future_db_views.result()
                 except Exception as e:
                     logger.warning(f"DBビュー更新エラー: {e}")
-
-                try:
-                    result['beforeinfo_fetched'] = future_beforeinfo.result()
-                except Exception as e:
-                    logger.warning(f"直前情報取得エラー: {e}")
-                    result['beforeinfo_fetched'] = 0
 
                 try:
                     result['odds_fetched'] = future_odds.result()
@@ -136,7 +130,7 @@ class TodayPredictionWorkflow:
             # 並列処理完了後の最終メッセージ
             self._update_progress(
                 "Step 2-3/6",
-                f"直前情報・オッズ取得完了 (直前:{result.get('beforeinfo_fetched', 0)}, オッズ:{result.get('odds_fetched', 0)})",
+                f"オッズ取得完了 (オッズ:{result.get('odds_fetched', 0)})",
                 39
             )
 
@@ -175,7 +169,7 @@ class TodayPredictionWorkflow:
         today_yyyymmdd = today.replace('-', '')
 
         # 既存データをチェック
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
 
         cursor.execute(
@@ -284,7 +278,7 @@ class TodayPredictionWorkflow:
 
         from src.scraper.beforeinfo_scraper import BeforeInfoScraper
 
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
 
         # 既に直前情報が取得済みのレースIDを取得
@@ -387,7 +381,7 @@ class TodayPredictionWorkflow:
         """
         from src.scraper.odds_scraper import OddsScraper
 
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
 
         # 既にオッズが取得済みのレースIDを取得
@@ -441,7 +435,7 @@ class TodayPredictionWorkflow:
                 scraper.close()
 
                 if odds and len(odds) > 50:
-                    conn = sqlite3.connect(self.db_path)
+                    conn = sqlite3.connect(self.db_path, timeout=30.0)
                     cursor = conn.cursor()
                     cursor.execute(
                         "DELETE FROM trifecta_odds WHERE race_id = ?",
@@ -518,7 +512,8 @@ class TodayPredictionWorkflow:
                 result = subprocess.run(
                     [sys.executable, script_path, '--date', target_date],
                     capture_output=True,
-                    text=True,
+                    encoding='utf-8',
+                    errors='replace',  # デコードエラーを無視
                     cwd=self.project_root,
                     timeout=600
                 )
@@ -543,7 +538,7 @@ class TodayPredictionWorkflow:
         stats = {'prediction_count': 0, 'odds_count': 0}
 
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = sqlite3.connect(self.db_path, timeout=30.0)
             cursor = conn.cursor()
 
             today = datetime.now().strftime('%Y-%m-%d')
@@ -578,7 +573,7 @@ class TodayPredictionWorkflow:
     def _count_today_races(self) -> int:
         """今日のレース数をカウント"""
         today = datetime.now().strftime('%Y-%m-%d')
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
         cursor.execute(
             "SELECT COUNT(*) FROM races WHERE race_date = ?",

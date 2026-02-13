@@ -83,11 +83,11 @@ def fetch_yesterday_results(headless: bool = True) -> int:
                 race_date = race['race_date'].replace('-', '')  # YYYYMMDD形式
 
                 # 結果を取得
-                results = scraper.get_race_results(venue_code, race_date, race_number)
+                result_data = scraper.get_race_result(venue_code, race_date, race_number)
 
-                if results:
+                if result_data and result_data.get('results'):
                     # DBに保存
-                    for result in results:
+                    for result in result_data['results']:
                         cursor.execute('''
                             INSERT INTO results (race_id, pit_number, rank)
                             VALUES (?, ?, ?)
