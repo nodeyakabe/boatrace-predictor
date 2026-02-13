@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.analysis.race_predictor import RacePredictor
+from src.prediction.predictor_helpers import create_standard_predictor
 from config.settings import DATABASE_PATH
 import sqlite3
 
@@ -41,7 +41,7 @@ def generate_yesterday_before_predictions(force: bool = False, target_date: str 
     print(f"直前予想生成開始: {date_str}")
 
     try:
-        predictor = RacePredictor(use_cache=True)
+        predictor = create_standard_predictor(use_cache=True)
 
         # BatchDataLoaderにデータをロード
         if predictor.batch_loader:

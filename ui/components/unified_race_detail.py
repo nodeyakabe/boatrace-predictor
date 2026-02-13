@@ -9,7 +9,7 @@ import traceback
 from typing import Dict, List, Optional
 
 from src.prediction.integrated_predictor import IntegratedPredictor
-from src.analysis.race_predictor import RacePredictor
+from src.prediction.predictor_helpers import create_standard_predictor
 from src.betting.bet_generator import BetGenerator
 from src.betting.bet_target_evaluator import BetTargetEvaluator, BetTarget, BetStatus
 from src.betting.multi_bet_generator import MultiBetPattern
@@ -255,7 +255,7 @@ def _render_bet_target_summary(race_id, race_date_str, venue_code, race_number, 
         try:
             import os
             db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'boatrace.db')
-            race_predictor = RacePredictor(db_path=db_path)
+            race_predictor = create_standard_predictor(db_path=db_path)
             applied_rules = race_predictor.get_applied_rules_by_key(
                 race_date_str, venue_code, race_number
             )
@@ -555,7 +555,7 @@ def _render_ai_prediction(race_id, race_date_str, venue_code, race_number, racer
         st.success("✅ 予測済みデータを表示")
     else:
         # 基本予測を実行
-        race_predictor = RacePredictor()
+        race_predictor = create_standard_predictor()
 
         with st.spinner("予測計算中..."):
             try:
@@ -840,7 +840,7 @@ def _render_ai_prediction(race_id, race_date_str, venue_code, race_number, racer
         try:
             import os
             db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'boatrace.db')
-            race_predictor = RacePredictor(db_path=db_path)
+            race_predictor = create_standard_predictor(db_path=db_path)
             applied_rules = race_predictor.get_applied_rules_by_key(
                 race_date_str, venue_code, race_number
             )

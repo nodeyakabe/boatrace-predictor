@@ -44,7 +44,7 @@ if sys.platform == 'win32':
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 # パス設定
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, PROJECT_ROOT)
 warnings.filterwarnings('ignore')
 
@@ -55,7 +55,7 @@ from config.feature_flags import FEATURE_FLAGS
 from scripts.safety_check import check_hierarchical_predictor
 check_hierarchical_predictor()
 
-from src.analysis.race_predictor import RacePredictor
+from src.prediction.predictor_helpers import create_standard_predictor
 
 
 # ========================================
@@ -462,7 +462,7 @@ def main():
     # Predictor初期化（1回のみ）
     print("\nPredictor初期化中...")
     init_start = datetime.now()
-    predictor = RacePredictor()
+    predictor = create_standard_predictor()
     init_time = (datetime.now() - init_start).total_seconds()
     print(f"初期化完了 ({init_time:.1f}秒)")
 

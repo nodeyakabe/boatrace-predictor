@@ -30,7 +30,7 @@ from collections import defaultdict
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, PROJECT_ROOT)
 
-from src.analysis.race_predictor import RacePredictor
+from src.prediction.predictor_helpers import create_standard_predictor
 from src.database.data_manager import DataManager
 from config.settings import DATABASE_PATH, VENUES
 
@@ -46,7 +46,7 @@ class FastPredictionGenerator:
                 - 'before': 直前予測（直前情報あり）- 実運用用
         """
         # キャッシュ有効モードでRacePredictorを初期化
-        self.predictor = RacePredictor(use_cache=True)
+        self.predictor = create_standard_predictor(use_cache=True)
         self.data_manager = DataManager()
         self.db_path = DATABASE_PATH
         self.prediction_type = prediction_type

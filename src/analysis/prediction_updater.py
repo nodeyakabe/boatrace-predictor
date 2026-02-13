@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import logging
 
 from config.settings import DATABASE_PATH
-from src.analysis.race_predictor import RacePredictor
+from src.prediction.predictor_helpers import create_standard_predictor
 from src.analysis.exhibition_analyzer import ExhibitionAnalyzer
 from src.database.data_manager import DataManager
 
@@ -25,7 +25,7 @@ class PredictionUpdater:
         self.db_path = db_path
         self.conn = sqlite3.connect(db_path)
         self.cursor = self.conn.cursor()
-        self.predictor = RacePredictor(db_path=db_path, use_cache=True)
+        self.predictor = create_standard_predictor(use_cache=True, db_path=db_path)
         self.exhibition_analyzer = ExhibitionAnalyzer()
         self.data_manager = DataManager(db_path)
 
