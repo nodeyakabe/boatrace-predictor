@@ -843,9 +843,9 @@ class RacePredictor:
             kimarite_score = kimarite_result['score']
 
             # 決まり手×環境連動補正を適用
-            # 潮位情報を取得（後続の_apply_tide_adjustmentと共通化）
+            # 潮位情報を取得（後続の_apply_tide_adjustmentと共通化）- 機能フラグで制御
             tide_phase = None
-            if venue_code in self.tide_adjuster.TIDE_DATA_VENUES:
+            if is_feature_enabled('tide_adjustment') and venue_code in self.tide_adjuster.TIDE_DATA_VENUES:
                 from datetime import datetime
                 try:
                     if race_time:
@@ -1041,13 +1041,14 @@ class RacePredictor:
             wind_direction
         )
 
-        # 潮位補正を適用（海水会場のみ）
-        predictions = self._apply_tide_adjustment(
-            predictions,
-            venue_code,
-            race_date,
-            race_time
-        )
+        # 潮位補正を適用（海水会場のみ）- 機能フラグで制御
+        if is_feature_enabled('tide_adjustment'):
+            predictions = self._apply_tide_adjustment(
+                predictions,
+                venue_code,
+                race_date,
+                race_time
+            )
 
         # ========================================
         # 直前情報スコアリングと統合（FINAL_SCORE = PRE_SCORE * 0.6 + BEFORE_SCORE * 0.4）

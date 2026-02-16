@@ -14,10 +14,11 @@ from collections import defaultdict
 import sys
 
 # プロジェクトルートをパスに追加
-sys.path.insert(0, str(Path(__file__).parent.parent))
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
-DATABASE_PATH = Path(__file__).parent.parent / "data" / "boatrace.db"
-OUTPUT_PATH = Path(__file__).parent.parent / "data" / "kimarite_flow_stats.json"
+DATABASE_PATH = PROJECT_ROOT / "data" / "boatrace.db"
+OUTPUT_PATH = PROJECT_ROOT / "data" / "kimarite_flow_stats.json"
 
 
 def build_kimarite_flow_stats():

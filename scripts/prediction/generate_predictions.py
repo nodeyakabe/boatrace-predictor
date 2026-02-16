@@ -27,6 +27,8 @@
     - ロックファイル（並列実行制御）
 """
 
+from __future__ import annotations
+
 import sys
 import os
 import io
@@ -55,6 +57,7 @@ from config.feature_flags import FEATURE_FLAGS
 from scripts.safety_check import check_hierarchical_predictor
 check_hierarchical_predictor()
 
+from src.analysis.race_predictor import RacePredictor
 from src.prediction.predictor_helpers import create_standard_predictor
 
 

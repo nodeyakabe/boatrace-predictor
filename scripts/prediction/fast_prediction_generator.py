@@ -334,8 +334,8 @@ def main():
     parser = argparse.ArgumentParser(description='高速予想生成（キャッシュ最適化版）')
     parser.add_argument('--date', type=str, help='対象日（YYYY-MM-DD）。未指定の場合は今日')
     parser.add_argument('--force', action='store_true', help='既存の予想を上書き')
-    parser.add_argument('--type', type=str, default='advance', choices=['advance', 'before'],
-                        help='予測タイプ: advance=事前予測（直前情報なし）, before=直前予測（直前情報あり）。デフォルト: advance')
+    parser.add_argument('--type', type=str, default='before', choices=['advance', 'before'],
+                        help='予測タイプ: advance=事前予測（直前情報なし）, before=直前予測（直前情報あり）。デフォルト: before')
 
     args = parser.parse_args()
 

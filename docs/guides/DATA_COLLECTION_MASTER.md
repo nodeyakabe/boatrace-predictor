@@ -1,6 +1,6 @@
 # データ収集マスターガイド
 
-**最終更新**: 2026-01-15
+**最終更新**: 2026-02-13
 **対象**: Claude Codeがデータ収集タスクを実行する際の完全リファレンス
 
 ---
@@ -111,8 +111,9 @@
 | **過去全データ収集（2020-2025）** | `auto_fetch_2020_2025.py` | `python scripts/data_collection/auto_fetch_2020_2025.py` |
 | **特定期間のデータ収集** | `fetch_historical_data_parallel.py` | `python scripts/data_collection/fetch_historical_data_parallel.py --start 2024-01-01 --end 2024-12-31` |
 | **CSV方式で大量収集** | `fetch_to_csv_parallel_improved.py` | `python scripts/data_collection/fetch_to_csv_parallel_improved.py --start 2020-01-01 --end 2020-12-31 --output data/csv/2020` |
-| **決まり手データ補完** | `補完_決まり手データ_改善版.py` | `python scripts/data_collection/補完_決まり手データ_改善版.py` |
-| **レース詳細補完** | `補完_レース詳細データ_改善版v4.py` | `python scripts/data_collection/補完_レース詳細データ_改善版v4.py` |
+| **決まり手＋レース詳細一括補完** ⭐ | `補完_統合版_決まり手_レース詳細.py` | `python scripts/data_collection/補完_統合版_決まり手_レース詳細.py --years 2024 2025` |
+| **決まり手データ補完（個別）** | `補完_決まり手データ_改善版.py` | `python scripts/data_collection/補完_決まり手データ_改善版.py` |
+| **レース詳細補完（個別）** | `補完_レース詳細データ_改善版v4.py` | `python scripts/data_collection/補完_レース詳細データ_改善版v4.py` |
 | **オッズ収集** | `fetch_odds_parallel_safe.py` | `python scripts/data_collection/fetch_odds_parallel_safe.py --start 2024-01-01 --end 2024-12-31` |
 | **本日の直前情報** | `fetch_today_beforeinfo.py` | `python scripts/data_collection/fetch_today_beforeinfo.py` |
 | **統計指標生成** | `build_indicator_stats.py` | `python scripts/data_collection/build_indicator_stats.py --year 2024` |
@@ -131,11 +132,12 @@
 # ステップ1: マスター自動収集（15-25時間）
 python scripts/data_collection/auto_fetch_2020_2025.py
 
-# ステップ2: 決まり手補完
-python scripts/data_collection/補完_決まり手データ_改善版.py
+# ステップ2: 決まり手＋レース詳細補完（統合版、推奨）
+python scripts/data_collection/補完_統合版_決まり手_レース詳細.py --years 2020 2021 2022 2023 2024 2025
 
-# ステップ3: レース詳細補完
-python scripts/data_collection/補完_レース詳細データ_改善版v4.py
+# または個別実行
+# python scripts/data_collection/補完_決まり手データ_改善版.py
+# python scripts/data_collection/補完_レース詳細データ_改善版v4.py
 
 # ステップ4: 統計指標生成
 python scripts/data_collection/build_indicator_stats.py --year 2020
@@ -207,20 +209,26 @@ python scripts/data_collection/fetch_today_beforeinfo.py
 
 **補完スクリプト一覧**:
 
-| データ種別 | スクリプト | 対象 |
-|-----------|-----------|------|
-| 決まり手 | `補完_決まり手データ_改善版.py` | 全レース |
-| レース詳細 | `補完_レース詳細データ_改善版v4.py` | ST時間、実走コース、チルト |
-| 払戻金 | `補完_払戻金データ.py` | 全払戻種別 |
-| 気象データ | `fill_missing_weather_data.py` | 天候、風、水温 |
+| データ種別 | スクリプト | 対象 | 備考 |
+|-----------|-----------|------|------|
+| **決まり手＋レース詳細** ⭐ | `補完_統合版_決まり手_レース詳細.py` | 決まり手、ST時間、実走コース、チルト | **最優先推奨**（2026-02-10） |
+| 決まり手（個別） | `補完_決まり手データ_改善版.py` | 全レース | 統合版がない場合のみ |
+| レース詳細（個別） | `補完_レース詳細データ_改善版v4.py` | ST時間、実走コース、チルト | 統合版がない場合のみ |
+| 払戻金 | `補完_払戻金データ.py` | 全払戻種別 | - |
+| 気象データ | `fill_missing_weather_data.py` | 天候、風、水温 | - |
 
 **実行例**:
 
 ```bash
-# 決まり手補完（16並列、高速）
-python scripts/data_collection/補完_決まり手データ_改善版.py
+# 【推奨】統合版（決まり手＋レース詳細を一括補完）
+python scripts/data_collection/補完_統合版_決まり手_レース詳細.py --years 2024 2025
 
-# レース詳細補完（12並列）
+# Phase 1: 決まり手補完（16並列、高速）
+# Phase 2: レース詳細補完（6並列、安定性重視）
+# 2フェーズを自動実行、ログ出力あり
+
+# 個別実行（統合版がない環境の場合のみ）
+python scripts/data_collection/補完_決まり手データ_改善版.py
 python scripts/data_collection/補完_レース詳細データ_改善版v4.py
 ```
 
@@ -296,8 +304,9 @@ python scripts/data_collection/fetch_to_csv_parallel_improved.py \
 
 | スクリプト | 用途 | 特徴 |
 |-----------|------|------|
-| `補完_決まり手データ_改善版.py` | 決まり手補完 | 16並列、セッション再利用、バッチ更新 |
-| `補完_レース詳細データ_改善版v4.py` | レース詳細補完 | ST時間、実走コース、チルト角度 |
+| `補完_統合版_決まり手_レース詳細.py` ⭐ | **決まり手＋レース詳細一括補完** | **Phase 1: 決まり手（16並列）+ Phase 2: レース詳細（6並列）、2026-02-10作成、最優先推奨** |
+| `補完_決まり手データ_改善版.py` | 決まり手補完（個別） | 16並列、セッション再利用、バッチ更新 |
+| `補完_レース詳細データ_改善版v4.py` | レース詳細補完（個別） | ST時間、実走コース、チルト角度 |
 | `補完_払戻金データ.py` | 払戻金補完 | 全払戻種別対応 |
 | `fill_missing_weather_data.py` | 気象データ補完 | 天候、風、水温 |
 
@@ -428,9 +437,46 @@ python scripts/maintenance/bulk_insert_from_csv.py \
 
 ---
 
-### 補完_決まり手データ_改善版.py
+### 補完_統合版_決まり手_レース詳細.py ⭐
 
-**目的**: 決まり手データの高速補完
+**目的**: 決まり手＋レース詳細データの一括補完（統合版）
+
+**主な機能**:
+- **Phase 1**: 決まり手補完（16並列、高速）
+- **Phase 2**: レース詳細補完（6並列、安定性重視）
+- 年度指定可能（複数年一括実行）
+- 詳細ログ出力（logs/配下に保存）
+- 自動リトライ機能
+
+**使用例**:
+
+```bash
+# 2024-2025年のデータを一括補完
+python scripts/data_collection/補完_統合版_決まり手_レース詳細.py --years 2024 2025
+
+# 全年度を一括補完
+python scripts/data_collection/補完_統合版_決まり手_レース詳細.py --years 2020 2021 2022 2023 2024 2025
+```
+
+**処理内容**:
+1. 指定年度の欠損データを自動検出
+2. Phase 1: 決まり手（kimarite IS NULL）を16並列で取得・更新
+3. Phase 2: レース詳細（ST時間、実走コース、チルト）を6並列で取得・更新
+4. 詳細ログをタイムスタンプ付きで保存
+
+**所要時間**: 1万レース約30-40分（両フェーズ合計）
+
+**推奨理由**:
+- 2026-02-10作成の最新版
+- 個別スクリプト2つの機能を統合
+- 1回の実行で両方のデータを補完
+- フェーズ分けで安定性とパフォーマンスを両立
+
+---
+
+### 補完_決まり手データ_改善版.py（個別版）
+
+**目的**: 決まり手データの高速補完（統合版がない環境用）
 
 **主な機能**:
 - ThreadPoolExecutor 16ワーカー
@@ -452,11 +498,13 @@ python scripts/data_collection/補完_決まり手データ_改善版.py
 
 **所要時間**: 1万レース約20-30分
 
+**注意**: 統合版（`補完_統合版_決まり手_レース詳細.py`）が利用可能な場合はそちらを推奨
+
 ---
 
-### 補完_レース詳細データ_改善版v4.py
+### 補完_レース詳細データ_改善版v4.py（個別版）
 
-**目的**: レース詳細情報の補完
+**目的**: レース詳細情報の補完（統合版がない環境用）
 
 **主な機能**:
 - ST時間、実走コース、チルト角度を補完
@@ -475,6 +523,8 @@ python scripts/data_collection/補完_レース詳細データ_改善版v4.py
 1. `start_timing IS NULL` のレースを検索
 2. 並列で公式サイトから取得
 3. バッチでDB更新
+
+**注意**: 統合版（`補完_統合版_決まり手_レース詳細.py`）が利用可能な場合はそちらを推奨
 
 ---
 
@@ -757,7 +807,9 @@ done
 |------|------|
 | 「過去データ全部取得して」 | CSV方式推奨、月別分割実行 |
 | 「今日のデータ更新して」 | `fetch_today_beforeinfo.py` |
-| 「決まり手が抜けてる」 | `補完_決まり手データ_改善版.py` |
+| 「決まり手が抜けてる」 | `補完_統合版_決まり手_レース詳細.py`（統合版、推奨） |
+| 「ST時間がない」 | `補完_統合版_決まり手_レース詳細.py`（統合版、推奨） |
+| 「データ補完したい」 | `補完_統合版_決まり手_レース詳細.py --years 2024 2025` |
 | 「オッズがない」 | `fetch_odds_parallel_safe.py` |
 | 「DBロックされた」 | CSV方式に切り替え |
 
@@ -769,4 +821,4 @@ done
 - [VENUE_SPECIFIC_DATA_COLLECTION.md](VENUE_SPECIFIC_DATA_COLLECTION.md) - 競艇場独自データ
 - [AUTOMATION_SETUP.md](AUTOMATION_SETUP.md) - 自動化設定
 
-**最終更新**: 2026-02-04
+**最終更新**: 2026-02-13

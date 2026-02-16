@@ -16,6 +16,7 @@ sys.path.insert(0, str(project_root))
 
 from scripts.automation.notify import send_daily_summary, send_error_notification
 from src.workflow.today_prediction import TodayPredictionWorkflow
+from src.betting.evaluator_helpers import create_standard_evaluator
 
 
 def get_todays_target_and_candidates(db_path: str) -> tuple:
@@ -29,19 +30,12 @@ def get_todays_target_and_candidates(db_path: str) -> tuple:
         tuple: (購入対象レース数, 購入対象レースリスト, 候補レースリスト)
     """
     import sqlite3
-    from src.betting.bet_target_evaluator import BetTargetEvaluator, BetStatus
-    from src.betting.multi_bet_generator import MultiBetPattern
+    from src.betting.bet_target_evaluator import BetStatus
 
     today = datetime.now().strftime('%Y-%m-%d')
 
-    # BetTargetEvaluatorを初期化（Discord通知・レース監視と統一）
-    evaluator = BetTargetEvaluator(
-        use_multi_bet=True,
-        multi_bet_pattern=MultiBetPattern.PATTERN_H,
-        enable_venue_wind_filter=True,
-        enable_venue_course_adjustment=True,
-        db_path=db_path
-    )
+    # BetTargetEvaluatorを初期化（標準設定を使用）
+    evaluator = create_standard_evaluator(db_path=db_path)
 
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -85,7 +79,7 @@ def get_todays_target_and_candidates(db_path: str) -> tuple:
                     race_data=race_data,
                     predictions=predictions,
                     odds_data=odds_data,
-                    has_beforeinfo=False
+                    has_beforeinfo=True  # before予測を使用
                 )
 
                 # 会場名マップ（venue_codeは"01", "02"などのテキスト型）
@@ -203,7 +197,7 @@ def _get_predictions_for_eval(cursor, race_id: int):
     cursor.execute("""
         SELECT pit_number, rank_prediction, confidence
         FROM race_predictions
-        WHERE race_id = ? AND prediction_type = 'advance'
+        WHERE race_id = ? AND prediction_type = 'before'
         ORDER BY rank_prediction
     """, (race_id,))
     predictions = [dict(row) for row in cursor.fetchall()]

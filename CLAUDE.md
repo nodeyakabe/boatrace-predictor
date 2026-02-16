@@ -84,14 +84,71 @@
 | 知見検索 | `python scripts/search_knowledge.py "キーワード"` |
 | 知見DB統計 | `python scripts/query_knowledge_db.py --stats` |
 
-## 標準テスト（重要）
+## 標準テスト（重要）⭐
 
-**「標準テストして」と言われたら必ずこのコマンドを実行:**
+### 「標準テストして」と言われたら【必須手順】
+
+**STEP 1: 必ずこのコマンドを実行**
 ```bash
 python scripts/backtest/standard_backtest.py --full
 ```
 
-**出力内容:**
+**STEP 2: 結果を表形式で報告**
+
+以下の形式で必ず報告してください：
+
+```markdown
+## ✅ 標準テスト結果
+
+### 全体サマリー（6年間 2020-2025）
+
+| 指標 | 値 | 前回比 |
+|------|:--:|:------:|
+| **購入レース数** | X,XXX件 | ±XXX件 |
+| **ROI** | XXX.X% | ±X.Xpt |
+| **収支** | +XXX,XXX円 | ±XXX,XXX円 |
+| **的中率** | X.X% | ±X.Xpt |
+| **黒字年数** | X/6年 | 維持/改善/悪化 |
+
+### 年度別パフォーマンス
+
+| 年度 | 件数 | ROI | 収支 | 判定 |
+|:----:|:----:|:---:|:----:|:----:|
+| 2020 | XXX | XXX.X% | +XX,XXX | ○/× |
+| 2021 | XXX | XXX.X% | +XX,XXX | ○/× |
+| 2022 | XXX | XXX.X% | +XX,XXX | ○/× |
+| 2023 | XXX | XXX.X% | +XX,XXX | ○/× |
+| 2024 | XXX | XXX.X% | +XX,XXX | ○/× |
+| 2025 | XXX | XXX.X% | +XX,XXX | ○/× |
+
+### 主要条件の成績（上位3条件）
+
+| 条件 | 方式 | 件数 | ROI | 収支 |
+|:-----|:---:|:---:|:---:|:----:|
+| XXX | P.H/1点 | XXX | XXX% | +XXX,XXX |
+| XXX | P.H/1点 | XXX | XXX% | +XXX,XXX |
+| XXX | P.H/1点 | XXX | XXX% | +XXX,XXX |
+```
+
+**STEP 3: 変化がある場合は原因分析**
+
+前回比で大きな変化（±10%以上）がある場合は、必ず原因を報告：
+- 条件追加/削除の影響
+- パラメータ変更の影響
+- データ修正の影響
+- 実装変更の影響
+
+**STEP 4: HANDOVER.mdの更新確認**
+
+標準テスト結果が前回と異なる場合、`docs/HANDOVER.md`の以下セクションを更新する必要があるか確認：
+- **6年間バックテスト結果**（Line 39-49）
+- **標準バックテスト結果**（Line 51-66）
+- **年度別パフォーマンス**（Line 70-80）
+
+---
+
+### 標準テストの出力内容
+
 - 6年間（2020-2025年）の全体サマリー（ROI、収支、的中率）
 - 条件別パフォーマンス（パターンH/1点買い区分付き）
 - 年度別パフォーマンス（黒字年数判定）
@@ -117,11 +174,93 @@ python scripts/register_experiment.py \
     --result "accepted/rejected" --effect "効果値" --keywords "キーワード"
 ```
 
-## 新規購入条件の検証プロセス【重要】
+## 新規購入条件の検証プロセス【重要】⭐
 
-**分析スクリプトで有望な条件を発見した場合の必須手順:**
+**2026-02-13更新**: 3段階検証フロー（Tier 1-3）を導入しました。
 
-### 1. 分析スクリプトでの注意点
+### 📋 3段階検証フロー（必須）
+
+分析スクリプトで有望な条件を発見したら、必ず以下の手順で検証してください：
+
+```
+Tier 1: 簡易テスト（2年間、高速）
+  ↓ 合格（ROI 150%+, 1/2年黒字, 50件+）
+Tier 2: 標準テスト（6年間、厳格）
+  ↓ 合格（ROI 100%+, 4/6年黒字）
+Tier 3: 実環境確認（一致率95%+）
+  ↓ 合格
+採用決定
+```
+
+**詳細ガイド**: [docs/guides/VALIDATION_WORKFLOW.md](docs/guides/VALIDATION_WORKFLOW.md)
+
+---
+
+### Tier 1: 簡易テスト（高速検証）
+
+**コマンド**:
+```bash
+# カスタム条件のテスト
+python scripts/backtest/quick_condition_test.py --condition-json '{
+  "id": "TEST",
+  "name": "テスト条件",
+  "confidence": "B",
+  "c1_rank": ["B1"],
+  "odds_min": 30,
+  "odds_max": 50,
+  "venue_filter": [9, 10],
+  "use_pattern_h": true
+}'
+```
+
+**合格基準**:
+- ROI 150%以上
+- 1/2年黒字（2024年または2025年が黒字）
+- サンプル数 50件以上
+
+**不合格の場合** → 条件を見直すか、不採用案として記録
+
+---
+
+### Tier 2: 標準テスト（本採用判定）
+
+**手順**:
+1. `config/bet_conditions.py` に条件を追加
+2. `python scripts/backtest/standard_backtest.py --full` を実行
+3. 合格基準を確認
+
+**合格基準**:
+- **黒字年数 4/6年以上**
+- **累計収支がプラス**
+- **ROI 100%以上**
+
+**異常に良い結果への対応**:
+- ROI 200%超え、6/6年黒字 → **計算ミスを疑う**
+- 分析と実テストの乖離が大きい → **JOIN条件を確認**
+
+---
+
+### Tier 3: 実環境確認（最終検証）
+
+**コマンド**:
+```bash
+# Tier 2の結果をJSON保存
+python scripts/backtest/standard_backtest.py --full --save-json data/tier2_results.json
+
+# Tier 3で一致率確認
+python scripts/validation/verify_prediction_consistency.py \
+    --start 2020-01-01 --end 2025-12-31 \
+    --tier2-results data/tier2_results.json
+```
+
+**合格基準**:
+- Tier 2との一致率 95%以上
+
+**不合格の場合** → 実装乖離があるため、修正が必要
+
+---
+
+### 分析スクリプトでの注意点
 
 ```sql
 -- ❌ 誤り: 枠番固定オッズ（1-2-3固定）
@@ -135,21 +274,7 @@ JOIN trifecta_odds t ON rp.race_id = t.race_id
                      || CAST(rp3.pit_number AS TEXT)
 ```
 
-### 2. 採用前の必須検証
-
-1. `standard_backtest.py` に条件を追加
-2. 必ず `python scripts/backtest/standard_backtest.py --full` を実行
-3. 以下の基準を確認:
-   - **黒字年数 4/6年以上**
-   - **累計収支がプラス**
-   - **ROI 100%以上**
-
-### 3. 異常に良い結果への対応
-
-- ROI 200%超え、6/6年黒字 → **計算ミスを疑う**
-- 分析と実テストの乖離が大きい → **JOIN条件を確認**
-
-### 4. 不採用時の記録
+### 不採用時の記録
 
 不採用案は `docs/improvement_attempts/REJECTED_IDEAS.md` に追記
 

@@ -13,6 +13,7 @@ from .multi_bet_generator import MultiBetGenerator, MultiBetPattern, MultiBetRes
 from .venue_evaluator import VenueEvaluator
 from .venue_course_adjuster import VenueCourseAdjuster, AdjustmentResult
 from config.venue_wind_adjustments import should_exclude_race
+from config.bet_conditions import STANDARD_BET_CONDITIONS
 
 
 class BetStatus(Enum):
@@ -78,310 +79,12 @@ class BetTargetEvaluator:
     # - use_pattern_h: True=パターンH（3点買い400円）、False=1点買い（100円）
     # - 分析結果: ハイブリッドROI 131.4%, 収支+232,170円 vs 全パターンH 104.5%
     # - 低オッズ帯（10-30倍）は1点買い、高オッズ帯（30倍以上）はパターンH推奨
-    # ============================================================
-    BET_CONDITIONS = {
-        # 信頼度C: C×20-30×B1+会場フィルター（6年間ROI 144.8%）
-        # ※ 本番運用開始（2025-12-24承認）
-        # ※ 6年間ROI 146.9%、5/6年黒字で安定性確認済み
-        # ※ 1点買い推奨（ROI 143.2% vs パターンH 102.0%）
-        # 【2026-01-13更新】唐津(23)を除外（唐津×C×B1×20-30条件と完全重複のため）
-        'C': [
-            {
-                'method': '両方式',
-                'odds_min': 20, 'odds_max': 30,
-                'c1_rank': ['B1'],  # B1級限定
-                'expected_roi': 144.8,
-                'bet_amount': 100,
-                'priority': 1,
-                'description': 'C×20-30倍×B1級（6年間ROI 144.8%）',
-                'paper_trade': False,  # 本番運用（2025-12-24承認）
-                # 会場フィルター: 徳山,多摩川,平和島,津,丸亀,常滑,大村,若松,宮島（唐津除外）
-                'venue_filter': [18, 5, 4, 9, 15, 8, 24, 20, 17],  # 唐津(23)除外（2026-01-13）
-                'use_pattern_h': False,  # 1点買い推奨（ROI差: -41.2pt）
-            },
-            # 【2025-12-25追加】鳴門×C×A2×30-80倍（S-1グレードSパターン選定で発見）
-            # 6年間バックテスト: 186件, ROI 215.6%, 収支 +21,510円
-            # 直近4年連続黒字（2022年ROI 225%, 2023年252%, 2024年321%, 2025年238%）
-            # ※ 既存C条件（B1級×20-30倍）との重複なし
-            # ※ パターンH推奨（収支+54,540円）
-            {
-                'method': '両方式',
-                'odds_min': 30, 'odds_max': 80,
-                'c1_rank': ['A2'],  # A2級限定
-                'expected_roi': 215.6,
-                'bet_amount': 100,
-                'priority': 2,
-                'description': '鳴門×C×A2級×30-80倍（直近4年連続黒字）',
-                'paper_trade': False,  # 本番運用（2025-12-25承認）
-                'venue_filter': [14],  # 鳴門のみ
-                'use_pattern_h': True,  # パターンH推奨（収支+54,540円）
-            },
-            # 【2026-01-08追加】唐津×C×B1×20-30倍
-            # 探索結果: ROI 175.5%, +9,290円, 直近4年連続黒字
-            {
-                'method': '両方式',
-                'odds_min': 20, 'odds_max': 30,
-                'c1_rank': ['B1'],  # B1級限定
-                'expected_roi': 175.5,
-                'bet_amount': 100,
-                'priority': 3,
-                'description': '唐津×C×B1級×20-30倍（直近4年連続黒字）',
-                'paper_trade': False,
-                'venue_filter': [23],  # 唐津のみ
-                'use_pattern_h': False,  # 1点買い（低オッズ帯）
-            },
-            # 【2026-01-08追加】児島×C×B1×30-50倍
-            # 探索結果: ROI 184.3%, +13,650円, 直近3年連続黒字
-            {
-                'method': '両方式',
-                'odds_min': 30, 'odds_max': 50,
-                'c1_rank': ['B1'],  # B1級限定
-                'expected_roi': 184.3,
-                'bet_amount': 100,
-                'priority': 4,
-                'description': '児島×C×B1級×30-50倍（直近3年連続黒字）',
-                'paper_trade': False,
-                'venue_filter': [16],  # 児島のみ
-                'use_pattern_h': True,  # パターンH（高オッズ帯）
-            },
-        ],
-        # 信頼度D
-        'D': [
-            # D × B1 × 40-50倍 × 1コース2連率20-30%（2026-01-06最適化）
-            # 【変更前】606件, ROI 110.8%, +6,570円（4/6年黒字）
-            # 【変更後】306件, ROI 147.4%, +14,500円（4/6年黒字）
-            # 効果: ROI +36.6pt, 収支 +7,930円改善
-            # 年度別: 2020:+5,540円, 2021:-2,900円, 2022:-8,160円, 2023:+1,710円, 2024:+14,220円, 2025:+4,090円
-            # ※ 1点買い推奨（ROI 134.6% vs パターンH 94.9%）
-            {
-                'method': '両方式',
-                'odds_min': 40, 'odds_max': 50,
-                'c1_rank': ['B1'],
-                'expected_roi': 147.4,
-                'bet_amount': 100,
-                'priority': 1,
-                'description': 'D×B1級×40-50倍×2連率20-30%（最適化版）',
-                'c1_second_rate_min': 20,  # 1コース選手の全国2連率下限
-                'c1_second_rate_max': 30,  # 1コース選手の全国2連率上限
-                'use_pattern_h': False,  # 1点買い推奨（ROI差: -39.7pt）
-            },
-            # 【2026-01-07 無効化】D × A1/A2/B1 × 35-60倍
-            # ※ 6年間バックテスト検証の結果、採用基準を満たさないため無効化
-            # 実績: 2/6年黒字（2020年+260円、2025年+30,770円のみ）
-            # 6年間累計: -34,290円（赤字）
-            # 採用基準「直近4年で3年以上黒字」を満たさない（実際は1/4年）
-            # 旧コメント「6年連続黒字」は誤記
-            # {
-            #     'method': '両方式',
-            #     'odds_min': 35, 'odds_max': 60,
-            #     'c1_rank': ['A1', 'A2', 'B1'],
-            #     'expected_roi': 189.8,
-            #     'bet_amount': 100,
-            #     'priority': 2,
-            #     'description': 'D×35-60倍（無効化・6年間赤字）',
-            #     'race_exclude': [9],
-            #     'venue_exclude': [10],
-            # },
-            # 【2026-01-05追加】D × 5コース予測（6年連続黒字・最安定）
-            # 【2026-01-13更新】A2級を除外（6年間ROI 23.8%, -19,800円の大赤字）
-            # 変更前: 全級別, 493件, ROI 142.9%, 収支+50,530円, 5/6年黒字
-            # 変更後: A2除外, 379件, ROI 176.6%, 収支+70,330円, 5/6年黒字
-            # 効果: ROI +33.7pt, 収支+19,800円
-            # ※ パターンH推奨
-            {
-                'method': '両方式',
-                'odds_min': 10, 'odds_max': 200,  # オッズ制限なし
-                'c1_rank': ['A1', 'B1', 'B2'],  # A2除外（2026-01-13）
-                'expected_roi': 176.6,  # 更新: 144.5%→176.6%（A2除外後）
-                'bet_amount': 100,
-                'priority': 3,
-                'description': 'D×5コース予測×A2除外（ROI 176.6%）',
-                'predicted_course': 5,  # 5コース予測限定
-                'use_pattern_h': True,  # パターンH推奨
-            },
-            # 【2026-01-05追加→削除】浜名湖(06)×D×50-100倍×B1
-            # ※ standard_backtest検証で該当レース0件のため削除
-            # ml_analysis_featuresとrace_predictionsでデータ差異あり
-        ],
-    }
-
-    # ============================================================
-    # A・Bランク特別条件（2026年1月7日更新 - パターンH適用範囲最適化版）
-    # ============================================================
-    # before予測での6年間バックテスト結果を反映
-    # B × 30-50 × B1 + 会場フィルター: ROI 333.6%（最有力）
-    # B × 50-100: ROI 201.1%（安定）
-    # A × A1 × 10-12倍: ROI 115.1%（黒字帯のみ採用）
-    # A × A1 × 14-16倍: ROI 137.0%（黒字帯のみ採用）
-    # ※ A×10-20全体はROI 89.0%で赤字のため、黒字オッズ帯のみに限定
-    #
-    # 【2025-12-24追加】モーター40%+条件（6年間安定性検証済み）
-    # - A × B1 × モーター40%+: 6年間ROI 2044%, 6/6年プラス → 新規追加
-    # - A × A2 × モーター40%+: 6年間ROI 1644%, 6/6年プラス → 新規追加
-    # ※ 既存A条件（A1級）との干渉なし、新規セグメント
-    #
-    # 【2026-01-07追加】パターンH適用範囲最適化
-    # - A条件（10-16倍）: 1点買い推奨（ROI差: -7〜-13pt）
-    # - B条件（30倍以上）: パターンH推奨（高オッズで有利）
-    # ============================================================
-    AB_RANK_SPECIAL_CONDITIONS = {
-        # Bランク条件
-        'B': [
-            # 優先度1: B × 50-100倍（安定）- A2級除外（6年間+5,900円改善）
-            # 【2026-01-09追加】冬除外フィルター（12,1,2月除外）
-            # 【2026-01-13追加】4月除外フィルター（6年間的中0回の完全赤字月）
-            # 効果: 1180件→1082件(-8.3%), ROI 168.2%→183.6%(+15.4pt), 収支+15,300円改善
-            # 理由: 4月は6年間で的中0回、3月はROI 315%で黒字なので除外しない
-            # ※ パターンH推奨
-            {
-                'method': '両方式',
-                'odds_min': 50, 'odds_max': 100,
-                'c1_rank': ['A1', 'B1'],  # B2除外、A2除外（2025-12-25）
-                'expected_roi': 183.6,  # 更新: 168.2%→183.6%（4月除外後）
-                'bet_amount': 100,
-                'priority': 1,
-                'description': 'B×50-100倍×冬+4月除外（ROI 183.6%）',
-                'use_pattern_h': True,  # パターンH推奨
-                'month_exclude': [12, 1, 2, 4],  # 冬季+4月除外（2026-01-13追加）
-            },
-            # 優先度2: B × 30-50 × B1 + 会場フィルター
-            # 【2026-01-13更新】会場を高ROI上位4会場に限定（蒲郡,常滑,尼崎,児島,若松,大村を除外）
-            # 変更前: 10会場, ROI 130.7%, 4/6年黒字, 2025年-11,680円
-            # 変更後: 4会場, ROI 196.7%, 6/6年黒字, 2025年+1,220円
-            # 効果: ROI +66pt、全年黒字化
-            # ※ パターンH推奨
-            {
-                'method': '両方式',
-                'odds_min': 30, 'odds_max': 50,
-                'c1_rank': ['B1'],  # B1級限定
-                'expected_roi': 196.7,  # 更新: 333.6%→196.7%（4会場限定後）
-                'bet_amount': 100,
-                'priority': 2,
-                'description': 'B×30-50倍×B1級×4会場（ROI 196.7%）',
-                # 会場フィルター: 津,三国,芦屋,浜名湖（高ROI上位4会場のみ）
-                'venue_filter': [9, 10, 21, 6],
-                'use_pattern_h': True,  # パターンH推奨
-            },
-            # 【2025-12-25検証→不採用】B × 10-30倍 × A1/A2 × モーター35%+
-            # A-2調査結果: 6年間884件, ROI 104.2%だが、
-            # 2025年単体バックテスト: 162件, ROI 59.0%, 収支 -6,640円 → 赤字
-            # 年度安定性がないため不採用
-
-            # 【2026-01-13追加】B × 10-30倍 × 穴源(bias<-0.3) × 黒字会場
-            # バイアス指数分析で発見: 予想より上に来やすい選手（穴源）を狙う
-            # 検証結果: 202件, ROI 168.8%, +13,890円, 4/6年黒字
-            # 黒字会場: 浜名湖(06),蒲郡(07),常滑(08),三国(10),丸亀(15),下関(19)
-            {
-                'method': '両方式',
-                'odds_min': 10, 'odds_max': 30,
-                'c1_rank': ['A1', 'A2', 'B1'],
-                'expected_roi': 168.8,
-                'bet_amount': 100,
-                'priority': 3,
-                'description': 'B×10-30倍×穴源×会場（ROI 168.8%）',
-                'venue_filter': [6, 7, 8, 10, 15, 19],  # 黒字6会場限定
-                'bias_max': -0.3,  # バイアス指数<-0.3（穴源選手）
-                'use_pattern_h': False,  # 1点買い（低オッズ帯）
-            },
-        ],
-        # Aランク条件
-        'A': [
-            # 【2026-01-07改善】A × A1 × 10-12倍 + 会場フィルター
-            # 【2026-01-09追加】逃げ率>=70%フィルター
-            # 改善前: 6年間ROI 98.1%, -2,330円（赤字）
-            # 改善後（会場フィルター）: 6年間ROI 144.8%, +18,270円（黒字）
-            # 追加改善（逃げ率>=70%）: ROI 105.3%→採用、逃げ率<70%はROI 75.7%で除外
-            # 効果: 低逃げ率除外で+9,370円改善
-            # 黒字会場: 三国(10),鳴門(14),芦屋(21),徳山(18),常滑(08),下関(19),びわこ(12)
-            {
-                'method': '両方式',
-                'odds_min': 10, 'odds_max': 12,
-                'c1_rank': ['A1'],
-                'expected_roi': 144.8,
-                'bet_amount': 100,
-                'priority': 1,
-                'description': 'A×A1級×10-12倍+会場+逃げ率70%+',
-                'use_pattern_h': False,  # 1点買い推奨
-                'venue_filter': [10, 14, 21, 18, 8, 19, 12],  # 黒字7会場限定
-                'escape_rate_min': 0.70,  # 逃げ率70%以上（2026-01-09追加）
-                'predicted_course': 1,  # 1コース予測時のみ適用
-            },
-            # 【2026-01-07廃止】A × A1 × 14-16倍
-            # 廃止理由: 6年間ROI 64.2%, -19,990円（大幅赤字）
-            # 会場フィルターでも黒字化困難（下関のみ149.5%、サンプル少）
-            # {
-            #     'method': '両方式',
-            #     'odds_min': 14, 'odds_max': 16,
-            #     'c1_rank': ['A1'],
-            #     'expected_roi': 137.0,
-            #     'bet_amount': 100,
-            #     'priority': 2,
-            #     'description': 'A×A1級×14-16倍（廃止・6年間赤字）',
-            #     'use_pattern_h': False,
-            # },
-            # 【2026-01-07廃止】A × B1 × モーター40%+
-            # 廃止理由: 6年間ROI 92.2%, -3,580円（赤字）、黒字年1/6年のみ
-            # 採用経緯: 2025年単年でROI 196.6%だったが、6年間では不安定
-            # 年度別: 2020:-1,210円, 2021:-370円, 2022:-620円, 2023:-1,110円, 2024:-640円, 2025:+370円
-            # {
-            #     'method': '両方式',
-            #     'odds_min': 10, 'odds_max': 100,
-            #     'c1_rank': ['B1'],
-            #     'expected_roi': 92.2,
-            #     'bet_amount': 100,
-            #     'priority': 2,
-            #     'description': 'A×B1級×モーター40%+（廃止・6年間赤字）',
-            #     'motor_min': 40,
-            #     'use_pattern_h': False,
-            # },
-        ],
-    }
-
-    # ============================================================
-    # B2級特別条件（2026年2月12日追加 - 市場の過小評価を活用）
-    # ============================================================
-    # B2級は実力不足と市場に認識されているが、条件次第で収益化可能
-    # 戦略: 「除外すべき級別」→「条件付きで活用する級別」への転換
-    #
-    # 【2026-02-12追加】B2×20-30倍（予測1-3位）
-    # - 6年間バックテスト: 880件, ROI 133.1%, 収支 +29,170円
-    # - 黒字年数: 5/6年（2020年のみ-6,490円、2021-2025年連続黒字）
-    # - 直近4年連続黒字の安定性
-    # - 予測1-3位のいずれかがB2級の場合に適用
-    # ============================================================
-    B2_SPECIAL_CONDITIONS = {
-        'B2×20-30': {
-            'odds_min': 20,
-            'odds_max': 30,
-            'expected_roi': 133.1,
-            'bet_amount': 100,
-            'description': 'B2×20-30倍（予測1-3位のいずれかがB2級）',
-            'use_pattern_h': False,  # 1点買い推奨
-        }
-    }
 
     # 除外条件
     # 【2026-02-12更新】B2級を除外から撤回（条件付きで活用可能）
     # - B1級は高配当範囲で超優秀なため使用
-    # - B2級は特別条件（B2_SPECIAL_CONDITIONS）で活用
+    # - B2級は特別条件で活用
     EXCLUDED_C1_RANKS = []  # 除外なし
-
-    # ============================================================
-    # 2連単 購入条件定義（2025年12月追加）
-    # ============================================================
-    # バックテスト検証結果:
-    # - D × A1 × 2連単: 的中率14.6%, ROI 106.7%
-    # - 月間的中数を増やし、収支安定化を図る補助戦略
-    # ============================================================
-    EXACTA_CONDITIONS = {
-        'D': {
-            'c1_rank': ['A1'],
-            'expected_roi': 106.7,
-            'bet_amount': 100,  # 一律100円
-            'sample_count': 907,
-            'hit_rate': 14.6,
-        },
-    }
 
     def __init__(
         self,
@@ -421,6 +124,72 @@ class BetTargetEvaluator:
 
         # 選手バイアス指数キャッシュ（2026-01-13追加）
         self._player_bias_stats_cache = None
+
+        # 購入条件を config/bet_conditions.py から読み込み（2026-02-13統一化）
+        self.BET_CONDITIONS = self._convert_conditions_to_dict(STANDARD_BET_CONDITIONS)
+
+    def _convert_conditions_to_dict(self, conditions_list: List[Dict]) -> Dict[str, List[Dict]]:
+        """
+        STANDARD_BET_CONDITIONS（リスト形式）を信頼度別の辞書に変換
+
+        Args:
+            conditions_list: config/bet_conditions.py の STANDARD_BET_CONDITIONS
+
+        Returns:
+            信頼度をキーとした辞書 {'A': [...], 'B': [...], ...}
+        """
+        result = {}
+        for cond in conditions_list:
+            confidence = cond.get('confidence')
+            # B2条件（confidence=None）は全信頼度に適用
+            if confidence is None:
+                # B2条件を全信頼度に追加
+                for conf in ['A', 'B', 'C', 'D', 'E']:
+                    if conf not in result:
+                        result[conf] = []
+                    result[conf].append(self._convert_condition_format(cond))
+            else:
+                if confidence not in result:
+                    result[confidence] = []
+                result[confidence].append(self._convert_condition_format(cond))
+        return result
+
+    def _convert_condition_format(self, cond: Dict) -> Dict:
+        """
+        config/bet_conditions.py の形式を BetTargetEvaluator の形式に変換
+
+        Args:
+            cond: config/bet_conditions.py の条件
+
+        Returns:
+            BetTargetEvaluator の形式の条件
+        """
+        # 必須フィールド
+        result = {
+            'method': '両方式',  # 固定
+            'odds_min': cond['odds_min'],
+            'odds_max': cond['odds_max'],
+            'c1_rank': cond['c1_rank'],
+            'expected_roi': cond.get('backtest_roi', 100.0),
+            'bet_amount': 100,  # 固定
+            'priority': 1,  # 固定
+            'description': cond['description'],
+            'paper_trade': False,  # 本番運用
+            'use_pattern_h': cond.get('use_pattern_h', False),
+        }
+
+        # オプショナルフィールド（Noneでない場合のみ追加）
+        optional_fields = [
+            'venue_filter', 'month_exclude', 'escape_rate_min', 'predicted_course',
+            'bias_max', 'c1_second_rate_min', 'c1_second_rate_max',
+            'predicted_rank_has_class', 'predicted_rank_range',
+        ]
+        for field in optional_fields:
+            value = cond.get(field)
+            if value is not None:
+                result[field] = value
+
+        return result
 
     def _get_stadium_attack_stats(self, venue_code: str) -> Optional[Dict[str, float]]:
         """
@@ -470,10 +239,17 @@ class BetTargetEvaluator:
             try:
                 conn = sqlite3.connect(self.db_path)
                 cursor = conn.cursor()
+                # 2026-02-16: 重複レコード対策（最新1件のみ取得）
                 cursor.execute('''
                     SELECT player_id, escape_rate
                     FROM player_escape_stats
                     WHERE stadium_id IS NULL AND escape_rate IS NOT NULL
+                    AND id IN (
+                        SELECT MAX(id)
+                        FROM player_escape_stats
+                        WHERE stadium_id IS NULL AND escape_rate IS NOT NULL
+                        GROUP BY player_id
+                    )
                 ''')
                 self._player_escape_stats_cache = {
                     row[0]: row[1]
@@ -495,15 +271,22 @@ class BetTargetEvaluator:
         Returns:
             バイアス指数（マイナス=予想より上に来やすい穴源）またはNone
         """
-        # キャッシュがあれば使用
+        # キャッシュがあれば使用（2026-02-16重複レコード対策：最新1件のみ）
         if self._player_bias_stats_cache is None:
             try:
                 conn = sqlite3.connect(self.db_path)
                 cursor = conn.cursor()
+                # 2026-02-16: 重複レコード対策（最新1件のみ取得）
                 cursor.execute('''
                     SELECT player_id, bias_index
                     FROM player_bias_stats
                     WHERE stadium_id IS NULL AND bias_index IS NOT NULL
+                    AND id IN (
+                        SELECT MAX(id)
+                        FROM player_bias_stats
+                        WHERE stadium_id IS NULL AND bias_index IS NOT NULL
+                        GROUP BY player_id
+                    )
                 ''')
                 self._player_bias_stats_cache = {
                     row[0]: row[1]
@@ -533,7 +316,9 @@ class BetTargetEvaluator:
         makuri_rate: Optional[float] = None,
         race_month: Optional[int] = None,  # レース月（1-12）- 2026-01-09追加
         escape_rate: Optional[float] = None,  # 1着予測選手の逃げ率（0-1）- 2026-01-09追加
-        bias_index: Optional[float] = None  # 1着予測選手のバイアス指数 - 2026-01-13追加
+        bias_index: Optional[float] = None,  # 1着予測選手のバイアス指数 - 2026-01-13追加
+        odds_data: Optional[Dict] = None,  # 全オッズデータ（パターンH用）- 2026-02-13追加
+        old_prediction: Optional[List[int]] = None  # 予測順位（ピット番号のリスト、パターンH用）- 2026-02-16追加
     ) -> BetTarget:
         """
         購入対象を判定する
@@ -556,6 +341,8 @@ class BetTargetEvaluator:
             race_month: レース月（1-12、2026-01-09追加）
             escape_rate: 1着予測選手の逃げ率（0-1、2026-01-09追加）
             bias_index: 1着予測選手のバイアス指数（2026-01-13追加）
+            odds_data: 全オッズデータ（パターンH用、2026-02-13追加）
+            old_prediction: 予測順位（ピット番号のリスト、パターンH用、2026-02-16追加）
 
         Returns:
             BetTarget: 購入対象情報
@@ -563,6 +350,7 @@ class BetTargetEvaluator:
         # A・Bランクは特別条件をチェック（feature_flagで制御）
         from config.feature_flags import is_feature_enabled
 
+        # 【2026-02-13統一化】A/B/C/Dすべてconfig/bet_conditions.pyから取得
         if confidence in ['A', 'B']:
             if not is_feature_enabled('ab_rank_special_betting'):
                 return BetTarget(
@@ -577,11 +365,9 @@ class BetTargetEvaluator:
                     bet_amount=0,
                     reason=f'信頼度{confidence}は購入対象外（フラグ無効）'
                 )
-            # 特別条件をチェック
-            conditions = self.AB_RANK_SPECIAL_CONDITIONS.get(confidence, [])
-        else:
-            # 信頼度に応じた条件をチェック（C, D）
-            conditions = self.BET_CONDITIONS.get(confidence, [])
+
+        # 信頼度に応じた条件をチェック（統一設定から取得）
+        conditions = self.BET_CONDITIONS.get(confidence, [])
 
         # 1コース級別チェック（条件定義で許可されている級別かチェック）
         # 条件定義に合致する級別があるかを先に確認
@@ -685,11 +471,10 @@ class BetTargetEvaluator:
 
             # 逃げ率チェック（escape_rate_min が指定されている場合）- 2026-01-09追加
             # A×A1×10-12条件で逃げ率>=70%フィルター（低逃げ率選手を除外）
+            # 【2026-02-16修正】Tier 2と同じく、データなしの場合はチェックをスキップ
             if 'escape_rate_min' in cond:
-                if escape_rate is None:
-                    continue  # 逃げ率データがない場合は除外
-                if escape_rate < cond['escape_rate_min']:
-                    continue
+                if escape_rate is not None and escape_rate < cond['escape_rate_min']:
+                    continue  # 逃げ率がある場合のみチェック
 
             # バイアス指数チェック（bias_max が指定されている場合）- 2026-01-13追加
             # B×10-30×穴源条件で bias_index < -0.3 の選手のみ（予想より上に来やすい穴源）
@@ -749,38 +534,75 @@ class BetTargetEvaluator:
                     # 直前情報取得後もオッズ不明なら対象外
                     continue
 
-            # オッズ範囲チェック
-            if odds_min <= odds < odds_max:
-                status = BetStatus.TARGET_CONFIRMED if has_beforeinfo else BetStatus.TARGET_ADVANCE
-                # 理由の構築
-                reason_parts = [f'信頼度{confidence}', cond['method'], odds_range, f'1コース{c1_rank}']
-                if 'venue_codes' in cond:
-                    reason_parts.append('イン強会場')
-                if 'venue_filter' in cond:
-                    reason_parts.append('高ROI会場')
-                if 'motor_min' in cond:
-                    reason_parts.append(f'モーター{motor_second_rate:.1f}%')
-                if 'predicted_course' in cond:
-                    reason_parts.append(f'{cond["predicted_course"]}コース予測')
-                # パターンH適用有無を理由に追加
-                use_pattern_h = cond.get('use_pattern_h', True)  # デフォルトはTrue
-                bet_mode = 'パターンH' if use_pattern_h else '1点買い'
-                reason_parts.append(bet_mode)
-                reason = ' + '.join(reason_parts)
+            # オッズ範囲チェック（パターンH対応）
+            use_pattern_h = cond.get('use_pattern_h', True)
 
-                return BetTarget(
-                    status=status,
-                    confidence=confidence,
-                    method=cond['method'],
-                    combination=combo,
-                    odds=odds,
-                    odds_range=odds_range,
-                    c1_rank=c1_rank,
-                    expected_roi=cond['expected_roi'],
-                    bet_amount=cond['bet_amount'],
-                    reason=reason,
-                    use_pattern_h=use_pattern_h
-                )
+            # パターンH条件だが5位までの予測がない場合は対象外（Tier 2のINNER JOINと同じ動作）
+            if use_pattern_h and (not old_prediction or len(old_prediction) < 5):
+                continue
+
+            # パターンH条件の場合、3点（1-2-3, 1-2-4, 1-2-5）すべてをチェック
+            if use_pattern_h and odds_data and old_prediction and len(old_prediction) >= 5:
+                # 予測順位から3点の買い目を生成
+                combo_123 = f"{old_prediction[0]}-{old_prediction[1]}-{old_prediction[2]}"
+                combo_124 = f"{old_prediction[0]}-{old_prediction[1]}-{old_prediction[3]}"
+                combo_125 = f"{old_prediction[0]}-{old_prediction[1]}-{old_prediction[4]}"
+
+                # 3点のオッズを取得
+                odds_123 = odds_data.get(combo_123)
+                odds_124 = odds_data.get(combo_124)
+                odds_125 = odds_data.get(combo_125)
+
+                # いずれかがオッズ範囲内なら購入対象
+                matched_combos = []
+                if odds_123 and odds_min <= odds_123 < odds_max:
+                    matched_combos.append((combo_123, odds_123))
+                if odds_124 and odds_min <= odds_124 < odds_max:
+                    matched_combos.append((combo_124, odds_124))
+                if odds_125 and odds_min <= odds_125 < odds_max:
+                    matched_combos.append((combo_125, odds_125))
+
+                if matched_combos:
+                    # 最もオッズが高い買い目を選択
+                    combo, odds = max(matched_combos, key=lambda x: x[1])
+                else:
+                    # 3点すべてが範囲外なら次の条件へ
+                    continue
+            else:
+                # パターンH以外、または条件が揃わない場合は1点のみチェック
+                if not (odds_min <= odds < odds_max):
+                    continue
+
+            # 購入対象として返す
+            status = BetStatus.TARGET_CONFIRMED if has_beforeinfo else BetStatus.TARGET_ADVANCE
+            # 理由の構築
+            reason_parts = [f'信頼度{confidence}', cond['method'], odds_range, f'1コース{c1_rank}']
+            if 'venue_codes' in cond:
+                reason_parts.append('イン強会場')
+            if 'venue_filter' in cond:
+                reason_parts.append('高ROI会場')
+            if 'motor_min' in cond:
+                reason_parts.append(f'モーター{motor_second_rate:.1f}%')
+            if 'predicted_course' in cond:
+                reason_parts.append(f'{cond["predicted_course"]}コース予測')
+            # パターンH適用有無を理由に追加
+            bet_mode = 'パターンH' if use_pattern_h else '1点買い'
+            reason_parts.append(bet_mode)
+            reason = ' + '.join(reason_parts)
+
+            return BetTarget(
+                status=status,
+                confidence=confidence,
+                method=cond['method'],
+                combination=combo,
+                odds=odds,
+                odds_range=odds_range,
+                c1_rank=c1_rank,
+                expected_roi=cond['expected_roi'],
+                bet_amount=cond['bet_amount'],
+                reason=reason,
+                use_pattern_h=use_pattern_h
+            )
 
         # オッズが範囲外の場合、候補として返す（直前情報でオッズが変動する可能性）
         if not has_beforeinfo and (old_odds or new_odds):
@@ -846,8 +668,21 @@ class BetTargetEvaluator:
         motor_second_rate = c1_entry.get('motor_second_rate') if c1_entry else None
         c1_second_rate = c1_entry.get('second_rate') if c1_entry else None
 
-        # 会場コードを取得
-        venue_code = race_data.get('venue_code')
+        # 会場コードを取得（文字列 '01'-'24' を整数 1-24 に統一）
+        # DBのvenue_codeはTEXT型で'01', '02'形式で保存されているが、
+        # config/bet_conditions.pyのvenue_filterは整数リスト [1, 2, ...]
+        # → 比較のため整数に変換
+        venue_code_raw = race_data.get('venue_code')
+        venue_code = None
+        if venue_code_raw is not None:
+            # 文字列の場合は整数に変換（'02' → 2）
+            if isinstance(venue_code_raw, str):
+                try:
+                    venue_code = int(venue_code_raw)
+                except ValueError:
+                    venue_code = venue_code_raw
+            else:
+                venue_code = venue_code_raw
 
         # 気象データを取得
         wind_speed = race_data.get('wind_speed', 0.0)
@@ -935,40 +770,12 @@ class BetTargetEvaluator:
             bias_index = self._get_player_bias_index(str(first_pred_racer))
 
         # ============================================================
-        # B2級特別条件チェック（2026-02-12追加）
+        # B2級特別条件チェック（2026-02-12追加、2026-02-13一時無効化）
         # ============================================================
-        # 予測1-3位のいずれかがB2級の場合、B2特別条件をチェック
-        # 条件: オッズ20-30倍、予測1-3位にB2級が含まれる
+        # 【2026-02-13】B2条件はconfig/bet_conditions.pyでコメントアウトされているため
+        # この処理も無効化しています。
         # ============================================================
-        # 予測1-3位のピット番号（コース番号）を取得
-        pred_pit_numbers = old_pred[:3]  # [1着予測, 2着予測, 3着予測]
-
-        # 予測1-3位の選手の級別をentriesから取得し、B2級が含まれているかチェック
-        has_b2_in_top3 = False
-        for pit_num in pred_pit_numbers:
-            entry = next((e for e in entries if e.get('pit_number') == pit_num), None)
-            if entry and entry.get('racer_rank') == 'B2級':
-                has_b2_in_top3 = True
-                break
-
-        # B2条件に該当する場合
-        if has_b2_in_top3:
-            cond = self.B2_SPECIAL_CONDITIONS.get('B2×20-30')
-            if cond and old_odds >= cond['odds_min'] and old_odds <= cond['odds_max']:
-                # B2条件を満たす
-                return BetTarget(
-                    status=BetStatus.TARGET_CONFIRMED if has_beforeinfo else BetStatus.TARGET_ADVANCE,
-                    confidence=confidence,
-                    method='従来方式',
-                    combination=old_combo,
-                    odds=old_odds,
-                    odds_range=f"{cond['odds_min']}-{cond['odds_max']}倍",
-                    c1_rank=c1_rank,
-                    expected_roi=cond['expected_roi'],
-                    bet_amount=cond['bet_amount'],
-                    reason=f"{cond['description']}（{confidence}×{old_odds:.1f}倍）",
-                    use_pattern_h=cond['use_pattern_h'],
-                )
+        # （無効化済み）
 
         # ============================================================
         # 通常の購入対象判定（B2条件に該当しない場合）
@@ -991,7 +798,9 @@ class BetTargetEvaluator:
             makuri_rate=makuri_rate,
             race_month=race_month,  # 冬季除外フィルター用（2026-01-09追加）
             escape_rate=escape_rate,  # 逃げ率フィルター用（2026-01-09追加）
-            bias_index=bias_index  # バイアス指数フィルター用（2026-01-28追加）
+            bias_index=bias_index,  # バイアス指数フィルター用（2026-01-28追加）
+            odds_data=odds_data,  # パターンH用全オッズ（2026-02-13追加）
+            old_prediction=old_pred  # パターンH用予測順位（2026-02-16追加）
         )
 
         # 会場×コース別調整を適用
