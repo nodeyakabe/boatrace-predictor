@@ -13,7 +13,7 @@ from .multi_bet_generator import MultiBetGenerator, MultiBetPattern, MultiBetRes
 from .venue_evaluator import VenueEvaluator
 from .venue_course_adjuster import VenueCourseAdjuster, AdjustmentResult
 from config.venue_wind_adjustments import should_exclude_race
-from config.bet_conditions import STANDARD_BET_CONDITIONS
+from config.bet_conditions import STANDARD_BET_CONDITIONS, GLOBAL_VENUE_MONTH_EXCLUDES
 
 
 class BetStatus(Enum):
@@ -467,6 +467,21 @@ class BetTargetEvaluator:
             # 冬季（12,1,2月）はROI 47.4%で大幅赤字のため、B×50-100条件で除外
             if 'month_exclude' in cond:
                 if race_month is not None and race_month in cond['month_exclude']:
+                    continue
+
+            # グローバル会場×月除外チェック（2026-02-17追加）
+            # 全条件共通: 6年間で一貫して赤字の会場×月組み合わせを除外
+            if GLOBAL_VENUE_MONTH_EXCLUDES and venue_code is not None and race_month is not None:
+                skip = False
+                for exc_venue, exc_month in GLOBAL_VENUE_MONTH_EXCLUDES:
+                    if isinstance(exc_venue, int):
+                        exc_venue_code = exc_venue
+                    else:
+                        exc_venue_code = int(exc_venue)
+                    if venue_code == exc_venue_code and race_month == exc_month:
+                        skip = True
+                        break
+                if skip:
                     continue
 
             # 逃げ率チェック（escape_rate_min が指定されている場合）- 2026-01-09追加

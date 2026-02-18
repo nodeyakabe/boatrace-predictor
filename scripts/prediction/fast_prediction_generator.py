@@ -232,9 +232,23 @@ class FastPredictionGenerator:
 
         if skip_existing:
             print('\n[4/5] 既存予想をチェック中...')
+            # 一括SQLで正確に指定タイプの予想の有無を確認（フォールバックなし）
+            if race_ids:
+                placeholders = ','.join('?' * len(race_ids))
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                cursor.execute(
+                    f"SELECT DISTINCT race_id FROM race_predictions "
+                    f"WHERE prediction_type = ? AND race_id IN ({placeholders})",
+                    [self.prediction_type] + race_ids
+                )
+                existing_ids = {row[0] for row in cursor.fetchall()}
+                conn.close()
+            else:
+                existing_ids = set()
+
             for race in races:
-                existing = self.data_manager.get_race_predictions(race['race_id'])
-                if existing:
+                if race['race_id'] in existing_ids:
                     skipped_count += 1
                 else:
                     races_to_predict.append(race)

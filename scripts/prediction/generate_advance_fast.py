@@ -104,6 +104,9 @@ def main():
                 print(f" [{success_count}/{i-1}] {rate:.1f}/s, {remaining_time:.0f}min left")
             print(f"[{race_date}]", end='', flush=True)
             last_date = race_date
+            # 日付が変わったらキャッシュを一括ロード（DBアクセス大幅削減）
+            if predictor.batch_loader:
+                predictor.batch_loader.load_daily_data(race_date)
 
         try:
             predictions = predictor.predict_race(race_id, use_beforeinfo=False)

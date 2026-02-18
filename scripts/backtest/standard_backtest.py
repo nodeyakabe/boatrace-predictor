@@ -51,7 +51,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 sys.path.insert(0, PROJECT_ROOT)
 
 from config.settings import DATABASE_PATH
-from config.bet_conditions import STANDARD_BET_CONDITIONS
+from config.bet_conditions import STANDARD_BET_CONDITIONS, GLOBAL_VENUE_MONTH_EXCLUDES
 from src.betting.evaluator_helpers import create_standard_evaluator
 
 # ============================================================
@@ -207,6 +207,20 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
         months = ','.join(map(str, cond['month_exclude']))
         month_exclude_clause = f"AND CAST(strftime('%m', r.race_date) AS INTEGER) NOT IN ({months})"
 
+    # 会場×月除外フィルター（2026-02-16追加：1-4月特有の弱会場除外用）
+    # 条件固有の除外リストとグローバル除外リストを統合
+    venue_month_exclude_clause = ""
+    combined_excludes = list(cond.get('venue_month_exclude') or []) + list(GLOBAL_VENUE_MONTH_EXCLUDES or [])
+    if combined_excludes:
+        conditions = []
+        for venue, month in combined_excludes:
+            if isinstance(venue, int):
+                venue_code = f"'{venue:02d}'"
+            else:
+                venue_code = f"'{venue}'"
+            conditions.append(f"(r.venue_code = {venue_code} AND CAST(strftime('%m', r.race_date) AS INTEGER) = {month})")
+        venue_month_exclude_clause = f"AND NOT ({' OR '.join(conditions)})"
+
     # 逃げ率フィルター（2026-01-09追加、2026-02-16重複レコード対策）
     escape_rate_join = ""
     escape_rate_clause = ""
@@ -314,6 +328,7 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
             {predicted_course_clause}
             {c1_second_rate_clause}
             {month_exclude_clause}
+            {venue_month_exclude_clause}
             {escape_rate_clause}
             {bias_clause}
             {motor_rate_clause}
@@ -419,6 +434,7 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
             {predicted_course_clause}
             {c1_second_rate_clause}
             {month_exclude_clause}
+            {venue_month_exclude_clause}
             {escape_rate_clause}
             {bias_clause}
             {motor_rate_clause}

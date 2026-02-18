@@ -80,17 +80,50 @@
 | 操作 | コマンド |
 |------|---------|
 | UI起動 | `cd ui && python -m streamlit run app.py` |
-| **標準テスト** | `python scripts/backtest/standard_backtest.py --full` |
+| **標準テスト（推奨）** | `python scripts/backtest/standard_backtest_unique.py --full` |
+| 標準テスト（条件分析用） | `python scripts/backtest/standard_backtest.py --full` |
 | 知見検索 | `python scripts/search_knowledge.py "キーワード"` |
 | 知見DB統計 | `python scripts/query_knowledge_db.py --stats` |
 
 ## 標準テスト（重要）⭐
 
-### 「標準テストして」と言われたら【必須手順】
+### 2つの標準テストの使い分け
 
-**STEP 1: 必ずこのコマンドを実行**
+**2026-02-16更新**: Tier 2/3統一化により、2種類のテストを用途別に使い分けます。
+
+#### 1. ユニーク版（実運用シミュレーション）⭐ **推奨**
+
+```bash
+python scripts/backtest/standard_backtest_unique.py --full
+```
+
+**用途**:
+- 実際の購入レース数と収支を正確に把握
+- Tier 3（実運用）との一致率95.48%を達成
+- 重複レースは優先度順に1条件のみに割り当て
+
+**特徴**:
+- 優先度ベースの重複除外（config/bet_conditions.py の priority フィールド）
+- オッズデータ・範囲チェック対応
+- Tier 3（BetTargetEvaluator）と同じロジック
+
+#### 2. 従来版（条件別分析用）
+
 ```bash
 python scripts/backtest/standard_backtest.py --full
+```
+
+**用途**:
+- 各条件の個別性能を詳細分析
+- 重複レースも各条件でカウント（条件別の最大ポテンシャル把握）
+
+---
+
+### 「標準テストして」と言われたら【必須手順】
+
+**STEP 1: 推奨コマンドを実行**
+```bash
+python scripts/backtest/standard_backtest_unique.py --full
 ```
 
 **STEP 2: 結果を表形式で報告**
@@ -149,13 +182,25 @@ python scripts/backtest/standard_backtest.py --full
 
 ### 標準テストの出力内容
 
+#### ユニーク版（standard_backtest_unique.py）⭐ 推奨
+
+- **重複除外レポート**: 各条件の候補数と割り当て数
+- **条件別パフォーマンス**: ユニークレースのみでの成績
+- **全体サマリー**: 実際の購入件数・ROI・収支
+
+**オプション:**
+- `--full`: 6年間（2020-2025）の全体テスト
+- `--year 2024`: 特定年度のテスト
+- `--save-json data/tier2_unique_results.json`: 結果をJSONで保存
+
+#### 従来版（standard_backtest.py）
+
 - 6年間（2020-2025年）の全体サマリー（ROI、収支、的中率）
-- 条件別パフォーマンス（パターンH/1点買い区分付き）
+- 条件別パフォーマンス（パターンH/1点買い区分付き、重複カウント）
 - 年度別パフォーマンス（黒字年数判定）
 - 2025年月別パフォーマンス（黒字月数判定）
-- 条件別の年度詳細
 
-**その他のオプション:**
+**オプション:**
 - `--year 2024`: 特定年度の詳細テスト
 - `--save-baseline`: ベースライン保存
 - `--compare`: ベースラインと比較

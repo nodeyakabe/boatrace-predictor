@@ -212,14 +212,22 @@ def get_race_ids_for_condition(
             else:
                 combinations = [f"{pits[0]}-{pits[1]}-{pits[2]}"]
 
-            # オッズデータの存在確認
+            # オッズ範囲を取得
+            odds_min = cond.get('odds_min', 0)
+            odds_max = cond.get('odds_max', 9999)
+
+            # オッズデータの存在確認 + 範囲チェック
             placeholders = ','.join(['?'] * len(combinations))
             cursor.execute(f"""
-                SELECT COUNT(*) FROM trifecta_odds
+                SELECT combination, odds FROM trifecta_odds
                 WHERE race_id = ? AND combination IN ({placeholders})
             """, [race_id] + combinations)
 
-            if cursor.fetchone()[0] > 0:
+            odds_rows = cursor.fetchall()
+            # いずれかのコンビネーションがオッズ範囲内ならOK
+            has_valid_odds = any(odds_min <= row[1] < odds_max for row in odds_rows if row[1])
+
+            if has_valid_odds:
                 filtered_race_ids.add(race_id)
 
         return filtered_race_ids

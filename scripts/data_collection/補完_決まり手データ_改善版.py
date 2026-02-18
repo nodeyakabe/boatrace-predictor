@@ -84,7 +84,7 @@ def get_races_without_kimarite(db_path=None, start_date=None, end_date=None):
             r.race_number
         FROM races r
         JOIN results res ON r.id = res.race_id
-        WHERE res.kimarite IS NULL
+        WHERE (res.kimarite IS NULL OR res.kimarite = '')
           AND res.rank = '1'
           AND res.is_invalid = 0
           {date_filter}
