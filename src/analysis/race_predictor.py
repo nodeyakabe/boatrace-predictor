@@ -701,7 +701,7 @@ class RacePredictor:
         logger = logging.getLogger(__name__)
 
         # キャッシュチェック（Phase 2.5: 予測結果キャッシュ）
-        cached_prediction = self.race_data_cache.get_prediction(race_id)
+        cached_prediction = self.race_data_cache.get_prediction(race_id, use_beforeinfo)
         if cached_prediction is not None:
             logger.debug(f"Race {race_id}: 予測結果キャッシュヒット")
             return cached_prediction
@@ -758,12 +758,15 @@ class RacePredictor:
         water_temperature = None
         weather_condition = None
 
-        # まず race_conditions から取得を試みる（直前情報ページの最新データ）
-        cursor.execute("""
-            SELECT wind_speed, wave_height, wind_direction, temperature, water_temperature, weather
-            FROM race_conditions WHERE race_id = ?
-        """, (race_id,))
-        weather_row = cursor.fetchone()
+        # まず race_conditions から取得を試みる（キャッシュ優先、フォールバックでDB）
+        if self.batch_loader and self.batch_loader._cache_loaded:
+            weather_row = self.batch_loader.get_race_conditions(race_id)
+        else:
+            cursor.execute("""
+                SELECT wind_speed, wave_height, wind_direction, temperature, water_temperature, weather
+                FROM race_conditions WHERE race_id = ?
+            """, (race_id,))
+            weather_row = cursor.fetchone()
 
         if weather_row and weather_row['wind_speed'] is not None:
             wind_speed = weather_row['wind_speed']
@@ -1235,7 +1238,7 @@ class RacePredictor:
                 pass
 
         # 予測結果をキャッシュに保存（Phase 2.5）
-        self.race_data_cache.set_prediction(race_id, predictions)
+        self.race_data_cache.set_prediction(race_id, predictions, use_beforeinfo)
         logger.debug(f"Race {race_id}: 予測結果キャッシュ保存")
 
         # キャッシュ統計をログ出力（定期的に）
@@ -1288,34 +1291,33 @@ class RacePredictor:
             for i, p in enumerate(predictions)
         }
 
-        # レース情報を取得
-        import sqlite3
-        conn = get_connection(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT race_date FROM races WHERE id = ?",
-            (race_id,)
-        )
-        race_date_row = cursor.fetchone()
-        race_date = race_date_row[0] if race_date_row else None
-
-        # 出走情報を準備
-        cursor.execute("""
-            SELECT pit_number, racer_number, racer_name
-            FROM entries
-            WHERE race_id = ?
-            ORDER BY pit_number
-        """, (race_id,))
-        entries_data = cursor.fetchall()
-
-        # actual_courseを取得
-        cursor.execute("""
-            SELECT pit_number, actual_course
-            FROM race_details
-            WHERE race_id = ?
-        """, (race_id,))
-        course_data = {row[0]: row[1] for row in cursor.fetchall()}
-        cursor.close()
+        # エントリー・コース情報を取得（キャッシュ優先）
+        if self.batch_loader and self.batch_loader._cache_loaded:
+            entries_data = [
+                (e['pit_number'], e['racer_number'], e.get('racer_name', ''))
+                for e in self.batch_loader.get_race_entries(race_id)
+            ]
+            _rd = self.batch_loader._cache.get('race_details', {}).get(race_id, {})
+            course_data = {pit: data.get('actual_course') for pit, data in _rd.items()}
+            _race_info = self.batch_loader.get_race_info(race_id)
+            race_date = _race_info.get('race_date') if _race_info else None
+        else:
+            import sqlite3
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT race_date FROM races WHERE id = ?", (race_id,))
+            _race_date_row = cursor.fetchone()
+            race_date = _race_date_row[0] if _race_date_row else None
+            cursor.execute("""
+                SELECT pit_number, racer_number, racer_name
+                FROM entries WHERE race_id = ? ORDER BY pit_number
+            """, (race_id,))
+            entries_data = cursor.fetchall()
+            cursor.execute("""
+                SELECT pit_number, actual_course FROM race_details WHERE race_id = ?
+            """, (race_id,))
+            course_data = {row[0]: row[1] for row in cursor.fetchall()}
+            cursor.close()
 
         # エントリー情報を構築
         entries = []
@@ -1380,31 +1382,39 @@ class RacePredictor:
         Returns:
             適用される法則のリスト
         """
+        # レース情報・風向を取得（キャッシュ優先）
+        if self.batch_loader and self.batch_loader._cache_loaded:
+            race_info = self.batch_loader.get_race_info(race_id)
+            if not race_info:
+                return []
+            venue_code = race_info['venue_code']
+            race_date = race_info['race_date']
+            weather = self.batch_loader.get_race_conditions(race_id)
+            wind_direction = weather['wind_direction'] if weather and weather.get('wind_direction') else ''
+        else:
+            import sqlite3
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT venue_code, race_date FROM races WHERE id = ?",
+                (race_id,)
+            )
+            race_row = cursor.fetchone()
+            if not race_row:
+                cursor.close()
+                return []
+            venue_code, race_date = race_row
+            cursor.execute("""
+                SELECT wind_direction FROM race_conditions WHERE race_id = ?
+            """, (race_id,))
+            wind_row = cursor.fetchone()
+            wind_direction = wind_row[0] if wind_row and wind_row[0] else ''
+            cursor.close()
+
+        # 出走情報を取得（racer_rank, genderを含む・racersテーブルJOIN必要）
         import sqlite3
         conn = get_connection(self.db_path)
         cursor = conn.cursor()
-
-        # レース情報を取得
-        cursor.execute(
-            "SELECT venue_code, race_date FROM races WHERE id = ?",
-            (race_id,)
-        )
-        race_row = cursor.fetchone()
-        if not race_row:
-            cursor.close()
-            return []
-
-        venue_code, race_date = race_row
-
-        # 風向データを取得
-        cursor.execute("""
-            SELECT wind_direction FROM race_conditions WHERE race_id = ?
-        """, (race_id,))
-        wind_row = cursor.fetchone()
-        wind_direction = wind_row[0] if wind_row and wind_row[0] else ''
-
-        # 出走情報を取得（racer_rank, genderを含む）
-        # racersテーブルから性別を取得、なければ名前から推測
         cursor.execute("""
             SELECT e.pit_number, e.racer_number, e.racer_name, e.racer_rank, rd.actual_course,
                    COALESCE(r.gender,
@@ -1538,12 +1548,7 @@ class RacePredictor:
         else:
             confidence = 'E'
 
-        # データ量による制限（より厳密に）
-        # NOTE: 2025-12-22 一時的に無効化（data_qualityが低すぎてA/B/Cが生成されない問題）
-        # confidence_levels = {'A': 5, 'B': 4, 'C': 3, 'D': 2, 'E': 1}
-        # if confidence_levels[confidence] > confidence_levels[max_confidence]:
-        #     confidence = max_confidence
-
+        # NOTE: data_quality基準による上限制限は score_gap_confidence に置き換え済み
         return confidence
 
     def _recalculate_race_confidence(self, predictions: List[Dict]) -> List[Dict]:
@@ -1919,15 +1924,18 @@ class RacePredictor:
                 else:
                     logger.info(f"Race {race_id}: パターン適用（信頼度D・フラグ有効）")
 
-        import sqlite3
-        conn = get_connection(self.db_path)
-
-        # 会場コードを取得（会場別最適化用）
-        cursor = conn.cursor()
-        cursor.execute("SELECT venue_code FROM races WHERE id = ?", (race_id,))
-        venue_row = cursor.fetchone()
-        venue_code = int(venue_row[0]) if venue_row and venue_row[0] else None
-        cursor.close()
+        # 会場コードを取得（キャッシュ優先）
+        if self.batch_loader and self.batch_loader._cache_loaded:
+            race_info = self.batch_loader.get_race_info(race_id)
+            venue_code = int(race_info['venue_code']) if race_info and race_info.get('venue_code') else None
+        else:
+            import sqlite3
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT venue_code FROM races WHERE id = ?", (race_id,))
+            venue_row = cursor.fetchone()
+            venue_code = int(venue_row[0]) if venue_row and venue_row[0] else None
+            cursor.close()
 
         # キャッシュから取得試行
         cached_before_info = self.race_data_cache.get_before_info(race_id)
@@ -1935,8 +1943,18 @@ class RacePredictor:
         if cached_before_info is not None:
             before_data = cached_before_info
             logger.debug(f"Race {race_id}: BEFORE情報キャッシュヒット")
+        elif self.batch_loader and self.batch_loader._cache_loaded:
+            # BatchDataLoaderのキャッシュから取得
+            _rd = self.batch_loader._cache.get('race_details', {}).get(race_id, {})
+            before_data = [(pit, data.get('exhibition_time'), data.get('st_time'))
+                           for pit, data in sorted(_rd.items())]
+            if before_data and len(before_data) >= 6:
+                self.race_data_cache.set_before_info(race_id, before_data)
+                logger.debug(f"Race {race_id}: BEFORE情報バッチキャッシュから取得")
         else:
             # DBから取得
+            import sqlite3
+            conn = get_connection(self.db_path)
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT pit_number, exhibition_time, st_time
@@ -1978,18 +1996,6 @@ class RacePredictor:
         # PRE順位マップを作成（現在のtotal_scoreベース）
         predictions_sorted = sorted(predictions, key=lambda x: x['total_score'], reverse=True)
         pre_rank_map = {pred['pit_number']: rank+1 for rank, pred in enumerate(predictions_sorted)}
-
-        # 会場コードを取得（パターン最適化で使用）
-        venue_code = None
-        try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT venue_code FROM races WHERE id = ?", (race_id,))
-            venue_row = cursor.fetchone()
-            if venue_row:
-                venue_code = venue_row[0]
-            cursor.close()
-        except Exception:
-            pass
 
         # 信頼度を取得（トップ予測の信頼度を使用）
         top_confidence = predictions[0].get('confidence', 'C') if predictions else 'C'
@@ -2730,21 +2736,25 @@ class RacePredictor:
             return predictions
 
         try:
-            # エントリー情報を取得
-            import sqlite3
-            conn = get_connection(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            cursor.execute("""
-                SELECT pit_number, racer_number
-                FROM entries
-                WHERE race_id = ?
-                ORDER BY pit_number
-            """, (race_id,))
-
-            entries = [dict(row) for row in cursor.fetchall()]
-            cursor.close()
+            # エントリー情報を取得（キャッシュ優先）
+            if self.batch_loader and self.batch_loader._cache_loaded:
+                entries = [
+                    {'pit_number': e['pit_number'], 'racer_number': e['racer_number']}
+                    for e in self.batch_loader.get_race_entries(race_id)
+                ]
+            else:
+                import sqlite3
+                conn = get_connection(self.db_path)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT pit_number, racer_number
+                    FROM entries
+                    WHERE race_id = ?
+                    ORDER BY pit_number
+                """, (race_id,))
+                entries = [dict(row) for row in cursor.fetchall()]
+                cursor.close()
 
             if len(entries) < 6:
                 return predictions

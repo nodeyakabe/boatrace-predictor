@@ -185,13 +185,15 @@ class RaceDataCache:
         """BEFORE情報をキャッシュに保存"""
         self.before_info_cache.set(f"before_{race_id}", data)
 
-    def get_prediction(self, race_id: int) -> Optional[Any]:
+    def get_prediction(self, race_id: int, use_beforeinfo: bool = False) -> Optional[Any]:
         """予測結果をキャッシュから取得"""
-        return self.prediction_cache.get(f"pred_{race_id}")
+        key = f"pred_{race_id}_{'before' if use_beforeinfo else 'advance'}"
+        return self.prediction_cache.get(key)
 
-    def set_prediction(self, race_id: int, data: Any) -> None:
+    def set_prediction(self, race_id: int, data: Any, use_beforeinfo: bool = False) -> None:
         """予測結果をキャッシュに保存"""
-        self.prediction_cache.set(f"pred_{race_id}", data)
+        key = f"pred_{race_id}_{'before' if use_beforeinfo else 'advance'}"
+        self.prediction_cache.set(key, data)
 
     def get_pattern_matches(self, race_id: int, pit_number: int) -> Optional[Any]:
         """パターンマッチ結果をキャッシュから取得"""

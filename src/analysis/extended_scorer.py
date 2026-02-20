@@ -803,85 +803,83 @@ class ExtendedScorer:
         Returns:
             {'score': float, 'races': int, 'avg_rank': float, 'trend': str}
         """
-        conn = get_connection(self.db_path)
-        cursor = conn.cursor()
+        # キャッシュ優先
+        if self.batch_loader and self.batch_loader._cache_loaded:
+            cached = self.batch_loader.get_session_performance(racer_number, venue_code)
+            results = [(d['rank'], d['race_date'], d['race_number']) for d in cached]
+        else:
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    SELECT res.rank, r.race_date, r.race_number
+                    FROM entries e
+                    JOIN races r ON e.race_id = r.id
+                    LEFT JOIN results res ON res.race_id = r.id AND res.pit_number = e.pit_number
+                    WHERE e.racer_number = ?
+                      AND r.venue_code = ?
+                      AND r.race_date < ?
+                      AND r.race_date >= date(?, '-7 days')
+                      AND res.rank IS NOT NULL
+                      AND res.rank NOT IN ('F', 'L', '欠', '失')
+                    ORDER BY r.race_date DESC, r.race_number DESC
+                    LIMIT 12
+                ''', (racer_number, venue_code, target_date, target_date))
+                results = cursor.fetchall()
+            finally:
+                cursor.close()
 
-        try:
-            # 同一会場で直近7日以内（≒同一開催）のレース
-            cursor.execute('''
-                SELECT res.rank, r.race_date, r.race_number
-                FROM entries e
-                JOIN races r ON e.race_id = r.id
-                LEFT JOIN results res ON res.race_id = r.id AND res.pit_number = e.pit_number
-                WHERE e.racer_number = ?
-                  AND r.venue_code = ?
-                  AND r.race_date < ?
-                  AND r.race_date >= date(?, '-7 days')
-                  AND res.rank IS NOT NULL
-                  AND res.rank NOT IN ('F', 'L', '欠', '失')
-                ORDER BY r.race_date DESC, r.race_number DESC
-                LIMIT 12
-            ''', (racer_number, venue_code, target_date, target_date))
-
-            results = cursor.fetchall()
-
-            if not results:
-                return {
-                    'score': max_score * 0.5,  # データなしは中間
-                    'races': 0,
-                    'avg_rank': None,
-                    'trend': 'unknown',
-                    'description': '節間データなし'
-                }
-
-            # 着順を数値化
-            ranks = []
-            for row in results:
-                try:
-                    rank = int(row[0])
-                    if 1 <= rank <= 6:
-                        ranks.append(rank)
-                except (ValueError, TypeError):
-                    pass
-
-            if not ranks:
-                return {
-                    'score': max_score * 0.5,
-                    'races': len(results),
-                    'avg_rank': None,
-                    'trend': 'unknown',
-                    'description': '有効データなし'
-                }
-
-            avg_rank = sum(ranks) / len(ranks)
-
-            # スコア計算（平均着順が低いほど高スコア）
-            # 1着=max_score, 6着=0
-            score = max(0, (6 - avg_rank) / 5 * max_score)
-
-            # トレンド判定（前半vs後半）
-            if len(ranks) >= 4:
-                first_half = sum(ranks[:len(ranks)//2]) / (len(ranks)//2)
-                second_half = sum(ranks[len(ranks)//2:]) / (len(ranks) - len(ranks)//2)
-                if second_half < first_half - 0.5:
-                    trend = 'improving'
-                elif second_half > first_half + 0.5:
-                    trend = 'declining'
-                else:
-                    trend = 'stable'
-            else:
-                trend = 'insufficient'
-
+        if not results:
             return {
-                'score': score,
-                'races': len(ranks),
-                'avg_rank': round(avg_rank, 2),
-                'trend': trend,
-                'description': f'節間{len(ranks)}走 平均{avg_rank:.1f}着'
+                'score': max_score * 0.5,
+                'races': 0,
+                'avg_rank': None,
+                'trend': 'unknown',
+                'description': '節間データなし'
             }
 
-        finally:
-            cursor.close()
+        # 着順を数値化
+        ranks = []
+        for row in results:
+            try:
+                rank = int(row[0])
+                if 1 <= rank <= 6:
+                    ranks.append(rank)
+            except (ValueError, TypeError):
+                pass
+
+        if not ranks:
+            return {
+                'score': max_score * 0.5,
+                'races': len(results),
+                'avg_rank': None,
+                'trend': 'unknown',
+                'description': '有効データなし'
+            }
+
+        avg_rank = sum(ranks) / len(ranks)
+
+        score = max(0, (6 - avg_rank) / 5 * max_score)
+
+        if len(ranks) >= 4:
+            first_half = sum(ranks[:len(ranks)//2]) / (len(ranks)//2)
+            second_half = sum(ranks[len(ranks)//2:]) / (len(ranks) - len(ranks)//2)
+            if second_half < first_half - 0.5:
+                trend = 'improving'
+            elif second_half > first_half + 0.5:
+                trend = 'declining'
+            else:
+                trend = 'stable'
+        else:
+            trend = 'insufficient'
+
+        return {
+            'score': score,
+            'races': len(ranks),
+            'avg_rank': round(avg_rank, 2),
+            'trend': trend,
+            'description': f'節間{len(ranks)}走 平均{avg_rank:.1f}着'
+        }
 
     def calculate_previous_race_level(
         self,
@@ -902,71 +900,74 @@ class ExtendedScorer:
         Returns:
             {'score': float, 'prev_grade': str, 'prev_result': int, 'description': str}
         """
-        conn = get_connection(self.db_path)
-        cursor = conn.cursor()
-
-        try:
-            # 直近のレース（対象日より前）
-            cursor.execute('''
-                SELECT r.race_grade, res.rank, r.race_date
-                FROM entries e
-                JOIN races r ON e.race_id = r.id
-                LEFT JOIN results res ON res.race_id = r.id AND res.pit_number = e.pit_number
-                WHERE e.racer_number = ?
-                  AND r.race_date < ?
-                ORDER BY r.race_date DESC, r.race_number DESC
-                LIMIT 1
-            ''', (racer_number, target_date))
-
-            row = cursor.fetchone()
-
-            if not row:
-                return {
-                    'score': max_score * 0.5,
-                    'prev_grade': None,
-                    'prev_result': None,
-                    'description': '前走データなし'
-                }
-
-            prev_grade, prev_rank, prev_date = row
-
-            # グレード評価
-            grade_scores = {
-                'SG': 1.0,
-                'G1': 0.9,
-                'G2': 0.8,
-                'G3': 0.7,
-                '一般': 0.5,
-                'ルーキーシリーズ': 0.4,
-            }
-            grade_factor = grade_scores.get(prev_grade, 0.5)
-
-            # 前走結果評価
+        # キャッシュ優先
+        prev_grade, prev_rank = None, None
+        if self.batch_loader and self.batch_loader._cache_loaded:
+            prev = self.batch_loader.get_previous_race(racer_number)
+            if prev is not None:
+                prev_grade = prev.get('prev_grade')
+                prev_rank = prev.get('prev_rank')
+        else:
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
             try:
-                rank = int(prev_rank)
-                if rank == 1:
-                    result_factor = 1.0
-                elif rank == 2:
-                    result_factor = 0.8
-                elif rank <= 3:
-                    result_factor = 0.6
-                else:
-                    result_factor = 0.4
-            except (ValueError, TypeError):
-                result_factor = 0.3  # F/L等
+                cursor.execute('''
+                    SELECT r.race_grade, res.rank, r.race_date
+                    FROM entries e
+                    JOIN races r ON e.race_id = r.id
+                    LEFT JOIN results res ON res.race_id = r.id AND res.pit_number = e.pit_number
+                    WHERE e.racer_number = ?
+                      AND r.race_date < ?
+                    ORDER BY r.race_date DESC, r.race_number DESC
+                    LIMIT 1
+                ''', (racer_number, target_date))
+                row = cursor.fetchone()
+            finally:
+                cursor.close()
+            if row:
+                prev_grade, prev_rank, _ = row
 
-            # 複合スコア
-            score = max_score * (grade_factor * 0.4 + result_factor * 0.6)
-
+        if prev_grade is None and prev_rank is None:
             return {
-                'score': score,
-                'prev_grade': prev_grade,
-                'prev_result': prev_rank,
-                'description': f'前走{prev_grade or "不明"} {prev_rank or "-"}着'
+                'score': max_score * 0.5,
+                'prev_grade': None,
+                'prev_result': None,
+                'description': '前走データなし'
             }
 
-        finally:
-            cursor.close()
+        # グレード評価
+        grade_scores = {
+            'SG': 1.0,
+            'G1': 0.9,
+            'G2': 0.8,
+            'G3': 0.7,
+            '一般': 0.5,
+            'ルーキーシリーズ': 0.4,
+        }
+        grade_factor = grade_scores.get(prev_grade, 0.5)
+
+        # 前走結果評価
+        try:
+            rank = int(prev_rank)
+            if rank == 1:
+                result_factor = 1.0
+            elif rank == 2:
+                result_factor = 0.8
+            elif rank <= 3:
+                result_factor = 0.6
+            else:
+                result_factor = 0.4
+        except (ValueError, TypeError):
+            result_factor = 0.3  # F/L等
+
+        score = max_score * (grade_factor * 0.4 + result_factor * 0.6)
+
+        return {
+            'score': score,
+            'prev_grade': prev_grade,
+            'prev_result': prev_rank,
+            'description': f'前走{prev_grade or "不明"} {prev_rank or "-"}着'
+        }
 
     def predict_course_entry(
         self,
@@ -987,27 +988,16 @@ class ExtendedScorer:
         Returns:
             {'predicted_course': int, 'confidence': float, 'probabilities': dict}
         """
-        conn = get_connection(self.db_path)
-        cursor = conn.cursor()
-
-        try:
-            # その選手のコース取り傾向を確認（resultsにactual_courseがあれば）
-            # 現状はデフォルトの傾向を使用
-            probabilities = self.DEFAULT_COURSE_TENDENCY.get(pit_number, {pit_number: 1.0})
-
-            # 最も確率が高いコースを予測
-            predicted_course = max(probabilities, key=probabilities.get)
-            confidence = probabilities[predicted_course]
-
-            return {
-                'predicted_course': predicted_course,
-                'confidence': confidence,
-                'probabilities': probabilities,
-                'description': f'{pit_number}号艇→{predicted_course}コース予測（{confidence*100:.0f}%）'
-            }
-
-        finally:
-            cursor.close()
+        # デフォルトの傾向を使用（DB不要）
+        probabilities = self.DEFAULT_COURSE_TENDENCY.get(pit_number, {pit_number: 1.0})
+        predicted_course = max(probabilities, key=probabilities.get)
+        confidence = probabilities[predicted_course]
+        return {
+            'predicted_course': predicted_course,
+            'confidence': confidence,
+            'probabilities': probabilities,
+            'description': f'{pit_number}号艇→{predicted_course}コース予測（{confidence*100:.0f}%）'
+        }
 
     def analyze_racer_matchup(
         self,
@@ -1090,123 +1080,104 @@ class ExtendedScorer:
                 'description': str
             }
         """
-        conn = get_connection(self.db_path)
-        cursor = conn.cursor()
-
-        try:
-            # 選手の過去の進入傾向を集計
-            cursor.execute('''
-                SELECT
-                    e.pit_number,
-                    rd.actual_course,
-                    COUNT(*) as cnt
-                FROM entries e
-                JOIN race_details rd ON e.race_id = rd.race_id AND e.pit_number = rd.pit_number
-                WHERE e.racer_number = ?
-                  AND rd.actual_course IS NOT NULL
-                GROUP BY e.pit_number, rd.actual_course
-            ''', (racer_number,))
-
-            rows = cursor.fetchall()
-
-            if not rows:
-                # データがない場合はデフォルト（枠番=コース）
+        # キャッシュ優先（全枠番データを取得）
+        if self.batch_loader and self.batch_loader._cache_loaded:
+            course_counts = self.batch_loader._cache.get('course_entry_tendency', {}).get(racer_number)
+            if course_counts is None:
                 return {
                     'front_entry_rate': 0.0,
                     'predicted_course': pit_number,
-                    'confidence': 0.8,  # データなしでも枠番=コースは高確率
+                    'confidence': 0.8,
+                    'score': max_score * 0.5,
+                    'is_front_entry_prone': False,
+                    'description': '進入データなし（枠番進入を予測）'
+                }
+        else:
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    SELECT
+                        e.pit_number,
+                        rd.actual_course,
+                        COUNT(*) as cnt
+                    FROM entries e
+                    JOIN race_details rd ON e.race_id = rd.race_id AND e.pit_number = rd.pit_number
+                    WHERE e.racer_number = ?
+                      AND rd.actual_course IS NOT NULL
+                    GROUP BY e.pit_number, rd.actual_course
+                ''', (racer_number,))
+                rows = cursor.fetchall()
+            finally:
+                cursor.close()
+
+            if not rows:
+                return {
+                    'front_entry_rate': 0.0,
+                    'predicted_course': pit_number,
+                    'confidence': 0.8,
                     'score': max_score * 0.5,
                     'is_front_entry_prone': False,
                     'description': '進入データなし（枠番進入を予測）'
                 }
 
-            # 枠番ごとの進入コース分布を構築
-            course_counts = {}  # {pit: {course: count}}
+            course_counts = {}
             for pit, course, cnt in rows:
                 if pit not in course_counts:
                     course_counts[pit] = {}
                 course_counts[pit][course] = cnt
 
-            # 該当枠番での傾向を分析
-            if pit_number in course_counts:
-                pit_distribution = course_counts[pit_number]
-                total = sum(pit_distribution.values())
+        # 該当枠番での傾向を分析
+        if pit_number in course_counts:
+            pit_distribution = course_counts[pit_number]
+            total = sum(pit_distribution.values())
+            predicted_course = max(pit_distribution, key=pit_distribution.get)
+            predicted_prob = pit_distribution[predicted_course] / total
+            front_entry_count = sum(
+                cnt for c, cnt in pit_distribution.items() if c < pit_number
+            )
+            front_entry_rate = (front_entry_count / total) * 100
+        else:
+            total_front = sum(
+                cnt for pit, dist in course_counts.items()
+                for c, cnt in dist.items() if c < pit
+            )
+            total_all = sum(cnt for dist in course_counts.values() for cnt in dist.values())
+            front_entry_rate = (total_front / total_all * 100) if total_all > 0 else 0
+            predicted_course = pit_number
+            predicted_prob = 0.7
 
-                # 最も多いコースを予測
-                predicted_course = max(pit_distribution, key=pit_distribution.get)
-                predicted_prob = pit_distribution[predicted_course] / total
+        confidence = predicted_prob
+        if front_entry_rate > 50:
+            confidence *= 0.7
+        elif front_entry_rate > 30:
+            confidence *= 0.85
 
-                # 前付け（内コースへ移動）の割合
-                front_entry_count = sum(
-                    cnt for c, cnt in pit_distribution.items() if c < pit_number
-                )
-                front_entry_rate = (front_entry_count / total) * 100
+        score = max_score * 0.5
+        if predicted_course < pit_number:
+            score += max_score * (pit_number - predicted_course) * 0.1
+        elif predicted_course > pit_number:
+            score -= max_score * (predicted_course - pit_number) * 0.1
+        if confidence < 0.6:
+            score *= 0.8
+        score = max(0, min(max_score, score))
 
-            else:
-                # 該当枠番のデータがない場合は全体傾向から推定
-                total_front = sum(
-                    cnt for pit, dist in course_counts.items()
-                    for c, cnt in dist.items() if c < pit
-                )
-                total_all = sum(
-                    cnt for dist in course_counts.values()
-                    for cnt in dist.values()
-                )
-                front_entry_rate = (total_front / total_all * 100) if total_all > 0 else 0
-                predicted_course = pit_number
-                predicted_prob = 0.7  # デフォルト信頼度
+        is_front_entry_prone = front_entry_rate > 40
+        if front_entry_rate > 50:
+            desc = f'前付け常習（{front_entry_rate:.0f}%）→{predicted_course}コース予測'
+        elif front_entry_rate > 20:
+            desc = f'前付け傾向あり（{front_entry_rate:.0f}%）'
+        else:
+            desc = f'{pit_number}号艇→{predicted_course}コース予測（{confidence*100:.0f}%）'
 
-            # 信頼度計算
-            # - 枠番=コースの確率が高いほど高信頼
-            # - 前付け傾向が強い選手は信頼度低下
-            confidence = predicted_prob
-            if front_entry_rate > 50:
-                confidence *= 0.7  # 前付け常習者は進入予測が難しい
-            elif front_entry_rate > 30:
-                confidence *= 0.85
-
-            # スコア計算
-            # - 前付けで内コースを取れると有利
-            # - ただし進入予測の不安定さはペナルティ
-            score = max_score * 0.5  # 基準点
-
-            if predicted_course < pit_number:
-                # 内コースを取る予測 → 有利
-                course_advantage = (pit_number - predicted_course) * 0.1
-                score += max_score * course_advantage
-            elif predicted_course > pit_number:
-                # 外コースに流れる予測 → 不利
-                course_disadvantage = (predicted_course - pit_number) * 0.1
-                score -= max_score * course_disadvantage
-
-            # 不安定さペナルティ
-            if confidence < 0.6:
-                score *= 0.8
-
-            score = max(0, min(max_score, score))
-
-            # 前付け常習者フラグ
-            is_front_entry_prone = front_entry_rate > 40
-
-            # 説明文
-            if front_entry_rate > 50:
-                desc = f'前付け常習（{front_entry_rate:.0f}%）→{predicted_course}コース予測'
-            elif front_entry_rate > 20:
-                desc = f'前付け傾向あり（{front_entry_rate:.0f}%）'
-            else:
-                desc = f'{pit_number}号艇→{predicted_course}コース予測（{confidence*100:.0f}%）'
-
-            return {
-                'front_entry_rate': round(front_entry_rate, 1),
-                'predicted_course': predicted_course,
-                'confidence': round(confidence, 2),
-                'score': round(score, 2),
-                'is_front_entry_prone': is_front_entry_prone,
-                'description': desc
-            }
-
-        finally:
-            cursor.close()
+        return {
+            'front_entry_rate': round(front_entry_rate, 1),
+            'predicted_course': predicted_course,
+            'confidence': round(confidence, 2),
+            'score': round(score, 2),
+            'is_front_entry_prone': is_front_entry_prone,
+            'description': desc
+        }
 
     def calculate_exhibition_time_score(
         self,
@@ -1228,74 +1199,74 @@ class ExtendedScorer:
         Returns:
             {'score': float, 'exhibition_time': float, 'rank': int, 'description': str}
         """
-        conn = get_connection(self.db_path)
-        cursor = conn.cursor()
+        # キャッシュ優先（レース全艇のrace_detailsを取得）
+        if self.batch_loader and self.batch_loader._cache_loaded:
+            race_details_all = self.batch_loader._cache.get('race_details', {}).get(race_id, {})
+            rows = sorted(
+                [(pit, d['exhibition_time']) for pit, d in race_details_all.items()
+                 if d.get('exhibition_time') is not None],
+                key=lambda x: x[1]
+            )
+        else:
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    SELECT pit_number, exhibition_time
+                    FROM race_details
+                    WHERE race_id = ? AND exhibition_time IS NOT NULL
+                    ORDER BY exhibition_time ASC
+                ''', (race_id,))
+                rows = cursor.fetchall()
+            finally:
+                cursor.close()
 
-        try:
-            # 該当レースの全艇の展示タイムを取得
-            cursor.execute('''
-                SELECT pit_number, exhibition_time
-                FROM race_details
-                WHERE race_id = ? AND exhibition_time IS NOT NULL
-                ORDER BY exhibition_time ASC
-            ''', (race_id,))
-
-            rows = cursor.fetchall()
-
-            if not rows:
-                return {
-                    'score': max_score * 0.5,
-                    'exhibition_time': None,
-                    'rank': None,
-                    'description': '展示タイムデータなし'
-                }
-
-            # 順位を付与
-            times = [(pit, time) for pit, time in rows]
-            target_time = None
-            target_rank = None
-
-            for rank, (pit, time) in enumerate(times, 1):
-                if pit == pit_number:
-                    target_time = time
-                    target_rank = rank
-                    break
-
-            if target_time is None:
-                return {
-                    'score': max_score * 0.5,
-                    'exhibition_time': None,
-                    'rank': None,
-                    'description': '展示タイムデータなし'
-                }
-
-            # スコア計算（1位が最高、6位が最低）
-            # 線形補間: 1位=max_score, 6位=0
-            total_boats = len(times)
-            if total_boats > 1:
-                score = max_score * (total_boats - target_rank) / (total_boats - 1)
-            else:
-                score = max_score * 0.5
-
-            # 説明文
-            if target_rank == 1:
-                desc = f'展示タイム{target_time:.2f}秒（1位/トップ）'
-            elif target_rank <= 2:
-                desc = f'展示タイム{target_time:.2f}秒（{target_rank}位/好調）'
-            elif target_rank <= 4:
-                desc = f'展示タイム{target_time:.2f}秒（{target_rank}位/普通）'
-            else:
-                desc = f'展示タイム{target_time:.2f}秒（{target_rank}位/不調）'
-
+        if not rows:
             return {
-                'score': round(score, 2),
-                'exhibition_time': target_time,
-                'rank': target_rank,
-                'description': desc
+                'score': max_score * 0.5,
+                'exhibition_time': None,
+                'rank': None,
+                'description': '展示タイムデータなし'
             }
 
-        finally:
-            cursor.close()
+        times = [(pit, time) for pit, time in rows]
+        target_time = None
+        target_rank = None
+        for rank, (pit, time) in enumerate(times, 1):
+            if pit == pit_number:
+                target_time = time
+                target_rank = rank
+                break
+
+        if target_time is None:
+            return {
+                'score': max_score * 0.5,
+                'exhibition_time': None,
+                'rank': None,
+                'description': '展示タイムデータなし'
+            }
+
+        total_boats = len(times)
+        if total_boats > 1:
+            score = max_score * (total_boats - target_rank) / (total_boats - 1)
+        else:
+            score = max_score * 0.5
+
+        if target_rank == 1:
+            desc = f'展示タイム{target_time:.2f}秒（1位/トップ）'
+        elif target_rank <= 2:
+            desc = f'展示タイム{target_time:.2f}秒（{target_rank}位/好調）'
+        elif target_rank <= 4:
+            desc = f'展示タイム{target_time:.2f}秒（{target_rank}位/普通）'
+        else:
+            desc = f'展示タイム{target_time:.2f}秒（{target_rank}位/不調）'
+
+        return {
+            'score': round(score, 2),
+            'exhibition_time': target_time,
+            'rank': target_rank,
+            'description': desc
+        }
 
     def calculate_tilt_angle_score(
         self,
@@ -1321,77 +1292,72 @@ class ExtendedScorer:
         Returns:
             {'score': float, 'tilt_angle': float, 'setting_type': str, 'description': str}
         """
-        conn = get_connection(self.db_path)
-        cursor = conn.cursor()
+        # キャッシュ優先
+        tilt = None
+        if self.batch_loader and self.batch_loader._cache_loaded:
+            detail = self.batch_loader.get_race_details(race_id, pit_number)
+            if detail is not None:
+                tilt = detail.get('tilt_angle')
+        if tilt is None and not (self.batch_loader and self.batch_loader._cache_loaded):
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    SELECT tilt_angle
+                    FROM race_details
+                    WHERE race_id = ? AND pit_number = ?
+                ''', (race_id, pit_number))
+                row = cursor.fetchone()
+                if row:
+                    tilt = row[0]
+            finally:
+                cursor.close()
 
-        try:
-            # 該当レースのチルト角度を取得
-            cursor.execute('''
-                SELECT tilt_angle
-                FROM race_details
-                WHERE race_id = ? AND pit_number = ?
-            ''', (race_id, pit_number))
-
-            row = cursor.fetchone()
-
-            if not row or row[0] is None:
-                return {
-                    'score': max_score * 0.5,
-                    'tilt_angle': None,
-                    'setting_type': 'unknown',
-                    'description': 'チルトデータなし'
-                }
-
-            tilt = row[0]
-
-            # セッティングタイプを判定
-            if tilt <= -0.5:
-                setting_type = 'dash'  # 出足重視
-                type_desc = '出足重視'
-            elif tilt >= 0.5:
-                setting_type = 'stretch'  # 伸び重視
-                type_desc = '伸び重視'
-            else:
-                setting_type = 'balanced'  # バランス
-                type_desc = 'バランス'
-
-            # コースとの相性スコア
-            score = max_score * 0.5  # 基準点
-
-            if pit_number == 1:
-                # 1コース: 伸び重視（逃げ）が有利
-                if setting_type == 'stretch':
-                    score = max_score * 0.8
-                elif setting_type == 'balanced':
-                    score = max_score * 0.6
-                else:
-                    score = max_score * 0.4  # 出足重視は1コース逃げには不向き
-            elif pit_number in [2, 3]:
-                # 2-3コース: 差しにはバランスか伸び
-                if setting_type in ['balanced', 'stretch']:
-                    score = max_score * 0.7
-                else:
-                    score = max_score * 0.5
-            elif pit_number in [4, 5, 6]:
-                # 4-6コース: まくりには出足重視が有利
-                if setting_type == 'dash':
-                    score = max_score * 0.8
-                elif setting_type == 'balanced':
-                    score = max_score * 0.6
-                else:
-                    score = max_score * 0.4
-
-            desc = f'チルト{tilt:+.1f}°（{type_desc}）'
-
+        if tilt is None:
             return {
-                'score': round(score, 2),
-                'tilt_angle': tilt,
-                'setting_type': setting_type,
-                'description': desc
+                'score': max_score * 0.5,
+                'tilt_angle': None,
+                'setting_type': 'unknown',
+                'description': 'チルトデータなし'
             }
 
-        finally:
-            cursor.close()
+        if tilt <= -0.5:
+            setting_type = 'dash'
+            type_desc = '出足重視'
+        elif tilt >= 0.5:
+            setting_type = 'stretch'
+            type_desc = '伸び重視'
+        else:
+            setting_type = 'balanced'
+            type_desc = 'バランス'
+
+        score = max_score * 0.5
+        if pit_number == 1:
+            if setting_type == 'stretch':
+                score = max_score * 0.8
+            elif setting_type == 'balanced':
+                score = max_score * 0.6
+            else:
+                score = max_score * 0.4
+        elif pit_number in [2, 3]:
+            if setting_type in ['balanced', 'stretch']:
+                score = max_score * 0.7
+            else:
+                score = max_score * 0.5
+        elif pit_number in [4, 5, 6]:
+            if setting_type == 'dash':
+                score = max_score * 0.8
+            elif setting_type == 'balanced':
+                score = max_score * 0.6
+            else:
+                score = max_score * 0.4
+
+        return {
+            'score': round(score, 2),
+            'tilt_angle': tilt,
+            'setting_type': setting_type,
+            'description': f'チルト{tilt:+.1f}°（{type_desc}）'
+        }
 
     def calculate_chikusen_time_score(
         self,
@@ -1540,88 +1506,85 @@ class ExtendedScorer:
             {'score': float, 'recent_win_rate': float, 'recent_avg_rank': float,
              'trend': str, 'description': str}
         """
-        conn = get_connection(self.db_path)
-        cursor = conn.cursor()
+        # キャッシュ優先
+        row = None
+        if self.batch_loader and self.batch_loader._cache_loaded:
+            features = self.batch_loader.get_racer_features(racer_number)
+            if features is not None:
+                row = (
+                    features.get('recent_avg_rank_3'),
+                    features.get('recent_avg_rank_5'),
+                    features.get('recent_avg_rank_10'),
+                    features.get('recent_win_rate_3'),
+                    features.get('recent_win_rate_5'),
+                    features.get('recent_win_rate_10'),
+                    features.get('total_races'),
+                    features.get('feature_date'),
+                )
+        if row is None:
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    SELECT
+                        recent_avg_rank_3, recent_avg_rank_5, recent_avg_rank_10,
+                        recent_win_rate_3, recent_win_rate_5, recent_win_rate_10,
+                        total_races, race_date
+                    FROM racer_features
+                    WHERE racer_number = ? AND race_date <= ?
+                    ORDER BY race_date DESC
+                    LIMIT 1
+                ''', (racer_number, race_date))
+                row = cursor.fetchone()
+            finally:
+                cursor.close()
 
-        try:
-            # 最も近い日付のracer_featuresを取得
-            cursor.execute('''
-                SELECT
-                    recent_avg_rank_3, recent_avg_rank_5, recent_avg_rank_10,
-                    recent_win_rate_3, recent_win_rate_5, recent_win_rate_10,
-                    total_races, race_date
-                FROM racer_features
-                WHERE racer_number = ? AND race_date <= ?
-                ORDER BY race_date DESC
-                LIMIT 1
-            ''', (racer_number, race_date))
-
-            row = cursor.fetchone()
-
-            if not row:
-                return {
-                    'score': max_score * 0.5,
-                    'recent_win_rate': None,
-                    'recent_avg_rank': None,
-                    'trend': 'unknown',
-                    'description': '直近成績データなし'
-                }
-
-            (avg_rank_3, avg_rank_5, avg_rank_10,
-             win_rate_3, win_rate_5, win_rate_10,
-             total_races, feature_date) = row
-
-            # メイン指標として直近5走を使用
-            recent_win_rate = win_rate_5 if win_rate_5 is not None else (win_rate_3 or win_rate_10 or 0)
-            recent_avg_rank = avg_rank_5 if avg_rank_5 is not None else (avg_rank_3 or avg_rank_10 or 3.5)
-
-            # トレンド判定（直近3走 vs 直近10走）
-            if win_rate_3 is not None and win_rate_10 is not None:
-                if win_rate_3 > win_rate_10 + 10:  # 10%以上改善
-                    trend = 'improving'
-                    trend_desc = '上昇中'
-                elif win_rate_3 < win_rate_10 - 10:  # 10%以上低下
-                    trend = 'declining'
-                    trend_desc = '下降中'
-                else:
-                    trend = 'stable'
-                    trend_desc = '安定'
-            else:
-                trend = 'unknown'
-                trend_desc = '不明'
-
-            # スコア計算
-            # 勝率ベース（0-100%を0-max_scoreに変換）
-            # 平均勝率は約16.7%（1/6）なので、30%以上で高評価
-            win_rate_score = min(recent_win_rate / 30.0, 1.0) * max_score * 0.6
-
-            # 平均着順ベース（1.0-6.0を逆転してスコア化）
-            # 平均着順3.5が普通、2.0以下で高評価
-            rank_score = max(0, (4.5 - recent_avg_rank) / 3.5) * max_score * 0.4
-
-            score = win_rate_score + rank_score
-
-            # トレンドボーナス/ペナルティ
-            if trend == 'improving':
-                score *= 1.1  # 10%ボーナス
-            elif trend == 'declining':
-                score *= 0.9  # 10%ペナルティ
-
-            score = max(0, min(max_score, score))
-
-            # 説明文
-            desc = f'直近5走: 勝率{recent_win_rate:.0f}%, 平均{recent_avg_rank:.1f}着（{trend_desc}）'
-
+        if not row:
             return {
-                'score': round(score, 2),
-                'recent_win_rate': recent_win_rate,
-                'recent_avg_rank': recent_avg_rank,
-                'trend': trend,
-                'description': desc
+                'score': max_score * 0.5,
+                'recent_win_rate': None,
+                'recent_avg_rank': None,
+                'trend': 'unknown',
+                'description': '直近成績データなし'
             }
 
-        finally:
-            cursor.close()
+        (avg_rank_3, avg_rank_5, avg_rank_10,
+         win_rate_3, win_rate_5, win_rate_10,
+         total_races, feature_date) = row
+
+        recent_win_rate = win_rate_5 if win_rate_5 is not None else (win_rate_3 or win_rate_10 or 0)
+        recent_avg_rank = avg_rank_5 if avg_rank_5 is not None else (avg_rank_3 or avg_rank_10 or 3.5)
+
+        if win_rate_3 is not None and win_rate_10 is not None:
+            if win_rate_3 > win_rate_10 + 10:
+                trend = 'improving'
+                trend_desc = '上昇中'
+            elif win_rate_3 < win_rate_10 - 10:
+                trend = 'declining'
+                trend_desc = '下降中'
+            else:
+                trend = 'stable'
+                trend_desc = '安定'
+        else:
+            trend = 'unknown'
+            trend_desc = '不明'
+
+        win_rate_score = min(recent_win_rate / 30.0, 1.0) * max_score * 0.6
+        rank_score = max(0, (4.5 - recent_avg_rank) / 3.5) * max_score * 0.4
+        score = win_rate_score + rank_score
+        if trend == 'improving':
+            score *= 1.1
+        elif trend == 'declining':
+            score *= 0.9
+        score = max(0, min(max_score, score))
+
+        return {
+            'score': round(score, 2),
+            'recent_win_rate': recent_win_rate,
+            'recent_avg_rank': recent_avg_rank,
+            'trend': trend,
+            'description': f'直近5走: 勝率{recent_win_rate:.0f}%, 平均{recent_avg_rank:.1f}着（{trend_desc}）'
+        }
 
     def calculate_venue_affinity_score(
         self,
@@ -1757,6 +1720,41 @@ class ExtendedScorer:
             {'score': float, 'second_rate': float, 'third_rate': float,
              'rentai_rate': float, 'description': str}
         """
+        # キャッシュ優先（racer_overall に place_rate_2/3 あり）
+        if self.batch_loader and self.batch_loader._cache_loaded:
+            stats = self.batch_loader.get_racer_overall_stats(racer_number)
+            if stats is not None and stats.get('total_races', 0) >= 10:
+                total = stats['total_races']
+                win_rate = stats['win_rate']
+                second_rate = stats['place_rate_2']
+                third_rate = stats['place_rate_3']
+                avg_second_rate = 0.333
+                avg_third_rate = 0.500
+                second_score = (second_rate / avg_second_rate) * (max_score * 0.6)
+                third_score = (third_rate / avg_third_rate) * (max_score * 0.4)
+                score = max(0, min(max_score, second_score + third_score))
+                is_strong_rentai = second_rate > 0.45
+                if is_strong_rentai:
+                    desc = f'連対力◎（2連対{second_rate*100:.0f}%, 3連対{third_rate*100:.0f}%）'
+                elif second_rate > avg_second_rate:
+                    desc = f'連対○（2連対{second_rate*100:.0f}%）'
+                else:
+                    desc = f'連対△（2連対{second_rate*100:.0f}%）'
+                return {
+                    'score': round(score, 2),
+                    'win_rate': round(win_rate * 100, 1),
+                    'second_rate': round(second_rate * 100, 1),
+                    'third_rate': round(third_rate * 100, 1),
+                    'rentai_rate': round(second_rate * 100, 1),
+                    'is_strong_rentai': is_strong_rentai,
+                    'description': desc
+                }
+            return {
+                'score': max_score * 0.5,
+                'win_rate': None, 'second_rate': None, 'third_rate': None,
+                'rentai_rate': None, 'description': '連対率データ不足'
+            }
+
         conn = get_connection(self.db_path)
         cursor = conn.cursor()
 

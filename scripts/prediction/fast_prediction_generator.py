@@ -344,6 +344,8 @@ class FastPredictionGenerator:
 def main():
     """メイン処理"""
     import argparse
+    from scripts.safety_check import safety_check
+    safety_check()
 
     parser = argparse.ArgumentParser(description='高速予想生成（キャッシュ最適化版）')
     parser.add_argument('--date', type=str, help='対象日（YYYY-MM-DD）。未指定の場合は今日')

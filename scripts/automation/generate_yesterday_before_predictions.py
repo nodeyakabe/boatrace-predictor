@@ -16,6 +16,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.prediction.predictor_helpers import create_standard_predictor
+from src.database.data_manager import DataManager
 from config.settings import DATABASE_PATH
 import sqlite3
 
@@ -42,6 +43,7 @@ def generate_yesterday_before_predictions(force: bool = False, target_date: str 
 
     try:
         predictor = create_standard_predictor(use_cache=True)
+        data_manager = DataManager()
 
         # BatchDataLoaderにデータをロード
         if predictor.batch_loader:
@@ -67,7 +69,29 @@ def generate_yesterday_before_predictions(force: bool = False, target_date: str 
 
         print(f"対象日のレース数: {len(races)}")
 
-        # 直前予想を生成
+        race_ids = [r['id'] for r in races]
+        placeholders = ','.join(['?'] * len(race_ids))
+
+        # 直前情報（exhibition_time）の有無を一括チェック（N+1クエリを解消）
+        cursor.execute(
+            f"SELECT DISTINCT race_id FROM race_details"
+            f" WHERE race_id IN ({placeholders}) AND exhibition_time IS NOT NULL",
+            race_ids
+        )
+        has_beforeinfo_ids = {row[0] for row in cursor.fetchall()}
+
+        # 既存のbefore予測の有無を一括チェック（forceでない場合のみ）
+        existing_before_ids = set()
+        if not force:
+            cursor.execute(
+                f"SELECT DISTINCT race_id FROM race_predictions"
+                f" WHERE prediction_type = 'before' AND race_id IN ({placeholders})",
+                race_ids
+            )
+            existing_before_ids = {row[0] for row in cursor.fetchall()}
+
+        conn.close()
+
         success_count = 0
         skip_count = 0
         errors = []
@@ -76,25 +100,13 @@ def generate_yesterday_before_predictions(force: bool = False, target_date: str 
             race_id = race['id']
 
             try:
-                # 直前情報があるかチェック
-                cursor.execute("""
-                    SELECT COUNT(*) FROM race_details
-                    WHERE race_id = ? AND exhibition_time IS NOT NULL
-                """, (race_id,))
-                has_beforeinfo = cursor.fetchone()[0] > 0
-
-                if not has_beforeinfo:
+                # 直前情報がないレースはスキップ
+                if race_id not in has_beforeinfo_ids:
                     skip_count += 1
                     continue
 
-                # 既存の直前予想をチェック
-                cursor.execute("""
-                    SELECT COUNT(*) FROM race_predictions
-                    WHERE race_id = ? AND prediction_type = 'before'
-                """, (race_id,))
-                before_exists = cursor.fetchone()[0] > 0
-
-                if before_exists and not force:
+                # 既存のbefore予測があり、forceでない場合はスキップ
+                if race_id in existing_before_ids:
                     skip_count += 1
                     continue
 
@@ -102,59 +114,18 @@ def generate_yesterday_before_predictions(force: bool = False, target_date: str 
                 predictions = predictor.predict_race(race_id, use_beforeinfo=True)
 
                 if predictions and len(predictions) > 0:
-                    # DBに保存
-                    for pred in predictions:
-                        pred['race_id'] = race_id
-                        pred['prediction_type'] = 'before'
-
-                        # 既存の予想を削除（force=Trueの場合）
-                        if force:
-                            cursor.execute("""
-                                DELETE FROM race_predictions
-                                WHERE race_id = ? AND prediction_type = 'before'
-                            """, (race_id,))
-
-                        # 予想を挿入
-                        cursor.execute("""
-                            INSERT INTO race_predictions (
-                                race_id, pit_number, rank_prediction,
-                                total_score, confidence, racer_name, racer_number,
-                                applied_rules, created_at, course_score,
-                                racer_score, motor_score, kimarite_score,
-                                grade_score, prediction_type, generated_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            pred['race_id'],
-                            pred.get('pit_number'),
-                            pred.get('rank_prediction'),
-                            pred.get('total_score'),
-                            pred.get('confidence'),
-                            pred.get('racer_name'),
-                            pred.get('racer_number'),
-                            pred.get('applied_rules'),
-                            pred.get('created_at', datetime.now().isoformat()),
-                            pred.get('course_score'),
-                            pred.get('racer_score'),
-                            pred.get('motor_score'),
-                            pred.get('kimarite_score'),
-                            pred.get('grade_score'),
-                            pred.get('prediction_type', 'before'),
-                            pred.get('generated_at', datetime.now().isoformat())
-                        ))
-
-                    conn.commit()
-                    success_count += 1
-
-                    if success_count % 50 == 0:
-                        print(f"  進捗: {success_count}/{len(races)}")
+                    # DataManager経由で保存（環境要因減点も自動適用）
+                    # save_race_predictions は先にDELETEしてからINSERTするため force に対応済み
+                    if data_manager.save_race_predictions(race_id, predictions, prediction_type='before'):
+                        success_count += 1
+                        if success_count % 50 == 0:
+                            print(f"  進捗: {success_count}/{len(races)}")
 
             except Exception as e:
                 error_msg = f"直前予想生成エラー: race_id={race_id}, エラー={str(e)}"
                 errors.append(error_msg)
                 print(f"[WARNING] {error_msg}")
                 continue
-
-        conn.close()
 
         print(f"\n直前予想生成完了:")
         print(f"  生成成功: {success_count}レース")
@@ -175,6 +146,10 @@ def generate_yesterday_before_predictions(force: bool = False, target_date: str 
 def main():
     """メイン処理"""
     import argparse
+    from scripts.safety_check import safety_check
+
+    # 安全チェック（hierarchical_predictorが有効かを確認）
+    safety_check()
 
     parser = argparse.ArgumentParser(description='直前予想を生成（デフォルトは前日）')
     parser.add_argument('--force', action='store_true',

@@ -25,13 +25,17 @@
 | **DB構造** | [docs/architecture/DATABASE_SCHEMA.md](docs/architecture/DATABASE_SCHEMA.md) |
 | **データ収集** | [docs/guides/DATA_COLLECTION_MASTER.md](docs/guides/DATA_COLLECTION_MASTER.md) |
 
-### ⚠️ データ分析前の必読資料
+### ⚠️ データ分析・収集前の必読資料
 
 | 目的 | ドキュメント |
 |------|------------|
 | **データ分析前のチェックリスト** | [docs/guides/DATA_ANALYSIS_CHECKLIST.md](docs/guides/DATA_ANALYSIS_CHECKLIST.md) ⭐**必読** |
+| **データ収集依存関係チェーン** | [docs/guides/DATA_DEPENDENCY_CHAIN.md](docs/guides/DATA_DEPENDENCY_CHAIN.md) ⭐**パイプライン設計時必読** |
 
-**重要**: データ分析を開始する前に、必ずチェックリストで見落としがないか確認してください。
+**重要**:
+- データ分析前: チェックリストで見落としがないか確認
+- **データ収集パイプライン設計・entries/results追加後**: 依存関係チェーンを確認すること
+  （見落とし事例: entries/results追加後にkimarite/race_details/trifecta_oddsが未補完だった→2026-02-19判明）
 
 ### すぐに情報が必要なとき（★推奨）
 
@@ -84,6 +88,45 @@
 | 標準テスト（条件分析用） | `python scripts/backtest/standard_backtest.py --full` |
 | 知見検索 | `python scripts/search_knowledge.py "キーワード"` |
 | 知見DB統計 | `python scripts/query_knowledge_db.py --stats` |
+
+## 予測生成スクリプト（重要）⭐
+
+**2026-02-19更新**: バグ修正・高速化完了。以下のスクリプトを必ず使用すること。
+
+### 使い分け早見表
+
+| 用途 | スクリプト | コマンド例 |
+|------|-----------|----------|
+| **当日 before 予測**（展示後・毎日） | `fast_prediction_generator.py` | `python scripts/prediction/fast_prediction_generator.py --date 2026-02-19 --type before` |
+| **翌日 advance 予測**（前日夜・毎日） | `fast_prediction_generator.py` | `python scripts/prediction/fast_prediction_generator.py --date 2026-02-20 --type advance` |
+| **年度一括 advance**（再生成等） | `generate_advance_fast.py` | `python scripts/prediction/generate_advance_fast.py --year 2025` |
+| **年度一括 before**（再生成等） | `generate_before_fast.py` | `python scripts/prediction/generate_before_fast.py --year 2025` |
+| **全年度まとめて自動生成** | `watch_and_generate_advance.py` | `python scripts/automation/watch_and_generate_advance.py --run-once` |
+
+### 詳細ルール
+
+```
+【毎日の運用】
+前日夜:  fast_prediction_generator.py --type advance  （翌日のadvance）
+当日朝:  fast_prediction_generator.py --type before   （展示後のbefore）
+
+【年度一括・再生成】
+削除してから:  generate_advance_fast.py --year XXXX
+               generate_before_fast.py  --year XXXX
+全年度まとめ:  watch_and_generate_advance.py --run-once  （未生成分のみ）
+
+【再生成（既存上書き）が必要な場合の手順】
+1. DBから対象年度の予測を削除（SQL）
+2. watch_and_generate_advance.py --run-once  or  年度別スクリプトを実行
+```
+
+### ⚠️ 使ってはいけないスクリプト（廃止済み・_deprecated フォルダに移動済み）
+
+| 格納先 | 理由 |
+|--------|------|
+| `scripts/automation/_deprecated/generate_year_predictions_fast.py` | 旧 before 生成（1日1サブプロセス方式）→ `generate_before_fast.py` に置き換え済み |
+| `scripts/prediction/_deprecated/regenerate_predictions_*.py` 系 | DataManager を使わない直接 INSERT → EnvironmentalPenaltySystem をバイパス |
+| `scripts/prediction/_deprecated/` 配下すべて（27ファイル） | 年度限定・旧世代スクリプト。現役3ファイルのみ使うこと |
 
 ## 標準テスト（重要）⭐
 
@@ -330,6 +373,24 @@ JOIN trifecta_odds t ON rp.race_id = t.race_id
 ## データ収集タスク（重要）
 
 **「データ収集」を依頼されたら必ず参照:**
+
+### ⚠️ entries/results を追加・補完したら必ず実行する後続処理【必須】
+
+> **2026-02-19 教訓**: overnight_pipeline設計時にこの依存関係を見落とし、kimarite/race_detailsが補完されない問題が発生（Opus検証で発見）。
+> entries/resultsを追加しただけでは「データ収集完了」ではない。
+
+```
+entries/results を追加/補完した
+  → 1. kimarite 補完（補完_決まり手データ_改善版.py）          ← 必須
+  → 2. race_details 補完（補完_レース詳細データ_改善版v4.py）   ← 必須
+  → 3. trifecta_odds 収集（fetch_odds_parallel_safe.py）        ← バックテストに必須
+  → 4. indicator_stats 再生成（build_indicator_stats.py）        ← 予測精度に影響
+  → 5. advance予測再生成（ウォッチャー自動 or generate_advance_fast.py）
+```
+
+詳細チェックリスト: [docs/guides/DATA_DEPENDENCY_CHAIN.md](docs/guides/DATA_DEPENDENCY_CHAIN.md)
+
+---
 
 ### クイックリファレンス
 

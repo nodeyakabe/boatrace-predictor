@@ -1,7 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-advance予測を高速生成するスクリプト（最適化版）
+before予測を高速生成するスクリプト（1プロセス最適化版）
+
+generate_year_predictions_fast.py（1日1サブプロセス方式）の代替。
+年度全体を1プロセスで処理し、年間約280回のサブプロセス起動コストを廃止。
+generate_advance_fast.py と同構造。
+
+- 展示タイムあり（exhibition_time）のレースのみ対象
 - 未生成分のみ処理（UPSERT方式で安全）
 - コマンドライン引数で年度指定
 - DB接続を再利用して高速化
@@ -29,22 +35,32 @@ from config.settings import DATABASE_PATH
 
 
 def get_remaining_races(year, start_date=None, end_date=None):
-    """未生成のレースを一括取得（削除せずUPSERT）"""
+    """before未生成のレースを一括取得（exhibition_timeありのみ）"""
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
 
     sd = start_date or f'{year}-01-01'
     ed = end_date   or f'{year}-12-31'
 
-    # 既存のadvance予測があるrace_idを一括取得（日付範囲指定対応）
+    # exhibition_timeがあるrace_idを一括取得
+    cursor.execute('''
+        SELECT DISTINCT rd.race_id
+        FROM race_details rd
+        JOIN races r ON rd.race_id = r.id
+        WHERE r.race_date >= ? AND r.race_date <= ?
+        AND rd.exhibition_time IS NOT NULL
+    ''', (sd, ed))
+    has_beforeinfo_ids = set(row[0] for row in cursor.fetchall())
+
+    # 既存のbefore予測があるrace_idを一括取得
     cursor.execute('''
         SELECT DISTINCT race_id FROM race_predictions
-        WHERE prediction_type = 'advance'
+        WHERE prediction_type = 'before'
         AND race_id IN (SELECT id FROM races WHERE race_date >= ? AND race_date <= ?)
     ''', (sd, ed))
     existing_ids = set(row[0] for row in cursor.fetchall())
 
-    # 対象範囲の全レースを取得
+    # 対象範囲の全レースを取得（日付順）
     cursor.execute('''
         SELECT id, race_date, venue_code, race_number
         FROM races
@@ -54,16 +70,18 @@ def get_remaining_races(year, start_date=None, end_date=None):
     all_races = cursor.fetchall()
     conn.close()
 
-    # 未生成のレースのみ抽出
-    remaining = [(r[0], r[1], r[2], r[3]) for r in all_races if r[0] not in existing_ids]
-    return remaining, len(all_races), len(existing_ids)
+    total_with_beforeinfo = sum(1 for r in all_races if r[0] in has_beforeinfo_ids)
+    already_done = len(has_beforeinfo_ids & existing_ids)
+    remaining = [(r[0], r[1], r[2], r[3]) for r in all_races
+                 if r[0] in has_beforeinfo_ids and r[0] not in existing_ids]
+    return remaining, total_with_beforeinfo, already_done
 
 
 def main():
     from scripts.safety_check import safety_check
     safety_check()
 
-    parser = argparse.ArgumentParser(description='advance予測を高速生成')
+    parser = argparse.ArgumentParser(description='before予測を高速生成（1プロセス方式）')
     parser.add_argument('--year', type=int, required=True, help='対象年度（例: 2023）')
     parser.add_argument('--start-date', type=str, default=None, help='開始日（YYYY-MM-DD）省略時は年初')
     parser.add_argument('--end-date',   type=str, default=None, help='終了日（YYYY-MM-DD）省略時は年末')
@@ -74,13 +92,13 @@ def main():
 
     range_str = f"{start_date or f'{year}-01-01'} 〜 {end_date or f'{year}-12-31'}"
     print("=" * 70)
-    print(f"{year}年 advance予測 高速生成  [{range_str}]")
-    print("未生成分のみ処理（既存データは保持）")
+    print(f"{year}年 before予測 高速生成  [{range_str}]")
+    print("展示タイムあり・未生成分のみ処理（既存データは保持）")
     print("=" * 70)
 
-    remaining_races, total_races, already_done = get_remaining_races(year, start_date, end_date)
+    remaining_races, total_with_beforeinfo, already_done = get_remaining_races(year, start_date, end_date)
 
-    print(f"総レース数: {total_races:,}件")
+    print(f"展示タイムあり: {total_with_beforeinfo:,}件")
     print(f"生成済み: {already_done:,}件")
     print(f"残り: {len(remaining_races):,}件")
     print()
@@ -116,9 +134,9 @@ def main():
                 predictor.batch_loader.load_daily_data(race_date)
 
         try:
-            predictions = predictor.predict_race(race_id, use_beforeinfo=False)
+            predictions = predictor.predict_race(race_id, use_beforeinfo=True)
             if predictions:
-                data_manager.save_race_predictions(race_id, predictions, prediction_type='advance')
+                data_manager.save_race_predictions(race_id, predictions, prediction_type='before')
                 success_count += 1
                 if success_count % 100 == 0:
                     print('.', end='', flush=True)

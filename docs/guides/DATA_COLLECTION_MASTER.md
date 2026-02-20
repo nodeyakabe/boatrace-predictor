@@ -1,7 +1,27 @@
 # データ収集マスターガイド
 
-**最終更新**: 2026-02-13
+**最終更新**: 2026-02-19
 **対象**: Claude Codeがデータ収集タスクを実行する際の完全リファレンス
+
+---
+
+## ⭐ 重要：データ収集の依存関係チェーン
+
+**パイプライン設計時・データ補完後は必ず確認すること:**
+
+→ **[DATA_DEPENDENCY_CHAIN.md](DATA_DEPENDENCY_CHAIN.md)** ⭐
+
+**entries/resultsを追加したら、以下も必要:**
+```
+entries/results 追加
+  → kimarite 補完が必要（補完_決まり手データ_改善版.py）
+  → race_details 補完が必要（補完_レース詳細データ_改善版v4.py）
+  → trifecta_odds 収集が必要（fetch_odds_parallel_safe.py）★バックテスト必須
+  → indicator_stats 再生成が必要（build_indicator_stats.py）
+  → advance 予測再生成が必要（generate_advance_fast.py）
+```
+
+**この依存関係を見落とすと → 後続データが欠損したままバックテストが動く**
 
 ---
 

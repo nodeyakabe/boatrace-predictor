@@ -107,6 +107,11 @@ def get_race_ids_for_condition(
         """
         bias_clause = f"AND pbs.bias_index IS NOT NULL AND pbs.bias_index < {cond['bias_max']} "
 
+    # スコア差フィルター（rp1.total_score - rp2.total_score >= min_score_gap）
+    score_gap_clause = ""
+    if cond.get('min_score_gap') is not None:
+        score_gap_clause = f"AND (rp1.total_score - rp2.total_score) >= {cond['min_score_gap']}"
+
     # モーター連帯率フィルター
     motor_rate_join = ""
     motor_rate_clause = ""
@@ -115,6 +120,15 @@ def get_race_ids_for_condition(
         LEFT JOIN entries e_motor ON r.id = e_motor.race_id AND e_motor.pit_number = rp1.pit_number
         """
         motor_rate_clause = f"AND e_motor.motor_second_rate >= {cond['p1_motor_second_rate_min']} "
+
+    # 予測1位選手のavg_stフィルター（TJ-3: STタイム安定度）
+    avg_st_join = ""
+    avg_st_clause = ""
+    if cond.get('p1_avg_st_max') is not None:
+        avg_st_join = """
+        LEFT JOIN entries e_avgst ON r.id = e_avgst.race_id AND e_avgst.pit_number = rp1.pit_number
+        """
+        avg_st_clause = f"AND e_avgst.avg_st IS NOT NULL AND e_avgst.avg_st <= {cond['p1_avg_st_max']} "
 
     # パターンHの場合は5位までの予測が必要（INNER JOINでrp5まで）
     use_pattern_h = cond.get('use_pattern_h', True)
@@ -134,6 +148,7 @@ def get_race_ids_for_condition(
         {escape_rate_join}
         {bias_join}
         {motor_rate_join}
+        {avg_st_join}
         WHERE rp.rank_prediction = 1
         {confidence_clause}
         AND e1.racer_rank IN ({c1_ranks_str})
@@ -149,6 +164,8 @@ def get_race_ids_for_condition(
         {escape_rate_clause}
         {bias_clause}
         {motor_rate_clause}
+        {score_gap_clause}
+        {avg_st_clause}
         """
     else:
         # 1点買い: 3位までの予測でOK
@@ -163,6 +180,7 @@ def get_race_ids_for_condition(
         {escape_rate_join}
         {bias_join}
         {motor_rate_join}
+        {avg_st_join}
         WHERE rp.rank_prediction = 1
         {confidence_clause}
         AND e1.racer_rank IN ({c1_ranks_str})
@@ -178,6 +196,8 @@ def get_race_ids_for_condition(
         {escape_rate_clause}
         {bias_clause}
         {motor_rate_clause}
+        {score_gap_clause}
+        {avg_st_clause}
         """
 
     cursor.execute(query)

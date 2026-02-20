@@ -77,6 +77,7 @@ class BatchDataLoader:
         self._load_course_entry_tendency_batch(target_date)
         self._load_session_performance_batch(target_date)
         self._load_previous_race_batch(target_date)
+        self._load_race_conditions_batch(target_date)
 
         self._cache_loaded = True
         print(f"[BatchDataLoader] データ取得完了")
@@ -85,8 +86,7 @@ class BatchDataLoader:
         """
         その日のレース情報とエントリー情報を一括取得
         """
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = self._connect()
         cursor = conn.cursor()
 
         # レース情報を取得
@@ -1100,24 +1100,31 @@ class BatchDataLoader:
 
         racer_venue_features = defaultdict(dict)
 
-        # 各組み合わせの最新データを取得
+        # 会場ごとにグループ化してバッチクエリ（N+1解消）
+        from collections import defaultdict as _dd
+        venue_racers = _dd(list)
         for racer_num, venue_code in racer_venue_pairs:
-            cursor.execute("""
-                SELECT
-                    venue_win_rate,
-                    venue_avg_rank,
-                    venue_races
-                FROM racer_venue_features
-                WHERE racer_number = ?
-                  AND venue_code = ?
-                  AND race_date <= ?
-                ORDER BY race_date DESC
-                LIMIT 1
-            """, [racer_num, venue_code, target_date])
+            venue_racers[venue_code].append(racer_num)
 
-            row = cursor.fetchone()
-            if row:
-                racer_venue_features[racer_num][venue_code] = {
+        for venue_code, racer_numbers in venue_racers.items():
+            placeholders = ','.join('?' * len(racer_numbers))
+            cursor.execute(f"""
+                SELECT racer_number, venue_win_rate, venue_avg_rank, venue_races
+                FROM (
+                    SELECT racer_number, venue_win_rate, venue_avg_rank, venue_races,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY racer_number
+                               ORDER BY race_date DESC
+                           ) as rn
+                    FROM racer_venue_features
+                    WHERE racer_number IN ({placeholders})
+                      AND venue_code = ?
+                      AND race_date <= ?
+                ) WHERE rn = 1
+            """, racer_numbers + [venue_code, target_date])
+
+            for row in cursor.fetchall():
+                racer_venue_features[row['racer_number']][venue_code] = {
                     'venue_win_rate': row['venue_win_rate'],
                     'venue_avg_rank': row['venue_avg_rank'],
                     'venue_races': row['venue_races']
@@ -1203,30 +1210,40 @@ class BatchDataLoader:
 
         session_performance = defaultdict(dict)
 
-        # 各組み合わせの節間成績を取得
+        # 会場ごとにグループ化してバッチクエリ（N+1解消）
+        from collections import defaultdict as _dd
+        venue_racers = _dd(list)
         for racer_num, venue_code in racer_venue_pairs:
-            cursor.execute('''
-                SELECT res.rank, r.race_date, r.race_number
+            venue_racers[venue_code].append(racer_num)
+
+        for venue_code, racer_numbers in venue_racers.items():
+            placeholders = ','.join('?' * len(racer_numbers))
+            cursor.execute(f'''
+                SELECT e.racer_number, res.rank, r.race_date, r.race_number,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY e.racer_number
+                           ORDER BY r.race_date DESC, r.race_number DESC
+                       ) as rn
                 FROM entries e
                 JOIN races r ON e.race_id = r.id
                 LEFT JOIN results res ON res.race_id = r.id AND res.pit_number = e.pit_number
-                WHERE e.racer_number = ?
+                WHERE e.racer_number IN ({placeholders})
                   AND r.venue_code = ?
                   AND r.race_date < ?
                   AND r.race_date >= date(?, '-7 days')
                   AND res.rank IS NOT NULL
                   AND res.rank NOT IN ('F', 'L', '欠', '失')
-                ORDER BY r.race_date DESC, r.race_number DESC
-                LIMIT 12
-            ''', [racer_num, venue_code, target_date, target_date])
+            ''', racer_numbers + [venue_code, target_date, target_date])
 
-            results = cursor.fetchall()
-
-            if results:
-                session_performance[racer_num][venue_code] = [
-                    {'rank': row['rank'], 'race_date': row['race_date'], 'race_number': row['race_number']}
-                    for row in results
-                ]
+            rows = cursor.fetchall()
+            for row in rows:
+                if row['rn'] <= 12:
+                    racer_num = row['racer_number']
+                    if venue_code not in session_performance[racer_num]:
+                        session_performance[racer_num][venue_code] = []
+                    session_performance[racer_num][venue_code].append(
+                        {'rank': row['rank'], 'race_date': row['race_date'], 'race_number': row['race_number']}
+                    )
 
         self._cache['session_performance'] = dict(session_performance)
         cursor.close()
@@ -1254,20 +1271,24 @@ class BatchDataLoader:
             cursor.close()
             return
 
-        # 一括で全選手の前走を取得（サブクエリで最新を特定）
+        # 一括で全選手の前走を取得（DB側でrn=1フィルタして転送量を削減）
         placeholders = ','.join('?' * len(racer_numbers))
         query = f"""
-            SELECT
-                e.racer_number,
-                r.race_grade,
-                res.rank,
-                r.race_date,
-                ROW_NUMBER() OVER (PARTITION BY e.racer_number ORDER BY r.race_date DESC, r.race_number DESC) as rn
-            FROM entries e
-            JOIN races r ON e.race_id = r.id
-            LEFT JOIN results res ON res.race_id = r.id AND res.pit_number = e.pit_number
-            WHERE e.racer_number IN ({placeholders})
-              AND r.race_date < ?
+            SELECT racer_number, race_grade, rank, race_date
+            FROM (
+                SELECT
+                    e.racer_number,
+                    r.race_grade,
+                    res.rank,
+                    r.race_date,
+                    ROW_NUMBER() OVER (PARTITION BY e.racer_number ORDER BY r.race_date DESC, r.race_number DESC) as rn
+                FROM entries e
+                JOIN races r ON e.race_id = r.id
+                LEFT JOIN results res ON res.race_id = r.id AND res.pit_number = e.pit_number
+                WHERE e.racer_number IN ({placeholders})
+                  AND r.race_date < ?
+            )
+            WHERE rn = 1
         """
 
         cursor.execute(query, racer_numbers + [target_date])
@@ -1275,17 +1296,51 @@ class BatchDataLoader:
         previous_race = {}
         for row in cursor.fetchall():
             racer_num = row['racer_number']
-            rn = row['rn'] if 'rn' in row.keys() else row[4]  # ROW_NUMBER
-
-            # 各選手の最新（rn=1）のみ保持
-            if rn == 1:
-                previous_race[racer_num] = {
-                    'prev_grade': row['race_grade'],
-                    'prev_rank': row['rank'],
-                    'prev_date': row['race_date']
-                }
+            previous_race[racer_num] = {
+                'prev_grade': row['race_grade'],
+                'prev_rank': row['rank'],
+                'prev_date': row['race_date']
+            }
 
         self._cache['previous_race'] = previous_race
+        cursor.close()
+
+    def _load_race_conditions_batch(self, target_date: str) -> None:
+        """
+        レース気象条件を一括取得（race_conditions テーブル）
+
+        predict_race() が毎レースごとに実行していた race_conditions クエリを
+        日次1回のバッチ取得に置き換えるため追加。
+        """
+        conn = self._connect()
+        cursor = conn.cursor()
+
+        race_ids = list(self._cache.get('races', {}).keys())
+        if not race_ids:
+            self._cache['race_conditions'] = {}
+            cursor.close()
+            return
+
+        placeholders = ','.join('?' * len(race_ids))
+        cursor.execute(f"""
+            SELECT race_id, wind_speed, wave_height, wind_direction,
+                   temperature, water_temperature, weather
+            FROM race_conditions
+            WHERE race_id IN ({placeholders})
+        """, race_ids)
+
+        race_conditions = {}
+        for row in cursor.fetchall():
+            race_conditions[row['race_id']] = {
+                'wind_speed': row['wind_speed'],
+                'wave_height': row['wave_height'],
+                'wind_direction': row['wind_direction'],
+                'temperature': row['temperature'],
+                'water_temperature': row['water_temperature'],
+                'weather': row['weather'],
+            }
+
+        self._cache['race_conditions'] = race_conditions
         cursor.close()
 
     # 新しいゲッターメソッド
@@ -1337,3 +1392,7 @@ class BatchDataLoader:
     def get_race_entries(self, race_id: int) -> List[Dict]:
         """エントリー情報を取得（キャッシュから）"""
         return self._cache.get('entries', {}).get(race_id, [])
+
+    def get_race_conditions(self, race_id: int) -> Optional[Dict]:
+        """レース気象条件を取得（キャッシュから）"""
+        return self._cache.get('race_conditions', {}).get(race_id)

@@ -29,7 +29,7 @@ if sys.platform == 'win32':
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 DB_PATH = PROJECT_ROOT / "data" / "boatrace.db"
 ADVANCE_SCRIPT = PROJECT_ROOT / "scripts" / "prediction" / "generate_advance_fast.py"
-YEAR_PRED_SCRIPT = PROJECT_ROOT / "scripts" / "automation" / "generate_year_predictions_fast.py"
+BEFORE_SCRIPT  = PROJECT_ROOT / "scripts" / "prediction" / "generate_before_fast.py"
 
 
 def get_target_years():
@@ -48,32 +48,32 @@ def get_target_years():
 
 
 def get_collection_metrics():
-    """DBの現在の補完状況を取得"""
+    """DBの現在の補完状況を取得（動的・全年度合計）"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     metrics = {}
 
-    # 2022年エントリー数
-    cursor.execute("SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id WHERE r.race_date LIKE '2022%'")
-    metrics['entries_2022'] = cursor.fetchone()[0]
+    # 全期間エントリー数（2020年以降）
+    cursor.execute(
+        "SELECT COUNT(*) FROM entries e JOIN races r ON e.race_id = r.id"
+        " WHERE r.race_date >= '2020-01-01'"
+    )
+    metrics['total_entries'] = cursor.fetchone()[0]
 
-    # 決まり手データ数（2021, 2023, 2024年）
-    for yr in ['2021', '2023', '2024']:
-        cursor.execute(
-            "SELECT COUNT(*) FROM results res"
-            " JOIN races r ON res.race_id = r.id"
-            " WHERE r.race_date LIKE ? AND res.kimarite IS NOT NULL AND res.kimarite != ''",
-            (f'{yr}%',)
-        )
-        metrics[f'kimarite_{yr}'] = cursor.fetchone()[0]
+    # 全期間 決まり手データ数（2020年以降）
+    cursor.execute(
+        "SELECT COUNT(*) FROM results res JOIN races r ON res.race_id = r.id"
+        " WHERE r.race_date >= '2020-01-01'"
+        " AND res.kimarite IS NOT NULL AND res.kimarite != ''"
+    )
+    metrics['total_kimarite'] = cursor.fetchone()[0]
 
-    # 2024年 race_conditions数
-    cursor.execute("""
-        SELECT COUNT(*) FROM race_conditions rc
-        JOIN races r ON rc.race_id = r.id
-        WHERE r.race_date LIKE '2024%'
-    """)
-    metrics['conditions_2024'] = cursor.fetchone()[0]
+    # 全期間 race_conditions数（2020年以降）
+    cursor.execute(
+        "SELECT COUNT(*) FROM race_conditions rc JOIN races r ON rc.race_id = r.id"
+        " WHERE r.race_date >= '2020-01-01'"
+    )
+    metrics['total_conditions'] = cursor.fetchone()[0]
 
     conn.close()
     return metrics
@@ -109,7 +109,7 @@ def get_prediction_stats():
         LEFT JOIN (
             SELECT DISTINCT race_id FROM race_predictions WHERE prediction_type = 'before'
         ) rp_b ON r.id = rp_b.race_id
-        WHERE r.race_date BETWEEN '2020-01-01' AND '2025-12-31'
+        WHERE r.race_date >= '2020-01-01'
         GROUP BY year ORDER BY year
     """)
     rows = cursor.fetchall()
@@ -183,11 +183,9 @@ def main():
             cutoff = now - args.stable_minutes * 60 * 2
             metrics_history = [(ts, m) for ts, m in metrics_history if ts > cutoff]
 
-            log(f"エントリー2022:{current_metrics['entries_2022']:,} | "
-                f"決まり手 2021:{current_metrics['kimarite_2021']:,} "
-                f"2023:{current_metrics['kimarite_2023']:,} "
-                f"2024:{current_metrics['kimarite_2024']:,} | "
-                f"条件2024:{current_metrics['conditions_2024']:,}")
+            log(f"エントリー:{current_metrics['total_entries']:,} | "
+                f"決まり手:{current_metrics['total_kimarite']:,} | "
+                f"条件:{current_metrics['total_conditions']:,}")
 
             if metrics_stable(metrics_history, args.stable_minutes):
                 log(f"✅ {args.stable_minutes}分間変化なし → データ補完完了と判定")
@@ -246,17 +244,7 @@ def main():
                     log(f"[{yr}年/before] ✅ 生成済み（スキップ）")
                     continue
                 log(f"[{yr}年/before] 開始（残り{remaining:,}件）")
-                cmd = [sys.executable, str(YEAR_PRED_SCRIPT), "--year", str(yr), "--type", "before"]
-                year_start = time.time()
-                try:
-                    proc = subprocess.run(cmd, encoding='utf-8', errors='replace')
-                    elapsed = time.time() - year_start
-                    if proc.returncode == 0:
-                        log(f"[{yr}年/before] ✅ 完了 ({elapsed/60:.1f}分)")
-                    else:
-                        log(f"[{yr}年/before] ❌ エラー（終了コード: {proc.returncode}）")
-                except KeyboardInterrupt:
-                    raise
+                run_year(BEFORE_SCRIPT, str(yr), "before")
         except KeyboardInterrupt:
             print("\n[!] before生成を中断しました。次回 --skip-advance で再開できます。")
             return 1
