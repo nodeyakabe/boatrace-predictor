@@ -232,8 +232,8 @@ def schedule_race_notifications():
         scheduled_count = 0
         for race in target_races:
             # 締切10分前の時刻を計算
-            race_time_str = race['deadline']  # "HH:MM:SS"
-            race_datetime = datetime.strptime(f"{race['date']} {race_time_str}", '%Y-%m-%d %H:%M:%S')
+            race_time_str = race['deadline']  # "HH:MM"
+            race_datetime = datetime.strptime(f"{race['date']} {race_time_str}", '%Y-%m-%d %H:%M')
             notification_time = race_datetime - timedelta(minutes=10)
 
             # 過去の時刻はスキップ

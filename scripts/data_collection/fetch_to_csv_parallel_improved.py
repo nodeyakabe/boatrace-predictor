@@ -128,8 +128,8 @@ def fetch_venue_day_parallel(args):
                 race_data['race_date'] = race_date_yyyymmdd
                 race_data['race_number'] = race_number
 
-                # 結果取得
-                result_data = result_scraper.get_race_result(venue_code, race_date_yyyymmdd, race_number)
+                # 結果取得（payouts含む完全版）
+                result_data = result_scraper.get_race_result_complete(venue_code, race_date_yyyymmdd, race_number)
 
                 # 過去レースで結果が不完全な場合は警告
                 if result_data and result_data.get('results'):
@@ -324,30 +324,36 @@ def save_to_csv(output_dir: Path, all_races_data: list):
 
                     # 結果データ
                     if result_data:
+                        # kimariteはレース単位でkimariteキーに格納されている
+                        winning_technique = result_data.get('kimarite') or result_data.get('winning_technique')
                         for result in result_data.get('results', []):
+                            rank = result.get('rank', '')
                             result_row = {
                                 'venue_code': venue_code,
                                 'race_date': race_date,
                                 'race_number': race_data.get('race_number'),
                                 'pit_number': result.get('pit_number'),
-                                'rank': result.get('rank', ''),
+                                'rank': rank,
                                 'is_invalid': 1 if result.get('is_invalid') else 0,
-                                'kimarite': result.get('kimarite', ''),
+                                'kimarite': winning_technique if rank == 1 else '',
                             }
                             writer_results.writerow(result_row)
 
-                        # 払戻金
-                        for payout in result_data.get('payouts', []):
-                            payout_row = {
-                                'venue_code': venue_code,
-                                'race_date': race_date,
-                                'race_number': race_data.get('race_number'),
-                                'bet_type': payout.get('bet_type', ''),
-                                'combination': payout.get('combination', ''),
-                                'amount': payout.get('amount'),
-                                'popularity': payout.get('popularity'),
-                            }
-                            writer_payouts.writerow(payout_row)
+                        # 払戻金（get_race_result_completeはdict形式: {bet_key: [list]}）
+                        for bet_key, payout_list in result_data.get('payouts', {}).items():
+                            for payout in payout_list:
+                                # win/placeはpit_number、それ以外はcombinationを使用
+                                combination_val = payout.get('combination') or str(payout.get('pit_number', ''))
+                                payout_row = {
+                                    'venue_code': venue_code,
+                                    'race_date': race_date,
+                                    'race_number': race_data.get('race_number'),
+                                    'bet_type': bet_key,
+                                    'combination': combination_val,
+                                    'amount': payout.get('amount'),
+                                    'popularity': payout.get('popularity'),
+                                }
+                                writer_payouts.writerow(payout_row)
 
                     saved_count += 1
 
@@ -365,6 +371,8 @@ def main():
     parser.add_argument('--end', type=str, required=True, help='終了日 (YYYY-MM-DD)')
     parser.add_argument('--output', type=str, required=True, help='出力ディレクトリ')
     parser.add_argument('--workers', type=int, default=12, help='並列数（デフォルト: 12）')
+    parser.add_argument('--brute-force', action='store_true',
+                        help='全24会場×全日付をブルートフォースで試行（スケジュールAPI不完全な過去期間向け）')
     args = parser.parse_args()
 
     output_dir = Path(args.output)
@@ -376,10 +384,26 @@ def main():
     print(f"期間: {args.start} - {args.end} ({len(dates)}日間)")
     print(f"出力先: {output_dir}")
     print(f"並列数: {args.workers}スレッド")
+    if args.brute_force:
+        print(f"モード: ブルートフォース（全24会場×全日付）")
     print()
 
-    # 開催スケジュール取得
-    date_schedule = get_schedule_for_period(args.start, args.end)
+    # スケジュール取得 or ブルートフォース
+    if args.brute_force:
+        # スケジュールAPIに依存せず全24会場×全日付を試行
+        all_venues = [f"{i:02d}" for i in range(1, 25)]
+        date_schedule = {}
+        for d in dates:
+            d_key = d.replace('-', '')
+            date_schedule[d_key] = all_venues
+        total_venue_days = len(dates) * 24
+        print(f"=== ブルートフォースモード ===")
+        print(f"  期間: {args.start} ～ {args.end}")
+        print(f"  全会場日数: {total_venue_days} ({len(dates)}日 × 24会場)")
+        print(f"  ※スケジュールAPIをスキップ。開催なしの会場はスキップされます")
+        print()
+    else:
+        date_schedule = get_schedule_for_period(args.start, args.end)
 
     # タスク作成（開催している会場のみ）
     tasks = []

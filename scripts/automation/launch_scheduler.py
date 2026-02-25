@@ -38,6 +38,7 @@ def main():
     with open(log_path, 'a', encoding='utf-8') as stdout_f, \
          open(err_path, 'a', encoding='utf-8') as stderr_f:
 
+        env = {**os.environ, "PYTHONUNBUFFERED": "1"}
         proc = subprocess.Popen(
             [sys.executable, str(scheduler_script)],
             stdout=stdout_f,
@@ -45,6 +46,7 @@ def main():
             cwd=str(PROJECT_ROOT),
             creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW,
             close_fds=True,
+            env=env,
         )
 
     print(f"スケジューラーを起動しました (PID: {proc.pid})")

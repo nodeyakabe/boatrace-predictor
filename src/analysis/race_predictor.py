@@ -188,6 +188,7 @@ class RacePredictor:
         self.race_data_cache = RaceDataCache()
 
         # 階層的確率モデル（条件付き確率ベースの三連単予測）
+        self._hierarchical_batch_cache = {}  # predict_races_batch用バッチキャッシュ
         self.hierarchical_predictor = None
         if HIERARCHICAL_MODEL_AVAILABLE:
             try:
@@ -706,49 +707,82 @@ class RacePredictor:
             logger.debug(f"Race {race_id}: 予測結果キャッシュヒット")
             return cached_prediction
 
-        # レース情報取得
+        # レース情報取得（キャッシュ優先、フォールバックでDB）
         import sqlite3
-        conn = get_connection(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        _use_batch_cache = self.batch_loader and self.batch_loader._cache_loaded
 
-        cursor.execute("SELECT venue_code, race_grade, race_date, race_time FROM races WHERE id = ?", (race_id,))
-        race_info = cursor.fetchone()
-
-        if not race_info:
+        if _use_batch_cache:
+            # BatchDataLoader キャッシュからレース情報を取得（DBクエリなし）
+            _cached_race = self.batch_loader.get_race_info(race_id)
+            if not _cached_race:
+                return []
+            venue_code = _cached_race['venue_code']
+            race_grade = _cached_race.get('race_grade') or '一般'
+            race_date = _cached_race['race_date']
+            race_time = _cached_race.get('race_time')
+        else:
+            conn = get_connection(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT venue_code, race_grade, race_date, race_time FROM races WHERE id = ?", (race_id,))
+            race_info = cursor.fetchone()
+            if not race_info:
+                cursor.close()
+                return []
+            venue_code = race_info['venue_code']
+            race_grade = race_info['race_grade'] if race_info['race_grade'] else '一般'
+            race_date = race_info['race_date']
+            race_time = race_info['race_time']
             cursor.close()
-            return []
 
-        venue_code = race_info['venue_code']
-        race_grade = race_info['race_grade'] if race_info['race_grade'] else '一般'
-        race_date = race_info['race_date']
-        race_time = race_info['race_time']
-
-        # 拡張スコア用にエントリー情報を取得（racer_rank, f_count, l_count, avg_st）
-        cursor.execute("""
-            SELECT pit_number, racer_number, racer_name, racer_rank,
-                   f_count, l_count, motor_number, win_rate, avg_st
-            FROM entries
-            WHERE race_id = ?
-            ORDER BY pit_number
-        """, (race_id,))
-        entry_rows = cursor.fetchall()
+        # 拡張スコア用にエントリー情報を取得（キャッシュ優先、フォールバックでDB）
         entry_data = {}
         race_entries_for_matchup = []
-        for row in entry_rows:
-            entry_dict = {
-                'pit_number': row['pit_number'],
-                'racer_number': row['racer_number'],
-                'racer_name': row['racer_name'],
-                'racer_rank': row['racer_rank'],
-                'f_count': row['f_count'],
-                'l_count': row['l_count'],
-                'motor_number': row['motor_number'],
-                'win_rate': row['win_rate'],
-                'avg_st': row['avg_st']  # 平均STを追加
-            }
-            entry_data[row['pit_number']] = entry_dict
-            race_entries_for_matchup.append(entry_dict)
+
+        if _use_batch_cache:
+            # BatchDataLoader キャッシュから取得（DBクエリなし）
+            _cached_entries = self.batch_loader.get_race_entries(race_id)
+            for e in _cached_entries:
+                entry_dict = {
+                    'pit_number': e['pit_number'],
+                    'racer_number': e['racer_number'],
+                    'racer_name': e.get('racer_name'),
+                    'racer_rank': e.get('racer_rank'),
+                    'f_count': e.get('f_count'),
+                    'l_count': e.get('l_count'),
+                    'motor_number': e.get('motor_number'),
+                    'win_rate': e.get('win_rate'),
+                    'avg_st': e.get('avg_st')
+                }
+                entry_data[e['pit_number']] = entry_dict
+                race_entries_for_matchup.append(entry_dict)
+        else:
+            conn = get_connection(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT pit_number, racer_number, racer_name, racer_rank,
+                       f_count, l_count, motor_number, win_rate, avg_st
+                FROM entries
+                WHERE race_id = ?
+                ORDER BY pit_number
+            """, (race_id,))
+            entry_rows = cursor.fetchall()
+            for row in entry_rows:
+                entry_dict = {
+                    'pit_number': row['pit_number'],
+                    'racer_number': row['racer_number'],
+                    'racer_name': row['racer_name'],
+                    'racer_rank': row['racer_rank'],
+                    'f_count': row['f_count'],
+                    'l_count': row['l_count'],
+                    'motor_number': row['motor_number'],
+                    'win_rate': row['win_rate'],
+                    'avg_st': row['avg_st']
+                }
+                entry_data[row['pit_number']] = entry_dict
+                race_entries_for_matchup.append(entry_dict)
+            cursor.close()
 
         # 天候データを取得（race_conditions優先、fallbackでweather）
         wind_speed = None
@@ -759,16 +793,20 @@ class RacePredictor:
         weather_condition = None
 
         # まず race_conditions から取得を試みる（キャッシュ優先、フォールバックでDB）
-        if self.batch_loader and self.batch_loader._cache_loaded:
+        if _use_batch_cache:
             weather_row = self.batch_loader.get_race_conditions(race_id)
         else:
+            conn = get_connection(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
             cursor.execute("""
                 SELECT wind_speed, wave_height, wind_direction, temperature, water_temperature, weather
                 FROM race_conditions WHERE race_id = ?
             """, (race_id,))
             weather_row = cursor.fetchone()
+            cursor.close()
 
-        if weather_row and weather_row['wind_speed'] is not None:
+        if weather_row and weather_row.get('wind_speed') is not None:
             wind_speed = weather_row['wind_speed']
             wave_height = weather_row['wave_height']
             wind_direction = weather_row['wind_direction']
@@ -777,6 +815,9 @@ class RacePredictor:
             weather_condition = weather_row['weather']
         else:
             # fallback: weather テーブルから取得
+            conn = get_connection(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
             cursor.execute("""
                 SELECT wind_speed, wave_height, wind_direction, temperature, water_temperature, weather_condition
                 FROM weather
@@ -790,8 +831,7 @@ class RacePredictor:
                 temperature = weather_row['temperature']
                 water_temperature = weather_row['water_temperature']
                 weather_condition = weather_row['weather_condition']
-
-        cursor.close()
+            cursor.close()
 
         # 選手・モーター分析
         racer_analyses = self.racer_analyzer.analyze_race_entries(race_id)
@@ -1214,7 +1254,12 @@ class RacePredictor:
         # 階層的確率モデルによる三連単予測を追加（機能フラグとモデルがある場合のみ）
         if is_feature_enabled('hierarchical_predictor') and self.hierarchical_predictor is not None:
             try:
-                hierarchical_result = self.hierarchical_predictor.predict_race(race_id)
+                # バッチキャッシュがある場合はそこから取得（predict_races_batch経由の呼び出し）
+                _batch_cache = getattr(self, '_hierarchical_batch_cache', {})
+                if race_id in _batch_cache:
+                    hierarchical_result = _batch_cache[race_id]
+                else:
+                    hierarchical_result = self.hierarchical_predictor.predict_race(race_id)
                 if 'error' not in hierarchical_result:
                     # 各予測に三連単確率情報を追加
                     rank_probs = hierarchical_result.get('rank_probs', {})
@@ -1252,6 +1297,60 @@ class RacePredictor:
             )
 
         return predictions
+
+    def predict_races_batch(self, race_ids: List[int],
+                            use_beforeinfo: bool = True) -> Dict[int, List[Dict]]:
+        """
+        複数レースの予測を一括処理（バッチ推論高速化版）
+
+        1日分の全レースをまとめて処理し、以下の最適化を行う:
+        - HierarchicalPredictor（LightGBM Stage1/2/3）の一括バッチ推論
+        - 事前バッチ推論結果をキャッシュし、predict_race()内で再利用
+
+        BatchDataLoaderが load_daily_data() で日次キャッシュ済みの前提。
+
+        Args:
+            race_ids: レースIDのリスト（同一日のレース群を想定）
+            use_beforeinfo: 直前情報を使用するか
+
+        Returns:
+            {race_id: 予測結果リスト} の辞書
+        """
+        if not race_ids:
+            return {}
+
+        results = {}
+
+        # ==== Phase 1: HierarchicalPredictor の一括バッチ推論 ====
+        # predict_race() 内で呼ばれる hierarchical_predictor.predict_race() を
+        # 事前にバッチ推論し、結果をキャッシュに保存しておく
+        hierarchical_batch_results = {}
+        if (self.hierarchical_predictor is not None and
+                hasattr(self.hierarchical_predictor, 'predict_races_batch')):
+            try:
+                from config.feature_flags import is_feature_enabled as _ife
+                if _ife('hierarchical_predictor'):
+                    hierarchical_batch_results = self.hierarchical_predictor.predict_races_batch(race_ids)
+            except Exception:
+                pass
+
+        # HierarchicalPredictor の結果をキャッシュに保存
+        # predict_race() 内で hierarchical_predictor.predict_race() を呼ぶ代わりに
+        # このキャッシュから取得する
+        self._hierarchical_batch_cache = hierarchical_batch_results
+
+        # ==== Phase 2: 各レースのスコアリング ====
+        for race_id in race_ids:
+            try:
+                predictions = self.predict_race(race_id, use_beforeinfo=use_beforeinfo)
+                results[race_id] = predictions
+            except Exception:
+                results[race_id] = []
+
+        # キャッシュをクリア
+        self._hierarchical_batch_cache = {}
+
+        return results
 
     def _apply_rule_based_adjustment(
         self,

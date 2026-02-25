@@ -194,6 +194,43 @@ def start_watcher():
         log("ウォッチャー起動失敗", 'ERR')
 
 # ─────────────── スクリプト実行 ───────────────
+def _kill_process_tree(pid):
+    """プロセスツリーを丸ごとkill（孤児プロセス防止）
+
+    タイムアウト時にproc.kill()だけでは子プロセスが孤児として残る問題への対策。
+    psutilを使って子プロセスを再帰的に列挙し、全てkillする。
+
+    2026-02-20追加: race_details補完がタイムアウト後も孤児として動き続け、
+    次のSTEPと競合するインシデントが発生したため。
+    """
+    try:
+        parent = psutil.Process(pid)
+        children = parent.children(recursive=True)
+        # 子プロセスから先にterminate
+        for child in children:
+            try:
+                child.terminate()
+            except psutil.NoSuchProcess:
+                pass
+        # 親もterminate
+        try:
+            parent.terminate()
+        except psutil.NoSuchProcess:
+            pass
+        # 3秒待ってまだ生きていたらkill
+        _, alive = psutil.wait_procs(children + [parent], timeout=3)
+        for p in alive:
+            try:
+                p.kill()
+            except psutil.NoSuchProcess:
+                pass
+        log(f"  プロセスツリー停止完了: PID={pid}, 子プロセス={len(children)}個")
+    except psutil.NoSuchProcess:
+        pass
+    except Exception as e:
+        log(f"  プロセスツリー停止エラー: {e}", 'WARN')
+
+
 def run(cmd, label, timeout_hours=3):
     """サブスクリプトを実行して結果を返す"""
     log(f"[{label}] 開始...")
@@ -214,9 +251,13 @@ def run(cmd, label, timeout_hours=3):
             log(f"[{label}] 終了コード {proc.returncode} ({elapsed:.0f}分)", 'WARN')
             return False
     except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait()
-        log(f"[{label}] タイムアウト ({timeout_hours}h)", 'ERR')
+        log(f"[{label}] タイムアウト ({timeout_hours}h) - プロセスツリーを停止中...", 'ERR')
+        _kill_process_tree(proc.pid)
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
         return False
     except Exception as e:
         log(f"[{label}] 例外: {e}", 'ERR')
@@ -295,6 +336,14 @@ def main():
     # =========================================================
     # STEP 7: 2020年9-12月の欠損データ補完
     # ─ APIから直接取得（shell races → 実データに更新）
+    #
+    # ⚠️ 注意（2026-02-20追記）:
+    #   fetch_historical_data_parallel.pyはスケジュールAPIに依存するため、
+    #   過去データ（2020-2022年）ではスケジュールAPIが不完全な会場をスキップする。
+    #   この結果、補完効果が限定的になる可能性がある。
+    #   スケジュールAPIが不完全な場合は、代わりに
+    #   fetch_to_csv_parallel_improved.py --brute-force を使用すること。
+    #   詳細: docs/guides/DATA_DEPENDENCY_CHAIN.md「スケジュールAPIの制約」
     # =========================================================
     # シェルレース補完対象（日付フォーマットは全てYYYY-MM-DD形式で問題なし）
     # 2020年9-12月: 13,272件、2021年11-12月: 6,828件、2022年8-12月: 16,583件
@@ -333,11 +382,13 @@ def main():
         # ─ STEP 7でentries/resultsが追加されたレース分を補完
         # =====================================================
         log_sep('STEP 7c: race_details補完（2020/2021/2022年）')
+        # 2026-02-20修正: 2021年が4hタイムアウトで失敗した反省から8hに拡張
+        # collect_all_data_complete内で4h×2リトライ=最大8hが動作できるよう調整
         for year in [2020, 2021, 2022]:
             run(
                 [py, str(COLLECT_ALL), '--step', 'race_details', '--year', str(year)],
                 f'race_details {year}年',
-                timeout_hours=4,
+                timeout_hours=8,
             )
     else:
         log('STEP 7/7b/7c: シェルレース補完スキップ（--skip-2020-補完）')

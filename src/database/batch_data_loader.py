@@ -89,9 +89,9 @@ class BatchDataLoader:
         conn = self._connect()
         cursor = conn.cursor()
 
-        # レース情報を取得
+        # レース情報を取得（race_time も含める）
         cursor.execute('''
-            SELECT id, venue_code, race_date, race_number, race_grade
+            SELECT id, venue_code, race_date, race_number, race_grade, race_time
             FROM races
             WHERE race_date = ?
         ''', [target_date])
@@ -103,7 +103,8 @@ class BatchDataLoader:
                 'venue_code': row['venue_code'],
                 'race_date': row['race_date'],
                 'race_number': row['race_number'],
-                'race_grade': row['race_grade']
+                'race_grade': row['race_grade'],
+                'race_time': row['race_time']
             }
 
         self._cache['races'] = races
@@ -122,11 +123,15 @@ class BatchDataLoader:
                 e.pit_number,
                 e.racer_number,
                 e.racer_name,
+                e.racer_rank,
                 e.motor_number,
                 e.boat_number,
                 e.motor_second_rate,
                 e.local_win_rate,
                 e.win_rate,
+                e.f_count,
+                e.l_count,
+                e.avg_st,
                 rd.actual_course
             FROM entries e
             LEFT JOIN race_details rd ON e.race_id = rd.race_id AND e.pit_number = rd.pit_number
@@ -144,11 +149,15 @@ class BatchDataLoader:
                 'pit_number': row['pit_number'],
                 'racer_number': row['racer_number'],
                 'racer_name': row['racer_name'],
+                'racer_rank': row['racer_rank'],
                 'motor_number': row['motor_number'],
                 'boat_number': row['boat_number'],
                 'motor_second_rate': row['motor_second_rate'],
                 'local_win_rate': row['local_win_rate'],
                 'win_rate': row['win_rate'],
+                'f_count': row['f_count'],
+                'l_count': row['l_count'],
+                'avg_st': row['avg_st'],
                 'actual_course': row['actual_course']
             })
 

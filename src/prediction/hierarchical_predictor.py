@@ -116,6 +116,85 @@ class HierarchicalPredictor:
             'predicted_at': datetime.now().isoformat(),
         }
 
+    def predict_races_batch(self, race_ids: List,
+                            use_conditional_model: bool = True) -> Dict:
+        """
+        複数レースの予測を一括で行う（マルチレースバッチ推論）
+
+        全レース分の特徴量を集めてLightGBMに1回で投入し、
+        レース単位の predict_proba 呼び出しオーバーヘッドを排除する。
+
+        Args:
+            race_ids: レースIDのリスト
+            use_conditional_model: 条件付きモデルを使用するか
+
+        Returns:
+            {race_id: 予測結果Dict} の辞書
+        """
+        if not race_ids:
+            return {}
+
+        # モデル読み込み
+        if use_conditional_model and not self._model_loaded:
+            self.load_models()
+
+        # 各レースの特徴量を取得
+        features_list = []
+        valid_race_ids = []
+        race_id_to_idx = {}
+
+        for race_id in race_ids:
+            features_df = self._get_race_features(race_id)
+            if features_df is not None and len(features_df) == 6:
+                race_id_to_idx[race_id] = len(features_list)
+                features_list.append(features_df)
+                valid_race_ids.append(race_id)
+            else:
+                race_id_to_idx[race_id] = -1  # invalid
+
+        results = {}
+
+        # エラーレースの結果を先に設定
+        for race_id in race_ids:
+            if race_id_to_idx[race_id] == -1:
+                results[race_id] = {'error': f'レースデータ取得失敗: {race_id}'}
+
+        if not features_list:
+            return results
+
+        # 条件付きモデルで一括推論（optimized版のcalculate_multi_raceを使用）
+        if use_conditional_model and self._model_loaded and hasattr(self.trifecta_calculator, 'calculate_multi_race'):
+            all_trifecta_probs = self.trifecta_calculator.calculate_multi_race(features_list)
+        else:
+            # フォールバック: 個別計算
+            all_trifecta_probs = []
+            for features_df in features_list:
+                if use_conditional_model and self._model_loaded:
+                    probs = self.trifecta_calculator.calculate(features_df)
+                else:
+                    first_probs = self._calculate_naive_first_probs(features_df)
+                    probs = NaiveTrifectaCalculator.calculate(first_probs)
+                all_trifecta_probs.append(probs)
+
+        # 結果を構築
+        predicted_at = datetime.now().isoformat()
+        for i, race_id in enumerate(valid_race_ids):
+            trifecta_probs = all_trifecta_probs[i]
+            top_combinations = self.trifecta_calculator.get_top_combinations(trifecta_probs, top_n=20)
+            rank_probs = self._calculate_rank_probs(trifecta_probs)
+
+            results[race_id] = {
+                'race_id': race_id,
+                'trifecta_probs': trifecta_probs,
+                'top_combinations': top_combinations,
+                'positive_ev_bets': [],  # バッチではオッズ計算をスキップ
+                'rank_probs': rank_probs,
+                'model_used': 'conditional' if (use_conditional_model and self._model_loaded) else 'naive',
+                'predicted_at': predicted_at,
+            }
+
+        return results
+
     def predict_race_from_features(self, features_df: pd.DataFrame,
                                     use_conditional_model: bool = True) -> Dict:
         """

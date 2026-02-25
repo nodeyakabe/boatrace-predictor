@@ -91,7 +91,7 @@
 
 ## 予測生成スクリプト（重要）⭐
 
-**2026-02-19更新**: バグ修正・高速化完了。以下のスクリプトを必ず使用すること。
+**2026-02-20更新**: CSV方式に移行。DB一括削除不要・中断耐性あり。
 
 ### 使い分け早見表
 
@@ -102,22 +102,61 @@
 | **年度一括 advance**（再生成等） | `generate_advance_fast.py` | `python scripts/prediction/generate_advance_fast.py --year 2025` |
 | **年度一括 before**（再生成等） | `generate_before_fast.py` | `python scripts/prediction/generate_before_fast.py --year 2025` |
 | **全年度まとめて自動生成** | `watch_and_generate_advance.py` | `python scripts/automation/watch_and_generate_advance.py --run-once` |
+| **CSV単独投入**（確認後に手動投入） | `import_predictions_csv.py` | `python scripts/prediction/import_predictions_csv.py --dir data/predictions_csv/advance/2025` |
 
 ### 詳細ルール
 
 ```
-【毎日の運用】
+【毎日の運用】（DB直接保存、従来通り）
 前日夜:  fast_prediction_generator.py --type advance  （翌日のadvance）
 当日朝:  fast_prediction_generator.py --type before   （展示後のbefore）
 
-【年度一括・再生成】
-削除してから:  generate_advance_fast.py --year XXXX
-               generate_before_fast.py  --year XXXX
-全年度まとめ:  watch_and_generate_advance.py --run-once  （未生成分のみ）
+【年度一括・再生成】（CSV方式、DB削除不要）
+通常:       generate_advance_fast.py --year XXXX   （Phase 1 CSV書き出し → Phase 2 DB投入）
+            generate_before_fast.py  --year XXXX
+全年度まとめ: watch_and_generate_advance.py --run-once  （未生成分のみ）
 
 【再生成（既存上書き）が必要な場合の手順】
-1. DBから対象年度の予測を削除（SQL）
-2. watch_and_generate_advance.py --run-once  or  年度別スクリプトを実行
+※ CSV方式なのでDB事前削除は不要。そのまま実行するだけで ON CONFLICT DO UPDATE により上書き。
+1. generate_advance_fast.py --year XXXX  を実行（既存予測を自動上書き）
+2. generate_before_fast.py  --year XXXX  を実行
+
+【段階的実行（CSVを手動確認してからDB投入したい場合）】
+1. generate_advance_fast.py --year XXXX --csv-only   （Phase 1のみ: CSV書き出し、DB無変更）
+2. CSV確認: data/predictions_csv/advance/XXXX/YYYY-MM-DD.csv
+3. import_predictions_csv.py --dir data/predictions_csv/advance/XXXX   （Phase 2: DB投入）
+   ※ --dry-run で件数確認のみも可能
+```
+
+### 年度一括スクリプトの内部フロー（CSV方式）
+
+```
+generate_advance_fast.py / generate_before_fast.py の処理:
+
+Phase 1: 予測計算 → CSV書き出し（DBに触れない）
+  - 対象日付の既存CSVを削除（重複追記防止）
+  - predictor.predict_race() で予測計算
+  - data/predictions_csv/{advance|before}/YYYY/YYYY-MM-DD.csv に書き出し
+
+Phase 2: CSV → DB UPSERT投入
+  - INSERT INTO ... ON CONFLICT(race_id, pit_number, prediction_type) DO UPDATE SET ...
+  - 既存行の id・created_at を保持したまま上書き（INSERT OR REPLACE と異なる点）
+  - 1ファイル=1日分を順次投入
+```
+
+### CSVファイルの場所
+
+```
+data/predictions_csv/
+  advance/
+    2025/
+      2025-01-01.csv   ← 1日1ファイル（6艇 × レース数 行）
+      2025-01-02.csv
+      ...
+  before/
+    2025/
+      2025-01-01.csv
+      ...
 ```
 
 ### ⚠️ 使ってはいけないスクリプト（廃止済み・_deprecated フォルダに移動済み）
@@ -384,11 +423,53 @@ entries/results を追加/補完した
   → 1. kimarite 補完（補完_決まり手データ_改善版.py）          ← 必須
   → 2. race_details 補完（補完_レース詳細データ_改善版v4.py）   ← 必須
   → 3. trifecta_odds 収集（fetch_odds_parallel_safe.py）        ← バックテストに必須
-  → 4. indicator_stats 再生成（build_indicator_stats.py）        ← 予測精度に影響
+  → 4. 統計指標再生成（build_indicator_stats.py）                ← 予測精度に影響
+          ⚠️ 実テーブル名: player_escape_stats（選手別逃げ率）, stadium_attack_stats（会場別まくり率）
+          ⚠️「indicator_stats」というテーブルは存在しない（概念名のみ。検索しても0件になる）
   → 5. advance予測再生成（ウォッチャー自動 or generate_advance_fast.py）
 ```
 
 詳細チェックリスト: [docs/guides/DATA_DEPENDENCY_CHAIN.md](docs/guides/DATA_DEPENDENCY_CHAIN.md)
+
+---
+
+### ⚠️ スケジュールAPIの過去データ欠損について【必読】
+
+> **2026-02-20 教訓**: スケジュールAPIが返す過去の開催情報が不完全だったため、シェルレースを「ゴーストデータ（実在しない）」と誤判断しそうになった。
+> Opus上位AIがrace_details/trifecta_oddsの存在を確認して阻止。
+
+**背景**: `ScheduleScraper`（`src/scraper/schedule_scraper.py`）は `boatrace.jp/owpc/pc/race/monthlyschedule` から月間スケジュールをスクレイピングする。このページは**過去データ（特に2020-2022年）の開催情報が不完全**で、実際には開催されていた会場が返されないことがある。
+
+**絶対にやってはいけないこと**:
+- 「スケジュールAPIにない会場のレース = ゴーストデータ（実在しない）」と判断してはならない
+- entries/resultsがないracesをゴーストデータと見なして削除してはならない
+
+**データ削除前の必須確認手順**:
+```sql
+-- racesに対してrace_details/trifecta_oddsが存在するか確認
+-- 存在する場合、そのレースは実在する（削除は危険）
+SELECT COUNT(*) FROM race_details rd
+WHERE rd.race_id IN (
+  SELECT r.id FROM races r
+  LEFT JOIN entries e ON r.id = e.race_id
+  WHERE e.race_id IS NULL
+);
+
+SELECT COUNT(*) FROM trifecta_odds t
+WHERE t.race_id IN (
+  SELECT r.id FROM races r
+  LEFT JOIN entries e ON r.id = e.race_id
+  WHERE e.race_id IS NULL
+);
+```
+
+**過去期間の正しい補完方法**:
+- `fetch_historical_data_parallel.py` はスケジュールAPIに依存するため、過去データの補完には不十分
+- 過去データ（2020-2022年）の補完には必ず `--brute-force` オプションを使う:
+  ```bash
+  python scripts/data_collection/fetch_to_csv_parallel_improved.py \
+    --start 2020-09-01 --end 2020-12-31 --output data/csv/2020_補完 --brute-force
+  ```
 
 ---
 
@@ -399,11 +480,12 @@ entries/results を追加/補完した
 | **過去全データ（2020-2025）** | `python scripts/data_collection/auto_fetch_2020_2025.py` |
 | **特定期間のデータ** ✅ **開催スケジュール最適化済み** | `python scripts/data_collection/fetch_historical_data_parallel.py --start 2024-01-01 --end 2024-12-31` |
 | **大量CSV収集（DB負荷なし）** ✅ **開催スケジュール最適化済み** | `python scripts/data_collection/fetch_to_csv_parallel_improved.py --start 2020-01-01 --end 2020-12-31 --output data/csv/2020` |
+| **過去データ補完（2020-2022年等）** ⚠️ **ブルートフォース必須** | `python scripts/data_collection/fetch_to_csv_parallel_improved.py --start 2020-09-01 --end 2020-12-31 --output data/csv/補完 --brute-force` |
 | **決まり手補完** | `python scripts/data_collection/補完_決まり手データ_改善版.py` |
 | **レース詳細補完** | `python scripts/data_collection/補完_レース詳細データ_改善版v4.py` |
 | **オッズ収集** | `python scripts/data_collection/fetch_odds_parallel_safe.py --start 2024-01-01 --end 2024-12-31` |
 | **本日の直前情報** | `python scripts/data_collection/fetch_today_beforeinfo.py` |
-| **統計指標生成** | `python scripts/data_collection/build_indicator_stats.py --year 2024` |
+| **統計指標生成** ⚠️実テーブル=player_escape_stats/stadium_attack_stats | `python scripts/data_collection/build_indicator_stats.py --year 2024` |
 
 ### 基本原則
 

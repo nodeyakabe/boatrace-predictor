@@ -326,7 +326,9 @@ def step_race_details(year):
         '--start-date', f'{year}-01-01',
         '--end-date',   f'{year}-12-31',
     ]
-    return run_script(cmd, f'{year}年/race_details', timeout_sec=7200, max_retries=3)
+    # 2026-02-20修正: 2021年が2h×3リトライで外側overnight_pipeline 4hタイムアウトに
+    # 引っかかった問題を解消。4h×2リトライ=最大8h（overnight_pipeline STEP 7c: 8h）
+    return run_script(cmd, f'{year}年/race_details', timeout_sec=14400, max_retries=2)
 
 
 # ─────────────── 保留CSV インポート ───────────────

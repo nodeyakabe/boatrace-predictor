@@ -38,9 +38,10 @@ races（レース基本情報）
        ├→ advance予測            ← generate_advance_fast.py ★entries+results+kimarite+race_detailsが前提
        └→ before予測             ← generate_advance_fast.py ★beforeinfoも前提
 
-indicator_stats（統計指標）       ← build_indicator_stats.py ★results全体から再集計
-  ├→ player_escape_stats（逃げ率）
-  └→ stadium_attack_stats（まくり率・差し率）
+統計指標（概念名: indicator_stats）← build_indicator_stats.py ★results全体から再集計
+  ⚠️ 「indicator_stats」というDBテーブルは存在しない。実テーブルは以下:
+  ├→ player_escape_stats（選手別逃げ率）     ← SELECT name FROM sqlite_master で確認可
+  └→ stadium_attack_stats（会場別まくり率・差し率）
 ```
 
 ### スクリプト別取得データ範囲
@@ -83,10 +84,11 @@ indicator_stats（統計指標）       ← build_indicator_stats.py ★results�
   ```
   ※ オッズがないレースはバックテストで除外される（買い目特定不可）
 
-- [ ] **indicator_stats を再生成したか** ← 予測精度に影響
+- [ ] **統計指標を再生成したか** ← 予測精度に影響
   ```bash
   python scripts/data_collection/build_indicator_stats.py --year XXXX
   ```
+  > ⚠️ 実テーブル名は `player_escape_stats` / `stadium_attack_stats`。「indicator_stats」というテーブルは存在しない。
 
 ### 予測生成チェック
 
@@ -145,6 +147,122 @@ python scripts/data_collection/build_indicator_stats.py --year 2022
 
 ---
 
+## ⚠️ スケジュールAPIの制約【必読】
+
+> **2026-02-20 教訓**: スケジュールAPIの過去データ不完全性により、実在するレースを「ゴーストデータ」と誤判断するインシデントが発生。
+
+### 根本原因
+
+`ScheduleScraper`（`src/scraper/schedule_scraper.py`）は `boatrace.jp` の月間スケジュールページをスクレイピングしている。このページは**現在〜直近の開催情報は正確だが、過去のデータ（特に2020-2022年）は一部の会場しか返さない**ことがある。
+
+例: 2020年9月1日のスケジュールAPIが `venue=03,06` のみ返す → 実際には6-7会場で開催されていた
+
+### 影響を受けるスクリプト
+
+| スクリプト | スケジュールAPI依存 | 過去データの問題 |
+|-----------|:-----------------:|:-------------:|
+| `fetch_historical_data_parallel.py` | **はい（常に）** | 補完が不完全になる |
+| `fetch_to_csv_parallel_improved.py` | デフォルトはい、`--brute-force`でスキップ可能 | `--brute-force`で回避可能 |
+| `auto_fetch_2020_2025.py` | **はい** | 同上 |
+
+### 確認方法
+
+スケジュールAPIの返却が正しいかどうかを確認するには、DBの既存データと比較する:
+
+```sql
+-- ある日に実際にレースが存在する会場を確認
+SELECT DISTINCT venue_code
+FROM races
+WHERE race_date = '2020-09-01'
+ORDER BY venue_code;
+
+-- スケジュールAPIが返す会場数 vs DB上の会場数を比較
+-- DBの方が多い場合、スケジュールAPIが不完全
+```
+
+### 過去期間の正しい補完方法
+
+**スケジュールAPIが不完全な期間（2020-2022年等）のデータ補完には`--brute-force`オプションを使う**:
+
+```bash
+# 全24会場×全日付をブルートフォースで試行（開催なし会場は自動スキップ）
+python scripts/data_collection/fetch_to_csv_parallel_improved.py \
+  --start 2020-09-01 --end 2020-12-31 \
+  --output data/csv/2020_補完 \
+  --brute-force
+```
+
+---
+
+## ⚠️ シェルレースの扱い【データ削除前に必読】
+
+> **2026-02-20 教訓**: entries/resultsがないracesを「ゴーストデータ（実在しないレース）」と誤判断し、削除しようとした。race_detailsが220,098件、trifecta_oddsが3,553,590件存在していたため、上位AIが阻止した。
+
+### シェルレースとは
+
+racesテーブルに行があるが、entries/resultsが未取得の状態。以下の原因で発生する:
+- 過去のスクリプトでスケジュール登録のみ実行され、実データ取得が失敗した
+- **スケジュールAPIの過去データ不完全性**により、補完スクリプトがその会場をスキップした
+
+### 絶対にやってはいけないこと
+
+- entries/resultsがないからといって「このレースは実在しない」と判断してはならない
+- race_details/trifecta_oddsが存在するレースを削除してはならない
+
+### データ削除前の必須確認SQL
+
+```sql
+-- 1. entries/resultsがないracesの件数を確認
+SELECT COUNT(*) AS shell_races
+FROM races r
+LEFT JOIN entries e ON r.id = e.race_id
+WHERE e.race_id IS NULL;
+
+-- 2. そのうちrace_detailsが存在するレースの件数（存在 = 実データ = 削除禁止）
+SELECT COUNT(*) FROM race_details rd
+WHERE rd.race_id IN (
+  SELECT r.id FROM races r
+  LEFT JOIN entries e ON r.id = e.race_id
+  WHERE e.race_id IS NULL
+);
+
+-- 3. そのうちtrifecta_oddsが存在するレースの件数（存在 = 実データ = 削除禁止）
+SELECT COUNT(*) FROM trifecta_odds t
+WHERE t.race_id IN (
+  SELECT r.id FROM races r
+  LEFT JOIN entries e ON r.id = e.race_id
+  WHERE e.race_id IS NULL
+);
+
+-- 4. 年度・月別のシェルレース分布
+SELECT
+  strftime('%Y', race_date) AS year,
+  strftime('%m', race_date) AS month,
+  COUNT(*) AS shell_count
+FROM races r
+LEFT JOIN entries e ON r.id = e.race_id
+WHERE e.race_id IS NULL
+GROUP BY year, month
+ORDER BY year, month;
+```
+
+**判断基準**:
+- race_details/trifecta_oddsが**1件でも存在する** → そのレースは実在する → **削除禁止**
+- entries/resultsの補完が必要（`--brute-force`オプションで補完する）
+
+### 正しい対応フロー
+
+```
+シェルレースを発見した
+  → 1. 上記SQLでrace_details/trifecta_oddsの存在を確認
+  → 2. 存在する場合: entries/resultsの補完が必要（--brute-forceで取得）
+  → 3. 存在しない場合: 本当にゴーストデータの可能性があるが、
+       boatrace.jpで該当日の開催を手動確認してから判断
+  → 4. 削除は最終手段。まず補完を試みる
+```
+
+---
+
 ## パイプライン設計時のレビューチェックリスト
 
 新しいデータ収集パイプラインを設計する際は、以下を確認する:
@@ -152,7 +270,8 @@ python scripts/data_collection/build_indicator_stats.py --year 2022
 1. **entries/resultsを追加するSTEPの後に、kimarite/race_detailsのSTEPがあるか**
 2. **対象年度・期間が全STEPで一致しているか（ある年度だけ漏れていないか）**
 3. **オッズ収集が必要なデータを補完したか（バックテストで使用するなら必須）**
-4. **indicator_statsの再生成が必要か（大量のresults追加後は必要）**
+4. **統計指標（player_escape_stats/stadium_attack_stats）の再生成が必要か（大量のresults追加後は必要）**
+   ※ スクリプト名は `build_indicator_stats.py`、テーブル名は `player_escape_stats` / `stadium_attack_stats`
 5. **collect_all_data_complete.pyのSTEPS順序（fetch_csv→import_db→kimarite→race_details）と同じパターンが再現されているか**
 
 ---

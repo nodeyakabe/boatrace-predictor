@@ -508,6 +508,14 @@ class TodayPredictionWorkflow:
         )
 
         if os.path.exists(script_path):
+            # レース数に応じた動的タイムアウト
+            # 通常: 180レース × 2-3秒 = 360-540秒
+            # 遅延時: 180レース × 9秒 = 1620秒（2/25実績）
+            # 安全マージン込みで レース数 × 10秒、最低1200秒（20分）
+            race_count = self._count_today_races()
+            timeout_seconds = max(1200, race_count * 10)
+            logger.info(f"予測生成開始: {race_count}レース, タイムアウト={timeout_seconds}秒")
+
             try:
                 result = subprocess.run(
                     [sys.executable, script_path, '--date', target_date],
@@ -515,14 +523,17 @@ class TodayPredictionWorkflow:
                     encoding='utf-8',
                     errors='replace',  # デコードエラーを無視
                     cwd=self.project_root,
-                    timeout=600
+                    timeout=timeout_seconds
                 )
                 if result.returncode == 0:
                     self._update_progress("Step 5/6", "予測生成完了", 85)
                 else:
                     logger.warning(f"予測生成エラー: {result.stderr}")
             except subprocess.TimeoutExpired:
-                logger.warning("予測生成タイムアウト")
+                logger.warning(
+                    f"予測生成タイムアウト（{timeout_seconds}秒超過, "
+                    f"対象{race_count}レース）"
+                )
         else:
             logger.warning(f"スクリプトが見つかりません: {script_path}")
 

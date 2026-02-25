@@ -27,6 +27,20 @@
 | **payouts** | 払戻金 | (race_id, bet_type, combination) | amount | 117,897 | 89% |
 | **exhibition_data** | オリジナル展示 | (race_id, venue_code, pit_number) | tenji_exhibition_time, tenji_tilt | 861 | 1% |
 
+### 統計指標テーブル（★★）⚠️ 命名注意
+
+> **⚠️ 重要**: ドキュメントやスクリプト名で「indicator_stats」と書かれている場合、
+> **実際のDBテーブル名は「indicator_stats」ではない**。
+> `SELECT name FROM sqlite_master WHERE name='indicator_stats'` → **0件（存在しない）**
+> 「indicator_stats」は概念名。実テーブルは以下の2つ:
+
+| テーブル | 用途 | 主キー | よく使うカラム | 件数 | 充足率 |
+|---------|------|:------:|--------------|:----:|:-----:|
+| **player_escape_stats** | 選手別逃げ率（1コース勝率） | (racer_number, venue_code, year) | escape_rate, win_rate_1st | 104,757 | 100% |
+| **stadium_attack_stats** | 会場別まくり率・差し率 | (venue_code, year) | maki_rate, sashi_rate | 168 | 100% |
+
+> 生成コマンド: `python scripts/data_collection/build_indicator_stats.py --year 2024`
+
 ### 低重要テーブル（★）
 
 | テーブル | 用途 | 主キー | 件数 | 充足率 | 備考 |

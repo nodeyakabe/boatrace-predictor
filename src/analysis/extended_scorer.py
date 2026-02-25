@@ -93,6 +93,10 @@ class ExtendedScorer:
         self._escape_rate_cache = {}
         # 会場攻撃率キャッシュ（会場コードでキャッシュ）
         self._venue_attack_cache = {}
+        # モーター転覆ペナルティキャッシュ（(motor_number, venue_code) -> result）
+        self._capsizing_cache = {}
+        # 会場相性スコアキャッシュ（(racer_number, venue_code) -> result）
+        self._venue_affinity_cache = {}
 
     def calculate_escape_rate_score(
         self,
@@ -686,6 +690,11 @@ class ExtendedScorer:
                 'description': 'モーター番号なし'
             }
 
+        # キャッシュチェック（同じ日の同じモーター×会場は同じ結果）
+        cache_key = (motor_number, venue_code)
+        if cache_key in self._capsizing_cache:
+            return self._capsizing_cache[cache_key]
+
         conn = get_connection(self.db_path)
         cursor = conn.cursor()
 
@@ -725,13 +734,15 @@ class ExtendedScorer:
             capsizing_count = len(capsizing_events)
 
             if capsizing_count == 0:
-                return {
+                result = {
                     'penalty': 0.0,
                     'capsizing_count': 0,
                     'days_since_last': None,
                     'risk_level': 'none',
                     'description': '転覆履歴なし'
                 }
+                self._capsizing_cache[cache_key] = result
+                return result
 
             # 最新の転覆からの日数
             days_since_last = int(capsizing_events[0][3]) if capsizing_events else None
@@ -762,13 +773,15 @@ class ExtendedScorer:
             else:
                 desc = f'転覆履歴あり（{days_since_last}日前）※31日以上経過で影響なし'
 
-            return {
+            result = {
                 'penalty': round(total_penalty, 2),
                 'capsizing_count': capsizing_count,
                 'days_since_last': days_since_last,
                 'risk_level': risk_level,
                 'description': desc
             }
+            self._capsizing_cache[cache_key] = result
+            return result
 
         except Exception as e:
             # エラー時は安全側に倒す（ペナルティなし）
@@ -1621,12 +1634,16 @@ class ExtendedScorer:
             -5.0--2.0pt: やや苦手 → -1点
             -5.0pt以下: 苦手会場 → -3点
         """
-        conn = get_connection(self.db_path)
-        cursor = conn.cursor()
+        # キャッシュチェック（同一選手×会場×日付は同じ結果）
+        cache_key = (racer_number, venue_code, race_date, max_score)
+        if cache_key in self._venue_affinity_cache:
+            return self._venue_affinity_cache[cache_key]
 
-        try:
-            # パラメータで渡されていない場合はDBから取得
-            if local_win_rate is None or national_win_rate is None:
+        # パラメータで渡されていない場合はDBから取得
+        if local_win_rate is None or national_win_rate is None:
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+            try:
                 # 最新のentries情報から取得
                 cursor.execute('''
                     SELECT e.local_win_rate, e.win_rate
@@ -1645,7 +1662,7 @@ class ExtendedScorer:
 
                 if not row:
                     # データなしの場合は中立点
-                    return {
+                    result = {
                         'score': max_score * 0.5,
                         'affinity_diff': 0.0,
                         'local_win_rate': None,
@@ -1653,51 +1670,54 @@ class ExtendedScorer:
                         'affinity_level': 'unknown',
                         'description': '会場相性データなし'
                     }
+                    self._venue_affinity_cache[cache_key] = result
+                    return result
 
                 local_win_rate, national_win_rate = row
+            finally:
+                cursor.close()
 
-            # 会場相性差を計算（pt単位）
-            affinity_diff = local_win_rate - national_win_rate
+        # 会場相性差を計算（pt単位）
+        affinity_diff = local_win_rate - national_win_rate
 
-            # スコアリング（5段階評価）
-            if affinity_diff >= 5.0:
-                # 得意会場: +3点
-                score = max_score * 0.5 + 3.0
-                affinity_level = 'excellent'
-                desc = f'得意水面（+{affinity_diff:.1f}pt）'
-            elif affinity_diff >= 2.0:
-                # やや得意: +1点
-                score = max_score * 0.5 + 1.0
-                affinity_level = 'good'
-                desc = f'やや得意（+{affinity_diff:.1f}pt）'
-            elif affinity_diff >= -2.0:
-                # 標準: 中立点
-                score = max_score * 0.5
-                affinity_level = 'average'
-                sign = '+' if affinity_diff >= 0 else ''
-                desc = f'標準相性（{sign}{affinity_diff:.1f}pt）'
-            elif affinity_diff >= -5.0:
-                # やや苦手: -1点
-                score = max_score * 0.5 - 1.0
-                affinity_level = 'poor'
-                desc = f'やや苦手（{affinity_diff:.1f}pt）'
-            else:
-                # 苦手会場: -3点
-                score = max_score * 0.5 - 3.0
-                affinity_level = 'very_poor'
-                desc = f'苦手水面（{affinity_diff:.1f}pt）'
+        # スコアリング（5段階評価）
+        if affinity_diff >= 5.0:
+            # 得意会場: +3点
+            score = max_score * 0.5 + 3.0
+            affinity_level = 'excellent'
+            desc = f'得意水面（+{affinity_diff:.1f}pt）'
+        elif affinity_diff >= 2.0:
+            # やや得意: +1点
+            score = max_score * 0.5 + 1.0
+            affinity_level = 'good'
+            desc = f'やや得意（+{affinity_diff:.1f}pt）'
+        elif affinity_diff >= -2.0:
+            # 標準: 中立点
+            score = max_score * 0.5
+            affinity_level = 'average'
+            sign = '+' if affinity_diff >= 0 else ''
+            desc = f'標準相性（{sign}{affinity_diff:.1f}pt）'
+        elif affinity_diff >= -5.0:
+            # やや苦手: -1点
+            score = max_score * 0.5 - 1.0
+            affinity_level = 'poor'
+            desc = f'やや苦手（{affinity_diff:.1f}pt）'
+        else:
+            # 苦手会場: -3点
+            score = max_score * 0.5 - 3.0
+            affinity_level = 'very_poor'
+            desc = f'苦手水面（{affinity_diff:.1f}pt）'
 
-            return {
-                'score': round(max(0, min(max_score * 1.5, score)), 2),  # 範囲: 0 ~ max_score*1.5
-                'affinity_diff': round(affinity_diff, 2),
-                'local_win_rate': round(local_win_rate, 1),
-                'national_win_rate': round(national_win_rate, 1),
-                'affinity_level': affinity_level,
-                'description': desc
-            }
-
-        finally:
-            cursor.close()
+        result = {
+            'score': round(max(0, min(max_score * 1.5, score)), 2),  # 範囲: 0 ~ max_score*1.5
+            'affinity_diff': round(affinity_diff, 2),
+            'local_win_rate': round(local_win_rate, 1),
+            'national_win_rate': round(national_win_rate, 1),
+            'affinity_level': affinity_level,
+            'description': desc
+        }
+        self._venue_affinity_cache[cache_key] = result
+        return result
 
     def calculate_place_rate_score(
         self,
@@ -1843,6 +1863,7 @@ class ExtendedScorer:
         モーター特性分析
 
         モーターの詳細特性（加速/最高速/安定性）を分析
+        BatchDataLoaderのキャッシュがあればDBクエリなしで高速に計算。
 
         Args:
             motor_number: モーター番号
@@ -1852,11 +1873,47 @@ class ExtendedScorer:
         Returns:
             {'score': float, 'characteristics': dict, 'description': str}
         """
+        # BatchDataLoaderキャッシュから取得を試みる（DBクエリ回避）
+        if self.batch_loader and self.batch_loader._cache_loaded:
+            cached = self.batch_loader.get_motor_stats(venue_code, motor_number)
+            if cached:
+                races = cached.get('total_races', 0)
+                if races < 5:
+                    return {
+                        'score': max_score * 0.5,
+                        'characteristics': {},
+                        'races': races,
+                        'description': 'モーターデータ不足'
+                    }
+                win_rate = cached.get('win_rate', 0)
+                second_rate = cached.get('place_rate_2', 0)
+                score = min(max_score, max_score * (win_rate / 0.20))
+                characteristics = {
+                    'power': 'high' if win_rate > 0.15 else 'medium' if win_rate > 0.08 else 'low',
+                    'stability': 'high' if second_rate > 0.30 else 'medium' if second_rate > 0.20 else 'low'
+                }
+                return {
+                    'score': score,
+                    'characteristics': characteristics,
+                    'win_rate': round(win_rate * 100, 1),
+                    'second_rate': round(second_rate * 100, 1),
+                    'races': races,
+                    'description': f'勝率{win_rate*100:.1f}% ({races}走)'
+                }
+            else:
+                # キャッシュにないモーター → データ不足
+                return {
+                    'score': max_score * 0.5,
+                    'characteristics': {},
+                    'races': 0,
+                    'description': 'モーターデータ不足'
+                }
+
+        # フォールバック: DB直接クエリ
         conn = get_connection(self.db_path)
         cursor = conn.cursor()
 
         try:
-            # モーターの成績を取得
             cursor.execute('''
                 SELECT
                     e.motor_number,
@@ -1874,7 +1931,7 @@ class ExtendedScorer:
 
             row = cursor.fetchone()
 
-            if not row or row[3] < 5:  # 5レース未満はデータ不足
+            if not row or row[3] < 5:
                 return {
                     'score': max_score * 0.5,
                     'characteristics': {},
@@ -1886,10 +1943,8 @@ class ExtendedScorer:
             second_rate = row[2] or 0
             races = row[3]
 
-            # スコア計算（勝率ベース）
-            score = min(max_score, max_score * (win_rate / 0.20))  # 20%を最高評価
+            score = min(max_score, max_score * (win_rate / 0.20))
 
-            # 特性判定（簡易版）
             characteristics = {
                 'power': 'high' if win_rate > 0.15 else 'medium' if win_rate > 0.08 else 'low',
                 'stability': 'high' if second_rate > 0.30 else 'medium' if second_rate > 0.20 else 'low'

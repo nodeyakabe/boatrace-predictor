@@ -23,6 +23,8 @@ class DataManager:
 
     def __init__(self, db_path: str = "data/boatrace.db") -> None:
         self.db = Database(db_path)
+        self._env_cache = {}  # _get_race_environment のキャッシュ（race_id -> dict）
+        self._env_penalty_system = None  # EnvironmentalPenaltySystem のシングルトン
 
     def _validate_race_data(self, race_data: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """
@@ -917,7 +919,10 @@ class DataManager:
 
     def _get_race_environment(self, race_id: int) -> Dict:
         """
-        レースの環境情報を取得
+        レースの環境情報を取得（キャッシュ付き）
+
+        年度一括生成時に同じrace_idの環境情報を複数回取得することがあるため、
+        インスタンスレベルのキャッシュを使用してDBクエリを削減する。
 
         Args:
             race_id: レースID
@@ -925,6 +930,10 @@ class DataManager:
         Returns:
             環境情報の辞書
         """
+        # キャッシュチェック
+        if race_id in self._env_cache:
+            return self._env_cache[race_id]
+
         conn = None
         try:
             conn = self.db.connect()
@@ -945,7 +954,7 @@ class DataManager:
 
             row = cursor.fetchone()
             if row:
-                return {
+                result = {
                     'venue_code': row[0],
                     'race_time': row[1],
                     'wind_direction': row[2],
@@ -954,7 +963,7 @@ class DataManager:
                     'weather': row[5]
                 }
             else:
-                return {
+                result = {
                     'venue_code': None,
                     'race_time': None,
                     'wind_direction': None,
@@ -962,6 +971,11 @@ class DataManager:
                     'wave_height': None,
                     'weather': None
                 }
+
+            # キャッシュに保存（メモリ制限: 最大1万件）
+            if len(self._env_cache) < 10000:
+                self._env_cache[race_id] = result
+            return result
 
         except Exception as e:
             logger.error(f"環境情報取得エラー: {e}", exc_info=True)
@@ -978,7 +992,57 @@ class DataManager:
             if conn:
                 conn.close()
 
-    def save_race_predictions(self, race_id: int, predictions: List[Dict], prediction_type: str = 'advance') -> bool:
+    def _apply_environmental_penalty(self, predictions: List[Dict], race_id: int) -> List[Dict]:
+        """
+        BEFORE予想の信頼度Bに環境要因減点を適用する内部ヘルパー。
+        predictions リストを破壊的に変更して返す。
+        CSV出力・DB保存の両方から呼び出す共通ロジック。
+        """
+        try:
+            env_info = self._get_race_environment(race_id)
+            # EnvironmentalPenaltySystem をキャッシュ（毎回生成のコストを削減）
+            if self._env_penalty_system is None:
+                from ..analysis.environmental_penalty import EnvironmentalPenaltySystem
+                self._env_penalty_system = EnvironmentalPenaltySystem()
+            penalty_system = self._env_penalty_system
+        except Exception as e:
+            logger.warning(f"環境要因減点システム初期化エラー（スキップ）: {e}")
+            return predictions
+
+        for pred in predictions:
+            original_confidence = pred.get('confidence')
+            if original_confidence != 'B' or env_info.get('venue_code') is None:
+                continue
+            try:
+                result = penalty_system.should_accept_bet(
+                    venue_code=env_info['venue_code'],
+                    race_time=env_info['race_time'] or '12:00',
+                    wind_direction=env_info['wind_direction'],
+                    wind_speed=env_info['wind_speed'],
+                    wave_height=env_info['wave_height'],
+                    weather=env_info['weather'],
+                    original_score=pred.get('total_score', 100),
+                    min_threshold=0
+                )
+                adjusted_confidence = result['adjusted_confidence']
+                if adjusted_confidence != original_confidence:
+                    pred['confidence'] = adjusted_confidence
+                    logger.info(
+                        f"環境要因減点適用: race_id={race_id}, "
+                        f"pit={pred.get('pit_number')}, "
+                        f"元信頼度=B, 調整後={adjusted_confidence}, "
+                        f"減点={result['penalty']}pt, "
+                        f"元スコア={pred.get('total_score', 100):.1f}, "
+                        f"調整後スコア={result['adjusted_score']:.1f}"
+                    )
+            except Exception as e:
+                logger.warning(f"環境要因減点適用エラー（スキップ）: {e}")
+
+        return predictions
+
+    def save_race_predictions(self, race_id: int, predictions: List[Dict],
+                              prediction_type: str = 'advance',
+                              use_upsert: bool = False) -> bool:
         """
         レースの予想結果をデータベースに保存
 
@@ -998,6 +1062,8 @@ class DataManager:
                     ...
                 ]
             prediction_type: 予想タイプ ('advance': 事前予想, 'before': 直前予想)
+            use_upsert: True の場合、DELETE をスキップして INSERT OR REPLACE を使用。
+                        年度一括生成など再生成リスクを下げたい場合に指定する。
 
         Returns:
             保存成功: True, 失敗: False
@@ -1007,72 +1073,58 @@ class DataManager:
             conn = self.db.connect()
             cursor = conn.cursor()
 
-            # 既存の同タイプの予想データを削除（再生成の場合）
-            cursor.execute(
-                "DELETE FROM race_predictions WHERE race_id = ? AND prediction_type = ?",
-                (race_id, prediction_type)
-            )
+            if use_upsert:
+                # UPSERTモード: DELETE不要、UNIQUE制約(race_id, pit_number, prediction_type)で上書き
+                pass
+            else:
+                # 従来モード: 既存の同タイプの予想データを削除してからINSERT
+                cursor.execute(
+                    "DELETE FROM race_predictions WHERE race_id = ? AND prediction_type = ?",
+                    (race_id, prediction_type)
+                )
 
             # BEFORE予想の場合、環境要因減点システムを適用
-            env_info = None
-            penalty_system = None
+            # コピーを作って元データを汚さない（呼び出し元の predictions を破壊しないため）
             if prediction_type == 'before':
-                try:
-                    from ..analysis.environmental_penalty import EnvironmentalPenaltySystem
-                    env_info = self._get_race_environment(race_id)
-                    penalty_system = EnvironmentalPenaltySystem()
-                    logger.info(f"環境要因減点システム準備完了: race_id={race_id}")
-                except Exception as e:
-                    logger.warning(f"環境要因減点システム初期化エラー（スキップ）: {e}")
+                predictions = self._apply_environmental_penalty(
+                    [dict(p) for p in predictions], race_id
+                )
 
             # 予想データを保存
             from datetime import datetime
             generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-            for pred in predictions:
-                # 信頼度Bの予想に環境要因減点を適用（BEFORE予想のみ）
-                original_confidence = pred.get('confidence')
-                if (prediction_type == 'before' and
-                    original_confidence == 'B' and
-                    penalty_system is not None and
-                    env_info.get('venue_code') is not None):
+            sql = """
+                INSERT INTO race_predictions (
+                    race_id, pit_number, rank_prediction, total_score,
+                    confidence, racer_name, racer_number, applied_rules,
+                    course_score, racer_score, motor_score, kimarite_score, grade_score,
+                    prediction_type, generated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(race_id, pit_number, prediction_type) DO UPDATE SET
+                    rank_prediction = excluded.rank_prediction,
+                    total_score     = excluded.total_score,
+                    confidence      = excluded.confidence,
+                    racer_name      = excluded.racer_name,
+                    racer_number    = excluded.racer_number,
+                    applied_rules   = excluded.applied_rules,
+                    course_score    = excluded.course_score,
+                    racer_score     = excluded.racer_score,
+                    motor_score     = excluded.motor_score,
+                    kimarite_score  = excluded.kimarite_score,
+                    grade_score     = excluded.grade_score,
+                    generated_at    = excluded.generated_at
+            """ if use_upsert else """
+                INSERT INTO race_predictions (
+                    race_id, pit_number, rank_prediction, total_score,
+                    confidence, racer_name, racer_number, applied_rules,
+                    course_score, racer_score, motor_score, kimarite_score, grade_score,
+                    prediction_type, generated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
 
-                    try:
-                        # 環境要因減点を計算
-                        result = penalty_system.should_accept_bet(
-                            venue_code=env_info['venue_code'],
-                            race_time=env_info['race_time'] or '12:00',
-                            wind_direction=env_info['wind_direction'],
-                            wind_speed=env_info['wind_speed'],
-                            wave_height=env_info['wave_height'],
-                            weather=env_info['weather'],
-                            original_score=pred.get('total_score', 100),
-                            min_threshold=0  # 閾値チェックはしない（信頼度のみ調整）
-                        )
-
-                        # 調整後の信頼度を適用
-                        adjusted_confidence = result['adjusted_confidence']
-                        if adjusted_confidence != original_confidence:
-                            pred['confidence'] = adjusted_confidence
-                            logger.info(
-                                f"環境要因減点適用: race_id={race_id}, "
-                                f"pit={pred.get('pit_number')}, "
-                                f"元信頼度=B, 調整後={adjusted_confidence}, "
-                                f"減点={result['penalty']}pt, "
-                                f"元スコア={pred.get('total_score', 100):.1f}, "
-                                f"調整後スコア={result['adjusted_score']:.1f}"
-                            )
-                    except Exception as e:
-                        logger.warning(f"環境要因減点適用エラー（スキップ）: {e}")
-
-                cursor.execute("""
-                    INSERT INTO race_predictions (
-                        race_id, pit_number, rank_prediction, total_score,
-                        confidence, racer_name, racer_number, applied_rules,
-                        course_score, racer_score, motor_score, kimarite_score, grade_score,
-                        prediction_type, generated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
+            rows = [
+                (
                     race_id,
                     pred.get('pit_number'),
                     pred.get('rank_prediction'),
@@ -1087,8 +1139,11 @@ class DataManager:
                     pred.get('kimarite_score', 0),
                     pred.get('grade_score', 0),
                     prediction_type,
-                    generated_at
-                ))
+                    generated_at,
+                )
+                for pred in predictions
+            ]
+            cursor.executemany(sql, rows)
 
             conn.commit()
             logger.info(f"予想データ保存完了: race_id={race_id}, type={prediction_type}, {len(predictions)}件")
@@ -1099,6 +1154,156 @@ class DataManager:
             if conn:
                 conn.rollback()
             return False
+
+        finally:
+            if conn:
+                conn.close()
+
+    def save_predictions_to_csv(self, race_id: int, predictions: List[Dict],
+                                prediction_type: str, csv_path: str) -> bool:
+        """
+        予想結果をCSVファイルに追記保存する。
+        BEFORE予想の場合は EnvironmentalPenaltySystem を適用済みの状態で書き出す。
+        CSV→DB投入は import_predictions_from_csv() で行う。
+
+        Args:
+            race_id: レースID
+            predictions: 予想結果のリスト
+            prediction_type: 'advance' or 'before'
+            csv_path: 書き出し先CSVパス（存在しない場合はヘッダー付きで新規作成）
+
+        Returns:
+            成功: True, 失敗: False
+        """
+        import csv
+        import os
+        from datetime import datetime
+
+        try:
+            # BEFORE予想の場合、環境要因減点を適用（CSV上にpenalty適用済みを記録）
+            if prediction_type == 'before':
+                predictions = self._apply_environmental_penalty(
+                    [dict(p) for p in predictions],  # コピーして元データを汚さない
+                    race_id
+                )
+
+            generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            dirname = os.path.dirname(csv_path)
+            if dirname:
+                os.makedirs(dirname, exist_ok=True)
+
+            file_exists = os.path.exists(csv_path)
+            fieldnames = [
+                'race_id', 'pit_number', 'rank_prediction', 'total_score',
+                'confidence', 'racer_name', 'racer_number', 'applied_rules',
+                'course_score', 'racer_score', 'motor_score', 'kimarite_score', 'grade_score',
+                'prediction_type', 'generated_at',
+            ]
+
+            with open(csv_path, 'a', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                if not file_exists:
+                    writer.writeheader()
+                for pred in predictions:
+                    writer.writerow({
+                        'race_id': race_id,
+                        'pit_number': pred.get('pit_number'),
+                        'rank_prediction': pred.get('rank_prediction'),
+                        'total_score': pred.get('total_score'),
+                        'confidence': pred.get('confidence'),
+                        'racer_name': pred.get('racer_name'),
+                        'racer_number': pred.get('racer_number'),
+                        'applied_rules': pred.get('applied_rules'),
+                        'course_score': pred.get('course_score', 0),
+                        'racer_score': pred.get('racer_score', 0),
+                        'motor_score': pred.get('motor_score', 0),
+                        'kimarite_score': pred.get('kimarite_score', 0),
+                        'grade_score': pred.get('grade_score', 0),
+                        'prediction_type': prediction_type,
+                        'generated_at': generated_at,
+                    })
+
+            logger.debug(f"CSV書き出し完了: race_id={race_id}, {csv_path}")
+            return True
+
+        except Exception as e:
+            logger.error(f"CSV書き出しエラー: race_id={race_id}, {e}", exc_info=True)
+            return False
+
+    def import_predictions_from_csv(self, csv_path: str) -> int:
+        """
+        CSVファイルから race_predictions テーブルにUPSERT投入する。
+        UNIQUE制約 (race_id, pit_number, prediction_type) で上書き。
+
+        Args:
+            csv_path: 投入元CSVパス
+
+        Returns:
+            投入件数（失敗時は -1）
+        """
+        import csv
+
+        conn = None
+        try:
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                rows = []
+                for row in reader:
+                    rows.append((
+                        int(row['race_id']),
+                        int(row['pit_number']),
+                        int(row['rank_prediction']),
+                        float(row['total_score']),
+                        row['confidence'] or None,
+                        row['racer_name'] or None,
+                        row['racer_number'] or None,
+                        row['applied_rules'] or None,
+                        float(row.get('course_score') or 0),
+                        float(row.get('racer_score') or 0),
+                        float(row.get('motor_score') or 0),
+                        float(row.get('kimarite_score') or 0),
+                        float(row.get('grade_score') or 0),
+                        row['prediction_type'],
+                        row['generated_at'] or None,
+                    ))
+
+            if not rows:
+                logger.warning(f"CSVが空です: {csv_path}")
+                return 0
+
+            conn = self.db.connect()
+            cursor = conn.cursor()
+            cursor.executemany("""
+                INSERT INTO race_predictions (
+                    race_id, pit_number, rank_prediction, total_score,
+                    confidence, racer_name, racer_number, applied_rules,
+                    course_score, racer_score, motor_score, kimarite_score, grade_score,
+                    prediction_type, generated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(race_id, pit_number, prediction_type) DO UPDATE SET
+                    rank_prediction = excluded.rank_prediction,
+                    total_score     = excluded.total_score,
+                    confidence      = excluded.confidence,
+                    racer_name      = excluded.racer_name,
+                    racer_number    = excluded.racer_number,
+                    applied_rules   = excluded.applied_rules,
+                    course_score    = excluded.course_score,
+                    racer_score     = excluded.racer_score,
+                    motor_score     = excluded.motor_score,
+                    kimarite_score  = excluded.kimarite_score,
+                    grade_score     = excluded.grade_score,
+                    generated_at    = excluded.generated_at
+            """, rows)
+            conn.commit()
+
+            logger.info(f"CSV→DB投入完了: {len(rows)}件, {csv_path}")
+            return len(rows)
+
+        except Exception as e:
+            logger.error(f"CSV→DB投入エラー: {csv_path}, {e}", exc_info=True)
+            if conn:
+                conn.rollback()
+            return -1
 
         finally:
             if conn:
