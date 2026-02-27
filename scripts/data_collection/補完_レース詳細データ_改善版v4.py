@@ -63,10 +63,19 @@ else:
 query = f"""
     SELECT DISTINCT r.id, r.venue_code, r.race_date, r.race_number
     FROM races r
-    WHERE EXISTS (
-        SELECT 1 FROM race_details rd
-        WHERE rd.race_id = r.id
-        AND (rd.st_time IS NULL OR rd.actual_course IS NULL)
+    WHERE (
+        -- ケース1: race_details行あり、だがst_time/actual_courseがNULL
+        EXISTS (
+            SELECT 1 FROM race_details rd
+            WHERE rd.race_id = r.id
+            AND (rd.st_time IS NULL OR rd.actual_course IS NULL)
+        )
+        OR
+        -- ケース2: entriesあり、だがrace_details行なし（CSVからインポートした新規レース等）
+        (
+            EXISTS (SELECT 1 FROM entries e WHERE e.race_id = r.id)
+            AND NOT EXISTS (SELECT 1 FROM race_details rd WHERE rd.race_id = r.id)
+        )
     )
     {date_filter}
     ORDER BY r.race_date DESC, r.venue_code, r.race_number
@@ -91,9 +100,12 @@ print("※v3との差分: ワーカー6→12、タイムアウト25秒→15秒�
 thread_local = threading.local()
 
 def get_scraper():
-    """スレッドごとのスクレイパーを取得（タイムアウト15秒）"""
+    """スレッドごとのスクレイパーを取得（タイムアウト15秒・待機時間削減）"""
     if not hasattr(thread_local, "scraper"):
-        thread_local.scraper = ResultScraper(read_timeout=15)
+        scraper = ResultScraper(read_timeout=15)
+        scraper.min_delay = 0.1  # 0.3 → 0.1（高速化）
+        scraper.max_delay = 0.3  # 0.8 → 0.3（高速化）
+        thread_local.scraper = scraper
     return thread_local.scraper
 
 # グローバルカウンター
@@ -134,8 +146,24 @@ def fetch_race_details(race_id, venue_code, race_date, race_number):
             # レース結果の完全データを取得
             result = scraper.get_race_result_complete(venue_code, date_str, race_number)
 
-            if result and 'race_details' in result and result['race_details']:
-                return (race_id, result['race_details'], 'success')
+            # actual_courses: {int pit: int course}, st_times: {int pit: float}
+            if result and (result.get('actual_courses') or result.get('st_times')):
+                actual_courses = result.get('actual_courses', {})
+                st_times = result.get('st_times', {})
+                details_data = []
+                for pit in range(1, 7):
+                    ac = actual_courses.get(pit)
+                    st = st_times.get(pit)
+                    if ac is not None or st is not None:
+                        details_data.append({
+                            'pit_number': pit,
+                            'actual_course': ac,
+                            'st_time': st,
+                        })
+                if details_data:
+                    return (race_id, details_data, 'success')
+                else:
+                    return (race_id, None, 'skip')
             else:
                 # レースデータが存在しない（未来のレースなど）
                 return (race_id, None, 'skip')
@@ -185,12 +213,12 @@ update_buffer = []
 BATCH_SIZE = 200
 
 def save_batch():
-    """バッファのデータをDBに保存"""
+    """バッファのデータをDBに保存（UPDATE既存行 + INSERT新規行）"""
     global update_buffer
     if update_buffer:
         with db_lock:
             for race_id, details_data in update_buffer:
-                # 各艇のデータを更新
+                # 各艇のデータを更新/挿入
                 for detail in details_data:
                     pit_number = detail.get('pit_number')
                     if not pit_number:
@@ -200,7 +228,7 @@ def save_batch():
                     if race_id in race_details_cache and pit_number in race_details_cache[race_id]:
                         detail_id = race_details_cache[race_id][pit_number]
 
-                        # 更新
+                        # UPDATE（既存行）
                         update_fields = []
                         update_values = []
 
@@ -240,16 +268,55 @@ def save_batch():
                                 WHERE id = ?
                             """, update_values)
 
+                    else:
+                        # INSERT（新規行 - race_detailsにまだ存在しない艇）
+                        insert_fields = ['race_id', 'pit_number']
+                        insert_values = [race_id, pit_number]
+
+                        if detail.get('st_time') is not None:
+                            insert_fields.append('st_time')
+                            insert_values.append(detail['st_time'])
+
+                        if detail.get('actual_course') is not None:
+                            insert_fields.append('actual_course')
+                            insert_values.append(detail['actual_course'])
+
+                        if detail.get('tilt_angle') is not None:
+                            insert_fields.append('tilt_angle')
+                            insert_values.append(detail['tilt_angle'])
+
+                        if detail.get('exhibition_time') is not None:
+                            insert_fields.append('exhibition_time')
+                            insert_values.append(detail['exhibition_time'])
+
+                        if detail.get('chikusen_time') is not None:
+                            insert_fields.append('chikusen_time')
+                            insert_values.append(detail['chikusen_time'])
+
+                        if detail.get('isshu_time') is not None:
+                            insert_fields.append('isshu_time')
+                            insert_values.append(detail['isshu_time'])
+
+                        if detail.get('mawariashi_time') is not None:
+                            insert_fields.append('mawariashi_time')
+                            insert_values.append(detail['mawariashi_time'])
+
+                        placeholders = ', '.join(['?'] * len(insert_values))
+                        db_cursor.execute(f"""
+                            INSERT OR IGNORE INTO race_details ({', '.join(insert_fields)})
+                            VALUES ({placeholders})
+                        """, insert_values)
+
             db_conn.commit()
             count = len(update_buffer)
             update_buffer = []
             return count
     return 0
 
-# 並列処理でレース詳細データを取得（ワーカー数を6に削減してサーバー負荷軽減）
+# 並列処理でレース詳細データを取得
 start_time = time.time()
 
-with ThreadPoolExecutor(max_workers=6) as executor:
+with ThreadPoolExecutor(max_workers=12) as executor:
     # タスクを投入
     futures = {
         executor.submit(fetch_race_details, race_id, venue_code, race_date, race_number): (race_id, venue_code, race_date, race_number)

@@ -159,13 +159,45 @@ data/predictions_csv/
       ...
 ```
 
-### ⚠️ 使ってはいけないスクリプト（廃止済み・_deprecated フォルダに移動済み）
+### ⚠️ 使ってはいけないスクリプト（廃止済み・_deprecated / archive フォルダに移動済み）
+
+**2026-02-27更新**: 大規模整理実施済み。各ディレクトリのルートにあるファイルのみが現役。
+
+> ⚠️ **例外**: `scripts/automation/` ルートの以下3ファイルは旧世代だが `block_a` / `block_d` が依存しているため現役扱い:
+> - `generate_daily_predictions.py`（block_d_today_prediction.py から使用）
+> - `generate_yesterday_before_predictions.py`（block_a_yesterday_data.py から使用）
+> - `daily_tenji_collector.py`（block_a_yesterday_data.py から使用）
+>
+> 将来的に block_a / block_d を `fast_prediction_generator.py` 等に書き換えた後に _deprecated 移動予定。
+
+#### 予測生成系
 
 | 格納先 | 理由 |
 |--------|------|
 | `scripts/automation/_deprecated/generate_year_predictions_fast.py` | 旧 before 生成（1日1サブプロセス方式）→ `generate_before_fast.py` に置き換え済み |
 | `scripts/prediction/_deprecated/regenerate_predictions_*.py` 系 | DataManager を使わない直接 INSERT → EnvironmentalPenaltySystem をバイパス |
-| `scripts/prediction/_deprecated/` 配下すべて（27ファイル） | 年度限定・旧世代スクリプト。現役3ファイルのみ使うこと |
+| `scripts/prediction/_deprecated/` 配下すべて（27ファイル） | 年度限定・旧世代スクリプト。現役4ファイルのみ使うこと |
+| `scripts/_deprecated/quick_generate_advance.py` | `generate_advance_fast.py` に統合済み |
+
+#### データ収集系（旧版）
+
+| 使ってはいけない | 正しい現役版 |
+|----------------|------------|
+| `scripts/data_collection/archive/deprecated/補完_決まり手データ_csv版.py` | `補完_決まり手データ_改善版.py` |
+| `scripts/data_collection/archive/deprecated/fetch_odds_to_csv_parallel.py` | `fetch_odds_parallel_safe.py` |
+| `scripts/data_collection/archive/deprecated/fetch_exhibition_data_to_csv.py` | `collect_beforeinfo_to_csv_parallel.py` |
+| `scripts/data_collection/archive/deprecated/fetch_race_details_to_csv.py` | `fetch_to_csv_parallel_improved.py` |
+| `scripts/data_collection/archive/deprecated/fetch_race_conditions_to_csv.py` | `fetch_to_csv_parallel_improved.py` |
+| `scripts/data_collection/archive/one_time/` 配下（年度限定スクリプト群） | 汎用スクリプトで代替。年度をオプション指定 |
+
+#### 完了済み一時パイプライン（再実行不可）
+
+| 格納先 | 理由 |
+|--------|------|
+| `scripts/automation/_deprecated/overnight_pipeline.py` | 2026-02-19シェルレース問題対応用・完了済み |
+| `scripts/automation/_deprecated/phase2_pipeline.py` | 同上の後続処理・完了済み |
+| `scripts/automation/_deprecated/post_recovery_pipeline.py` | 特定PID・特定DB状態を前提とした一時スクリプト |
+| `scripts/automation/_deprecated/run_prediction_recovery.py` | 2026-02-24時点のDB状態を前提・完了済み |
 
 ## 標準テスト（重要）⭐
 
@@ -480,12 +512,18 @@ WHERE t.race_id IN (
 | **過去全データ（2020-2025）** | `python scripts/data_collection/auto_fetch_2020_2025.py` |
 | **特定期間のデータ** ✅ **開催スケジュール最適化済み** | `python scripts/data_collection/fetch_historical_data_parallel.py --start 2024-01-01 --end 2024-12-31` |
 | **大量CSV収集（DB負荷なし）** ✅ **開催スケジュール最適化済み** | `python scripts/data_collection/fetch_to_csv_parallel_improved.py --start 2020-01-01 --end 2020-12-31 --output data/csv/2020` |
+| **CSV→DB投入（races/entries/results）** | `python scripts/data_collection/import_races_csv.py` |
 | **過去データ補完（2020-2022年等）** ⚠️ **ブルートフォース必須** | `python scripts/data_collection/fetch_to_csv_parallel_improved.py --start 2020-09-01 --end 2020-12-31 --output data/csv/補完 --brute-force` |
 | **決まり手補完** | `python scripts/data_collection/補完_決まり手データ_改善版.py` |
+| **決まり手CSV→DB投入** | `python scripts/data_collection/import_kimarite_csv.py` |
 | **レース詳細補完** | `python scripts/data_collection/補完_レース詳細データ_改善版v4.py` |
 | **オッズ収集** | `python scripts/data_collection/fetch_odds_parallel_safe.py --start 2024-01-01 --end 2024-12-31` |
+| **オッズCSV→DB投入** | `python scripts/data_collection/import_odds_csv_to_db.py` |
+| **払戻金補完（CSV出力）** | `python scripts/data_collection/補完_払戻金データ.py` |
+| **払戻金CSV→DB投入** | `python scripts/data_collection/import_payouts_csv.py` |
 | **本日の直前情報** | `python scripts/data_collection/fetch_today_beforeinfo.py` |
 | **統計指標生成** ⚠️実テーブル=player_escape_stats/stadium_attack_stats | `python scripts/data_collection/build_indicator_stats.py --year 2024` |
+| **特徴量再計算（racer_features / racer_venue_features）** | `python scripts/maintenance/run_racer_features_recompute.py` |
 
 ### 基本原則
 
@@ -499,11 +537,23 @@ WHERE t.race_id IN (
 | データ種別 | 取得可能期間 | 補完可否 |
 |-----------|-------------|---------|
 | レース基本情報・結果・オッズ | 2020年～ | ✅ 可能（公式APIで常時公開） |
-| **オリジナル展示** | **前日のみ** | **❌ 不可（一度逃すと永久欠損）** |
+| **直前情報（exhibition_time等）** | **2020年～** | **✅ 可能（過去日付でも `/beforeinfo?hd=YYYYMMDD` でアクセス可）** |
+
+**直前情報の過去補完方法**:
+```bash
+# Phase 1: CSV収集
+python scripts/data_collection/collect_beforeinfo_to_csv_parallel.py \
+    --start 2024-01-01 --end 2024-12-31 \
+    --output data/csv/beforeinfo/2024 --workers 12
+
+# Phase 2: DB投入
+python scripts/data_collection/import_beforeinfo_csv_to_db.py \
+    --input data/csv/beforeinfo/2024
+```
 
 **Claude Codeへの注意**:
-- 公式データ（レース・結果・オッズ）は過去数年分取得可能
-- オリジナル展示のみ前日限定、毎日の自動収集が必須
+- 公式データ（レース・結果・オッズ・直前情報）は過去2020年分まで取得可能
+- 毎日の自動収集が理想だが、欠損が発生しても過去補完で復旧できる
 
 ### 詳細ドキュメント
 

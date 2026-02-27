@@ -287,7 +287,7 @@ class ResultScraper(BaseScraper):
                         # 各行が1つのコースを表す
                         rows = tbody.find_all('tr', recursive=False)
 
-                        if len(rows) == 6:
+                        if len(rows) >= 1:  # 修正: 6人未満(失格・欠場等)でも対応
                             # 行番号 = コース番号
                             for course, row in enumerate(rows, start=1):
                                 # 行内のtable1_boatImage1Number要素から枠番を取得
@@ -303,8 +303,8 @@ class ResultScraper(BaseScraper):
                                     except ValueError:
                                         pass
 
-                            # 6艇分取得できたら終了
-                            if len(actual_courses) == 6:
+                            # 1艇以上取得できたら終了
+                            if len(actual_courses) >= 1:
                                 break
 
         except Exception as e:
@@ -313,7 +313,7 @@ class ResultScraper(BaseScraper):
             traceback.print_exc()
             return None
 
-        if len(actual_courses) == 6:
+        if len(actual_courses) >= 1:  # 修正: 1艇以上取得できれば返す
             print(f"進入コース取得: {venue_code} {race_date} {race_number}R - {actual_courses}")
             return actual_courses
         else:
@@ -1203,7 +1203,7 @@ class ResultScraper(BaseScraper):
             "hd": race_date
         }
 
-        soup = self.fetch_page(url, params)
+        soup = self.fetch_page(url, params, timeout=self.read_timeout)
         if not soup:
             return None
 
@@ -1291,7 +1291,7 @@ class ResultScraper(BaseScraper):
                     if tbody:
                         rows = tbody.find_all('tr', recursive=False)
 
-                        if len(rows) == 6:
+                        if len(rows) >= 1:  # 修正: 6人未満(失格・欠場等)でも対応
                             for course, row in enumerate(rows, start=1):
                                 number_elem = row.find(class_='table1_boatImage1Number')
 
@@ -1304,7 +1304,7 @@ class ResultScraper(BaseScraper):
                                     except ValueError:
                                         pass
 
-                            if len(result["actual_courses"]) == 6:
+                            if len(result["actual_courses"]) >= 1:
                                 break
 
             # 6. STタイムを取得

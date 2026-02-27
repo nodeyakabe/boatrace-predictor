@@ -79,8 +79,20 @@ class FastPredictionGenerator:
         for venue_id, venue_info in VENUES.items():
             venue_name_map[venue_info['code']] = venue_info['name']
 
+        # before予測時は exhibition_time が存在するレースのみ対象（generate_before_fast.py と同じフィルタ）
+        # advance予測時はフィルタなし（全レース対象）
+        if self.prediction_type == 'before':
+            extra_condition = """
+                AND r.id IN (
+                    SELECT DISTINCT race_id FROM race_details
+                    WHERE exhibition_time IS NOT NULL
+                )
+            """
+        else:
+            extra_condition = ""
+
         # 全レース情報を一括取得（天候データも含む）
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 r.id, r.venue_code, r.race_number, r.race_date, r.race_time,
                 r.race_grade,
@@ -88,6 +100,7 @@ class FastPredictionGenerator:
             FROM races r
             LEFT JOIN race_conditions rc ON r.id = rc.race_id
             WHERE r.race_date = ?
+            {extra_condition}
             ORDER BY r.venue_code, r.race_number
         """, (target_date,))
 
@@ -278,6 +291,7 @@ class FastPredictionGenerator:
 
         success_count = 0
         error_count = 0
+        no_entries_count = 0
 
         for idx, race in enumerate(races_to_predict, 1):
             elapsed = time.time() - start_time
@@ -293,15 +307,15 @@ class FastPredictionGenerator:
 
                 if not entries:
                     print('[!] エントリーなし')
-                    error_count += 1
+                    no_entries_count += 1
                     continue
 
                 # 予想生成
                 predictions = self.predict_race_fast(race, entries)
 
                 if predictions and len(predictions) > 0:
-                    # データベースに保存（prediction_typeを明示的に指定）
-                    if self.data_manager.save_race_predictions(race['race_id'], predictions, prediction_type=self.prediction_type):
+                    # データベースに保存（prediction_typeを明示的に指定、UPSERT方式で既存データを保護）
+                    if self.data_manager.save_race_predictions(race['race_id'], predictions, prediction_type=self.prediction_type, use_upsert=True):
                         success_count += 1
                         print(f'[OK] {len(predictions)}艇 ({self.prediction_type})')
                     else:
@@ -329,6 +343,8 @@ class FastPredictionGenerator:
         print(f'既存スキップ: {skipped_count}件')
         print(f'生成成功: {success_count}件')
         print(f'生成失敗: {error_count}件')
+        if no_entries_count > 0:
+            print(f'エントリーなし: {no_entries_count}件（データ欠損・エラーではない）')
         print(f'平均処理時間: {total_time/len(races_to_predict):.1f}秒/レース' if races_to_predict else '')
         print('='*70)
 
@@ -337,6 +353,7 @@ class FastPredictionGenerator:
             'skipped': skipped_count,
             'generated': success_count,
             'errors': error_count,
+            'no_entries': no_entries_count,
             'total_time': total_time
         }
 

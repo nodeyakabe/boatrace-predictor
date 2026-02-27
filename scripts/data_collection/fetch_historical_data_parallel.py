@@ -169,8 +169,8 @@ def fetch_venue_day_parallel(args):
                 race_data['race_date'] = race_date_yyyymmdd
                 race_data['race_number'] = race_number
 
-                # 結果取得
-                result_data = result_scraper.get_race_result(venue_code, race_date_yyyymmdd, race_number)
+                # 結果取得（payouts/actual_courses/st_times/kimarite含む完全版）
+                result_data = result_scraper.get_race_result_complete(venue_code, race_date_yyyymmdd, race_number)
 
                 # 過去レースで結果が不完全な場合は警告
                 if result_data and result_data.get('results'):
@@ -225,10 +225,25 @@ def save_races_batch(db_path: Path, all_races_data: list):
                         result_data['race_date'] = race_date.replace('-', '')
                         result_data['race_number'] = race_data['race_number']
                         data_manager.save_race_result_fast(result_data)
+
+                        # payouts保存（get_race_result_complete()で取得済み）
+                        if result_data.get('payouts'):
+                            data_manager.save_payouts_batch(race_id, result_data['payouts'])
+
+                        # actual_course/st_time保存（キーはint型）
+                        actual_courses = result_data.get('actual_courses', {})
+                        st_times = result_data.get('st_times', {})
+                        if actual_courses:
+                            data_manager.upsert_actual_courses_batch(race_id, actual_courses, st_times)
+
+                        # kimarite保存（races.kimariteカラム）
+                        if result_data.get('kimarite'):
+                            data_manager.update_kimarite(race_id, result_data['kimarite'])
+
                         saved_count += 1
 
                 except Exception as e:
-                    pass
+                    print(f"レース保存エラー [{race_date} venue={venue_code}]: {e}")
 
         # トランザクションコミット
         data_manager.commit_batch()

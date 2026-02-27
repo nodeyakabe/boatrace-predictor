@@ -291,36 +291,45 @@ def save_to_csv(output_dir: Path, all_races_data: list):
                         }
                         writer_entries.writerow(entry_row)
 
-                    # レース条件
-                    if race_data.get('weather'):
+                    # レース条件（result_dataのweather_dataを使用）
+                    # ※ RaceScraperV2.get_race_card()は天候データを含まない
+                    if result_data and result_data.get('weather_data'):
+                        wd = result_data['weather_data']
                         condition_row = {
                             'venue_code': venue_code,
                             'race_date': race_date,
                             'race_number': race_data.get('race_number'),
-                            'weather': race_data.get('weather', ''),
-                            'wind_direction': race_data.get('wind_direction', ''),
-                            'wind_speed': race_data.get('wind_speed'),
-                            'wave_height': race_data.get('wave_height'),
-                            'temperature': race_data.get('temperature'),
-                            'water_temperature': race_data.get('water_temperature'),
+                            'weather': wd.get('weather_condition', ''),
+                            'wind_direction': wd.get('wind_direction', ''),
+                            'wind_speed': wd.get('wind_speed'),
+                            'wave_height': wd.get('wave_height'),
+                            'temperature': wd.get('temperature'),
+                            'water_temperature': wd.get('water_temperature'),
                         }
                         writer_conditions.writerow(condition_row)
 
-                    # 展示情報
-                    for entry in race_data.get('entries', []):
-                        if entry.get('exhibition_time') or entry.get('actual_course'):
-                            detail_row = {
-                                'venue_code': venue_code,
-                                'race_date': race_date,
-                                'race_number': race_data.get('race_number'),
-                                'pit_number': entry.get('pit_number'),
-                                'exhibition_time': entry.get('exhibition_time'),
-                                'tilt_angle': entry.get('tilt_angle'),
-                                'parts_replacement': entry.get('parts_replacement', ''),
-                                'actual_course': entry.get('actual_course'),
-                                'st_time': entry.get('st_time'),
-                            }
-                            writer_details.writerow(detail_row)
+                    # 展示情報（result_dataのactual_courses/st_timesを使用）
+                    # ※ RaceScraperV2.get_race_card()は出走表ページのみアクセスするため
+                    #   actual_course/st_timeを含まない。ResultScraperの結果ページから取得する。
+                    if result_data:
+                        actual_courses = result_data.get('actual_courses', {})  # {int pit: int course}
+                        st_times = result_data.get('st_times', {})  # {int pit: float st_time}
+                        for pit_number in range(1, 7):
+                            ac = actual_courses.get(pit_number)
+                            st = st_times.get(pit_number)
+                            if ac is not None or st is not None:
+                                detail_row = {
+                                    'venue_code': venue_code,
+                                    'race_date': race_date,
+                                    'race_number': race_data.get('race_number'),
+                                    'pit_number': pit_number,
+                                    'exhibition_time': None,
+                                    'tilt_angle': None,
+                                    'parts_replacement': '',
+                                    'actual_course': ac,
+                                    'st_time': st,
+                                }
+                                writer_details.writerow(detail_row)
 
                     # 結果データ
                     if result_data:

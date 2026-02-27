@@ -24,9 +24,8 @@ import sys
 import time
 import signal
 import schedule
-import sqlite3
 import psutil
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 # プロジェクトルートをパスに追加
@@ -122,7 +121,18 @@ def signal_handler(signum, frame):
 
 
 def block_a_job():
-    """Aブロック: 前日データ完全収集"""
+    """Aブロック: 前日データ完全収集 + 日次リセット"""
+    global monitor
+
+    # 日次リセット: 翌日に向けて状態をクリア
+    if monitor is not None:
+        monitor.notified_races.clear()
+        monitor.fetched_direct_info.clear()
+        monitor.fetched_odds_races.clear()
+        monitor._bet_target_cache.clear()
+        monitor._cache_date = None
+        print("[INFO] 日次リセット完了（通知済み・直前情報・オッズ取得済みセットをクリア）")
+
     try:
         runner = BlockARunner()
         success = runner.run_all()
@@ -152,22 +162,13 @@ def block_c_job():
 
 
 def block_d_job():
-    """Dブロック: 本日予想生成 + レース通知スケジュール登録"""
+    """Dブロック: 本日予想生成"""
     try:
         # Dブロック実行
         runner = BlockDRunner()
         success = runner.run_all()
 
-        if success:
-            # 予想生成成功後、レース通知スケジュールを設定
-            print("\n購入対象レースの通知スケジュール設定中...")
-            scheduled_count = schedule_race_notifications()
-
-            if scheduled_count > 0:
-                print(f"[OK] {scheduled_count}レースの通知を予約")
-            else:
-                print("[INFO] 予約する通知なし")
-        else:
+        if not success:
             print("[WARNING] Dブロックでエラーが発生しました")
 
     except Exception as e:
@@ -209,118 +210,24 @@ def race_monitor_job():
         print(f"[ERROR] レース監視エラー: {e}")
 
 
-def schedule_race_notifications():
-    """本日の購入対象レースの通知スケジュールを設定"""
-    global monitor
-
-    db_path = project_root / "data" / "boatrace.db"
-    if not db_path.exists():
-        print(f"WARNING: データベースが見つかりません: {db_path}")
-        return 0
-
-    if monitor is None:
-        monitor = RaceMonitor(str(db_path))
-
-    try:
-        # 本日の購入対象レースを取得
-        target_races = monitor.get_todays_target_races()
-
-        if not target_races:
-            print("[INFO] 本日の購入対象レースなし")
-            return 0
-
-        scheduled_count = 0
-        for race in target_races:
-            # 締切10分前の時刻を計算
-            race_time_str = race['deadline']  # "HH:MM"
-            race_datetime = datetime.strptime(f"{race['date']} {race_time_str}", '%Y-%m-%d %H:%M')
-            notification_time = race_datetime - timedelta(minutes=10)
-
-            # 過去の時刻はスキップ
-            if notification_time < datetime.now():
-                continue
-
-            # 通知時刻を "HH:MM" 形式に変換
-            time_str = notification_time.strftime('%H:%M')
-
-            # スケジュールに登録
-            def create_notification_job(race_id, venue_code, race_number):
-                def job():
-                    race_monitoring_job_for_race(race_id, venue_code, race_number)
-                return job
-
-            schedule.every().day.at(time_str).do(
-                create_notification_job(race['race_id'], race['venue_code'], race['race_number'])
-            )
-
-            scheduled_count += 1
-            print(f"  [{race['venue_code']}場 {race['race_number']:2d}R] 通知予約: {time_str}")
-
-        print(f"[OK] {scheduled_count}レースの通知をスケジュール登録")
-        return scheduled_count
-
-    except Exception as e:
-        print(f"[ERROR] レース通知スケジュール設定エラー: {e}")
-        return 0
-
-
-def race_monitoring_job_for_race(race_id, venue_code, race_number):
-    """特定レースの直前情報取得・通知"""
-    global monitor
-
-    if monitor is None:
-        db_path = project_root / "data" / "boatrace.db"
-        monitor = RaceMonitor(str(db_path))
-
-    # venue_codeとrace_numberを安全に整数に変換
-    try:
-        venue_int = int(venue_code)
-        race_int = int(race_number)
-    except (ValueError, TypeError):
-        print(f"[ERROR] 無効なデータ (venue={venue_code}, race={race_number})")
-        return
-
-    try:
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        print(f"\n[{timestamp}] レース通知実行: {venue_int:02d}場 {race_int:2d}R")
-
-        # 直前情報取得
-        stats = monitor.monitor_once()
-
-        print(f"  直前情報取得: {stats['direct_info_fetched']}")
-        print(f"  通知送信: {stats['notifications_sent']}")
-
-        if stats['errors'] > 0:
-            print(f"  WARNING: エラー: {stats['errors']}")
-
-    except Exception as e:
-        error_msg = f"レース通知中にエラー ({venue_int:02d}場 {race_int:2d}R): {str(e)}"
-        print(f"[ERROR] {error_msg}")
-        send_error_notification("レース通知エラー", error_msg)
-
 
 def startup_notification():
     """起動通知"""
-    message = f"""🤖 **ボートレース自動化システム起動（v2.1 - 並列化対応版）**
+    message = f"""🤖 **ボートレース自動化システム起動（v3.0 - 常駐監視版）**
 
 起動時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-**スケジュール（改善版 - 前倒し実行）:**
-- 03:00 - Aブロック（前日データ完全収集）[1時間前倒し]
-- 06:00 - Cブロック（本日データ収集）[30分前倒し]
-- 07:30 - Dブロック（予想生成）[30分前倒し]
-- 1分ごと - レース監視（直前情報20分前取得、通知10分前送信）
-
-**改善点:**
-✅ 並列化スクリプト使用でデータ収集高速化（10-15倍）
-✅ 実行時間前倒しで処理時間を確保
-✅ ブロック間の干渉を防止
+**スケジュール:**
+- 03:00 - Aブロック（前日データ完全収集 + 日次リセット）
+- 06:00 - Cブロック（本日データ収集）
+- 07:30 - Dブロック（予想生成）
+- 1分ごと - レース監視（オッズ30-50分前再取得、直前情報20分前取得、通知10分前送信）
 
 **ブロック詳細:**
-Aブロック: 結果→確定オッズ→直前情報→展示→直前予想（並列化）
-Cブロック: レースデータ→オッズ（並列化）
+Aブロック: 結果→確定オッズ→直前情報→展示→直前予想 + 日次リセット
+Cブロック: レースデータ→オッズ
 Dブロック: 予想生成
-レース監視: 候補レースを監視し、各レース20分前に直前情報取得→10分前に通知
+レース監視: CANDIDATE→オッズ再取得→TARGET昇格→直前情報取得→通知
 
 システムは正常稼働中です。
 """
@@ -353,14 +260,14 @@ def print_status():
     global monitor
 
     print("\n" + "=" * 60)
-    print("ボートレース自動化システム（v2.1 - 並列化対応版）")
+    print("ボートレース自動化システム（v3.0 - 常駐監視版）")
     print("=" * 60)
     print(f"起動時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("\nスケジュール:")
-    print("  - 毎朝 3:00 - Aブロック（前日データ完全収集）[1時間前倒し]")
-    print("  - 毎朝 6:00 - Cブロック（本日データ収集）[30分前倒し]")
-    print("  - 毎朝 7:30 - Dブロック（予想生成+通知登録）[30分前倒し]")
-    print("  - 動的 - 各レース締切10分前通知")
+    print("  - 毎朝 3:00 - Aブロック（前日データ完全収集 + 日次リセット）")
+    print("  - 毎朝 6:00 - Cブロック（本日データ収集）")
+    print("  - 毎朝 7:30 - Dブロック（予想生成）")
+    print("  - 1分ごと - レース監視（オッズ再取得→直前情報→通知）")
     print("\n操作:")
     print("  - Ctrl+C で停止")
     print("=" * 60 + "\n")
@@ -404,9 +311,9 @@ def main():
     schedule.every().day.at("06:00").do(block_c_job)
     print("[OK] 毎朝 6:00 - Cブロック（本日データ収集）[30分前倒し]")
 
-    # 毎朝7:30にDブロック（予想生成+通知登録）- 30分前倒し
+    # 毎朝7:30にDブロック（予想生成）
     schedule.every().day.at("07:30").do(block_d_job)
-    print("[OK] 毎朝 7:30 - Dブロック（予想生成+通知登録）[30分前倒し]")
+    print("[OK] 毎朝 7:30 - Dブロック（予想生成）")
 
     # 1分ごとにレース監視（20分前取得、10分前通知）
     schedule.every(1).minutes.do(race_monitor_job)

@@ -303,6 +303,36 @@ class FastDataManager:
             print(f"結果高速保存エラー: {e}")
             return False
 
+    def upsert_actual_courses_batch(self, race_id, actual_courses, st_times=None):
+        """
+        actual_course/st_time のみを UPSERT（既存の exhibition_time 等は保持）
+
+        Args:
+            race_id: レースID
+            actual_courses: {int pit_number: int course} ← get_race_result_complete() の返却形式
+            st_times: {int pit_number: float st_time}（省略可）
+        """
+        try:
+            if st_times is None:
+                st_times = {}
+            pits = sorted(set(list(actual_courses.keys()) + list(st_times.keys())))
+            values_list = [
+                (race_id, pit_num, actual_courses.get(pit_num), st_times.get(pit_num))
+                for pit_num in pits
+            ]
+            self.cursor.executemany("""
+                INSERT INTO race_details (race_id, pit_number, actual_course, st_time)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(race_id, pit_number) DO UPDATE SET
+                    actual_course = excluded.actual_course,
+                    st_time = COALESCE(excluded.st_time, race_details.st_time)
+            """, values_list)
+            return True
+
+        except Exception as e:
+            print(f"actual_course UPSERTエラー: {e}")
+            return False
+
     def update_st_times_batch(self, race_id, st_times):
         """
         STタイムを一括更新

@@ -49,13 +49,14 @@ races（レース基本情報）
 | スクリプト | races | entries | results | conditions | kimarite | race_details | payouts | odds |
 |-----------|:-----:|:-------:|:-------:|:----------:|:--------:|:------------:|:-------:|:----:|
 | `fetch_to_csv_parallel_improved.py` | ✅ | ✅ | ✅ | ✅ | ✗ | ✗ | ✅ | ✗ |
-| `fetch_historical_data_parallel.py` | ✗ | ✅ | ✅ | ✅ | ✗ | ✗ | ✗ | ✗ |
+| `fetch_historical_data_parallel.py` | ✗ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✗ |
 | `補完_決まり手データ_改善版.py` | ✗ | ✗ | ✗ | ✗ | ✅ | ✗ | ✗ | ✗ |
 | `補完_レース詳細データ_改善版v4.py` | ✗ | ✗ | ✗ | ✗ | ✗ | ✅ | ✗ | ✗ |
 | `fetch_odds_parallel_safe.py` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✅ |
 | `build_indicator_stats.py` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 
-**注意**: `fetch_historical_data_parallel.py`は既存のraces行に対してentries/resultsを追加するスクリプト。racesの新規作成はしない。payoutsも取得しない。
+**注意**: `fetch_historical_data_parallel.py`は既存のraces行に対してentries/resultsを追加するスクリプト。racesの新規作成はしない。
+**2026-02-26修正**: payouts/actual_courses(race_details)/kimariteも保存するよう修正済み。ただしoddsは未対応。
 
 ---
 

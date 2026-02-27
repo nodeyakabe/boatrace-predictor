@@ -37,6 +37,9 @@ class RaceMonitor:
         self.db_path = db_path
         self.notified_races = set()  # 通知済みレースID
         self.fetched_direct_info = set()  # 直前情報取得済みレースID
+        self.fetched_odds_races = set()   # オッズ再取得済みレースID
+        self._bet_target_cache = {}       # {race_id: race_dict} - 購入判定キャッシュ
+        self._cache_date = None           # キャッシュの日付
 
         # BetTargetEvaluatorを初期化（実際の購入判定ロジックを使用）
         self.bet_evaluator = BetTargetEvaluator(
@@ -64,6 +67,11 @@ class RaceMonitor:
         """
         today = datetime.now().strftime('%Y-%m-%d')
 
+        # 日付が変わったらキャッシュをリセット
+        if self._cache_date != today:
+            self._bet_target_cache = {}
+            self._cache_date = today
+
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
@@ -85,6 +93,11 @@ class RaceMonitor:
             for row in cursor.fetchall():
                 race_id = row['race_id']
 
+                # キャッシュがあれば再評価をスキップ
+                if race_id in self._bet_target_cache:
+                    races.append(self._bet_target_cache[race_id])
+                    continue
+
                 # レースデータを取得
                 race_data = self._get_race_data(cursor, race_id)
                 if not race_data:
@@ -98,12 +111,15 @@ class RaceMonitor:
                 # オッズデータを取得
                 odds_data = self._get_odds_data(cursor, race_id, predictions)
 
+                # 直前情報の有無を動的に判定
+                has_beforeinfo = race_id in self.fetched_direct_info
+
                 # BetTargetEvaluatorで購入判定
                 bet_target = self.bet_evaluator.evaluate_race(
                     race_data=race_data,
                     predictions=predictions,
                     odds_data=odds_data,
-                    has_beforeinfo=False
+                    has_beforeinfo=has_beforeinfo
                 )
 
                 # 購入対象と候補レースを追加
@@ -119,6 +135,7 @@ class RaceMonitor:
                         'predictions': predictions
                     }
                     races.append(race_info)
+                    self._bet_target_cache[race_id] = race_info
 
             return races
 
@@ -195,29 +212,41 @@ class RaceMonitor:
         if len(predictions) < 3:
             return None
 
-        # 1-2-3着予測を取得
-        old_pred = [p['pit_number'] for p in predictions[:3]]
+        # 全予測を返す（パターンH用に5位以上必要）
+        all_pred = [p['pit_number'] for p in predictions]
+
+        # 1着予測選手の登録番号を取得（逃げ率・バイアス指数フィルター用）
+        first_pred_pit = all_pred[0] if all_pred else None
+        first_racer_number = None
+        if first_pred_pit:
+            cursor.execute("""
+                SELECT racer_number FROM entries
+                WHERE race_id = ? AND pit_number = ?
+            """, (race_id, first_pred_pit))
+            racer_row = cursor.fetchone()
+            if racer_row:
+                first_racer_number = racer_row['racer_number']
 
         return {
             'confidence': predictions[0]['confidence'],
-            'old_prediction': old_pred,
-            'new_prediction': old_pred  # 事前予測の段階では同じ
+            'old_prediction': all_pred,
+            'new_prediction': all_pred,  # 事前予測の段階では同じ
+            'first_racer_number': first_racer_number
         }
 
     def _get_odds_data(self, cursor, race_id: int, predictions: Dict) -> Optional[Dict[str, float]]:
-        """オッズデータを取得"""
-        old_pred = predictions['old_prediction']
-        combination = '-'.join(map(str, old_pred))
-
+        """オッズデータを取得（全組み合わせ）"""
         cursor.execute("""
-            SELECT odds
+            SELECT combination, odds
             FROM trifecta_odds
-            WHERE race_id = ? AND combination = ?
-        """, (race_id, combination))
+            WHERE race_id = ?
+        """, (race_id,))
 
-        row = cursor.fetchone()
-        if row and row['odds']:
-            return {combination: row['odds']}
+        rows = cursor.fetchall()
+        if rows:
+            result = {row['combination']: row['odds'] for row in rows if row['odds']}
+            if result:
+                return result
 
         return None
 
@@ -386,15 +415,15 @@ class RaceMonitor:
                 old_status = race['bet_target'].status
                 new_status = bet_target.status
 
-                # ステータスが変化した場合
+                # ステータス変化をログ出力
                 if old_status != new_status:
                     print(f"  レース{race_id}: {old_status.value} → {new_status.value}")
-
-                    # 候補から購入対象に昇格した場合
                     if old_status == BetStatus.CANDIDATE and new_status in [BetStatus.TARGET_CONFIRMED]:
                         print(f"  候補レースが購入対象に昇格: {race_id}")
-                        # BetTarget情報を更新
-                        race['bet_target'] = bet_target
+
+                # ステータス変化に関わらず常にキャッシュ更新（has_beforeinfo=True の評価結果を反映）
+                race['bet_target'] = bet_target
+                self._bet_target_cache[race_id] = race
 
             finally:
                 conn.close()
@@ -425,14 +454,147 @@ class RaceMonitor:
         if len(advance_preds) < 3:
             return None
 
-        old_pred = [p['pit_number'] for p in advance_preds[:3]]
-        new_pred = [p['pit_number'] for p in before_preds[:3]] if len(before_preds) >= 3 else old_pred
+        # 全件返却（パターンH用に5位以上必要）
+        old_pred = [p['pit_number'] for p in advance_preds]
+        new_pred = [p['pit_number'] for p in before_preds] if len(before_preds) >= 3 else old_pred
+
+        # 1着予測選手の登録番号を取得（逃げ率・バイアス指数フィルター用）
+        first_pred_pit = old_pred[0] if old_pred else None
+        first_racer_number = None
+        if first_pred_pit:
+            cursor.execute("""
+                SELECT racer_number FROM entries
+                WHERE race_id = ? AND pit_number = ?
+            """, (race_id, first_pred_pit))
+            racer_row = cursor.fetchone()
+            if racer_row:
+                first_racer_number = racer_row['racer_number']
 
         return {
             'confidence': advance_preds[0]['confidence'],
             'old_prediction': old_pred,
-            'new_prediction': new_pred
+            'new_prediction': new_pred,
+            'first_racer_number': first_racer_number
         }
+
+    def _check_and_fetch_odds(self, race: Dict) -> bool:
+        """
+        オッズ再取得が必要かチェックし、必要なら取得して再評価
+
+        締切30-50分前に、オッズ未取得(CANDIDATE)のレースのオッズを再取得する
+
+        Args:
+            race: レース情報
+
+        Returns:
+            bool: オッズを取得して再評価したらTrue
+        """
+        race_id = race['race_id']
+
+        # 既に取得済みならスキップ
+        if race_id in self.fetched_odds_races:
+            return False
+
+        # CANDIDATE以外はスキップ（オッズ不明でないので不要）
+        bet_target = race['bet_target']
+        if bet_target.status != BetStatus.CANDIDATE:
+            return False
+
+        deadline = self.parse_deadline(race['date'], race['deadline'])
+        now = datetime.now()
+        time_until_deadline = (deadline - now).total_seconds() / 60  # 分
+
+        # 締切30-50分前にオッズ再取得（直前情報取得の前）
+        if 28 <= time_until_deadline <= 55:
+            print(f"オッズ再取得: {race_id} (締切まであと{time_until_deadline:.0f}分)")
+
+            try:
+                from src.scraper.odds_scraper import OddsScraper
+
+                venue_code = race['venue_code']
+                race_date = race['date'].replace('-', '')  # YYYYMMDD形式
+                race_number = race['race_number']
+
+                scraper = OddsScraper()
+                odds_data = scraper.get_trifecta_odds(venue_code, race_date, race_number)
+                scraper.close()
+
+                if odds_data:
+                    # DBに保存（既存行の created_at を保持するため ON CONFLICT DO UPDATE を使用）
+                    conn = self.get_connection()
+                    try:
+                        cursor = conn.cursor()
+                        for combo, odds_val in odds_data.items():
+                            cursor.execute("""
+                                INSERT INTO trifecta_odds
+                                (race_id, combination, odds, fetched_at)
+                                VALUES (?, ?, ?, ?)
+                                ON CONFLICT(race_id, combination)
+                                DO UPDATE SET odds = excluded.odds, fetched_at = excluded.fetched_at
+                            """, (race_id, combo, odds_val, datetime.now().isoformat()))
+                        conn.commit()
+                    finally:
+                        conn.close()
+
+                    self.fetched_odds_races.add(race_id)
+
+                    # 再評価
+                    self._reevaluate_after_odds_fetch(race, odds_data)
+                    return True
+                else:
+                    print(f"  [INFO] オッズ未公開: {race_id}")
+
+            except Exception as e:
+                print(f"[ERROR] オッズ再取得エラー: {race_id} - {e}")
+
+        return False
+
+    def _reevaluate_after_odds_fetch(self, race: Dict, new_odds_data: Dict) -> None:
+        """
+        オッズ取得後に購入判定を再評価し、キャッシュを更新
+
+        Args:
+            race: レース情報
+            new_odds_data: 新しく取得したオッズデータ
+        """
+        race_id = race['race_id']
+
+        try:
+            conn = self.get_connection()
+            try:
+                cursor = conn.cursor()
+
+                race_data = self._get_race_data(cursor, race_id)
+                if not race_data:
+                    return
+
+                predictions = race.get('predictions') or self._get_predictions(cursor, race_id)
+                if not predictions:
+                    return
+
+                has_beforeinfo = race_id in self.fetched_direct_info
+
+                bet_target = self.bet_evaluator.evaluate_race(
+                    race_data=race_data,
+                    predictions=predictions,
+                    odds_data=new_odds_data,
+                    has_beforeinfo=has_beforeinfo
+                )
+
+                old_status = race['bet_target'].status
+                new_status = bet_target.status
+
+                if old_status != new_status:
+                    print(f"  オッズ取得後ステータス変化: {race_id}: {old_status.value} → {new_status.value}")
+
+                race['bet_target'] = bet_target
+                self._bet_target_cache[race_id] = race
+
+            finally:
+                conn.close()
+
+        except Exception as e:
+            print(f"[ERROR] オッズ取得後の再評価エラー: {race_id} - {e}")
 
     def check_and_notify(self, race: Dict) -> bool:
         """
@@ -536,6 +698,7 @@ class RaceMonitor:
         """
         stats = {
             'total_races': 0,
+            'odds_fetched': 0,
             'direct_info_fetched': 0,
             'notifications_sent': 0,
             'errors': 0
@@ -552,11 +715,15 @@ class RaceMonitor:
             # 各レースをチェック
             for race in races:
                 try:
-                    # 直前情報取得チェック（取得後に再評価も実行）
+                    # オッズ再取得チェック（締切30-50分前、CANDIDATE対象）
+                    if self._check_and_fetch_odds(race):
+                        stats['odds_fetched'] += 1
+
+                    # 直前情報取得チェック（締切15-25分前、取得後に再評価も実行）
                     if self.check_and_fetch_direct_info(race):
                         stats['direct_info_fetched'] += 1
 
-                    # 通知チェック（再評価後のステータスで判定）
+                    # 通知チェック（締切8-12分前、再評価後のステータスで判定）
                     if self.check_and_notify(race):
                         stats['notifications_sent'] += 1
 
@@ -615,6 +782,7 @@ def main():
 
     print(f"\n実行結果:")
     print(f"  対象レース数: {stats['total_races']}")
+    print(f"  オッズ取得: {stats['odds_fetched']}")
     print(f"  直前情報取得: {stats['direct_info_fetched']}")
     print(f"  通知送信: {stats['notifications_sent']}")
     print(f"  エラー: {stats['errors']}")

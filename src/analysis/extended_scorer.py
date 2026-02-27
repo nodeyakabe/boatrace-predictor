@@ -11,6 +11,7 @@
 7. モーター特性分析
 """
 import sqlite3
+import json
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 import os
@@ -41,14 +42,16 @@ class ExtendedScorer:
         'L': -1.5,  # 出遅れ1回で-1.5点
     }
 
-    # 平均STスコア基準（勝率との相関に基づく）
-    # ST 0.10-0.15が最も勝率高い（24.38%）、0.20以上は低い（9.64%）
+    # 平均STスコア基準（ROIとの相関に基づく・TJ-3b 2026-02-27更新）
+    # 速い(0.10-0.15)は勝率高いが低オッズ傾向、遅い(0.17+)は高オッズで高ROI傾向
+    # 的中率: <0.10=62.8%, 0.10-0.13=61.1%, 0.17-0.20=41.7%, 0.20+=32.1%（251,491件実測）
+    # 旧: 遅い選手 factor=0.4（過剰ペナルティ）→ 新: 0.7（緩和）でROI改善を狙う
     ST_SCORE_RANGES = [
-        (0.00, 0.10, 0.7),   # 早すぎ（Fリスク）
-        (0.10, 0.15, 1.0),   # 最適（最高勝率）
-        (0.15, 0.18, 0.8),   # 良好
-        (0.18, 0.20, 0.6),   # やや遅い
-        (0.20, 1.00, 0.4),   # 遅い
+        (0.00, 0.10, 0.7),   # 早すぎ（Fリスク・ただし的中率最高のため維持）
+        (0.10, 0.15, 1.0),   # 最適（最高勝率・維持）
+        (0.15, 0.18, 0.9),   # 良好 (0.8→0.9)
+        (0.18, 0.20, 0.8),   # やや遅い (0.6→0.8)
+        (0.20, 1.00, 0.7),   # 遅い (0.4→0.7)
     ]
 
     # 進入コース予測用：枠番別の進入傾向（デフォルト）
@@ -97,6 +100,48 @@ class ExtendedScorer:
         self._capsizing_cache = {}
         # 会場相性スコアキャッシュ（(racer_number, venue_code) -> result）
         self._venue_affinity_cache = {}
+        # TJ-9: 会場別展示タイム信頼性スコア（venue_exhibition_reliability.json）
+        self._venue_exhibition_reliability = self._load_venue_exhibition_reliability()
+
+    def _load_venue_exhibition_reliability(self) -> Dict[str, float]:
+        """会場別展示タイム信頼性スコアをJSONから読み込む（TJ-9成果）
+
+        Returns:
+            {venue_key: score} (venue_key='1'-'24', score=1-100)
+        """
+        json_path = os.path.join(PROJECT_ROOT, 'data', 'venue_exhibition_reliability.json')
+        try:
+            with open(json_path, encoding='utf-8') as f:
+                data = json.load(f)
+            return {k: v['score'] for k, v in data.items()}
+        except (FileNotFoundError, KeyError, json.JSONDecodeError):
+            return {}
+
+    def _get_venue_exhibition_multiplier(self, venue_code: str) -> float:
+        """会場の展示タイム信頼性に基づく重みを返す（TJ-9）
+
+        信頼性スコア 1-100 → 重み 0.30-1.00
+        formula: multiplier = 0.30 + 0.70 * (score / 100)
+        - score=91 (丸亀,徳山) → 0.94 (ほぼフル重み)
+        - score=50 (平均的会場)  → 0.65
+        - score=1  (江戸川,児島) → 0.307 (大幅低下)
+
+        Args:
+            venue_code: '01'-'24' 形式、またはNone
+
+        Returns:
+            重み (0.30〜1.00)
+        """
+        if not venue_code or not self._venue_exhibition_reliability:
+            return 1.0
+        try:
+            key = str(int(venue_code))
+            score = self._venue_exhibition_reliability.get(key)
+            if score is None:
+                return 1.0
+            return 0.30 + 0.70 * (score / 100.0)
+        except (ValueError, TypeError):
+            return 1.0
 
     def calculate_escape_rate_score(
         self,
@@ -544,9 +589,9 @@ class ExtendedScorer:
         """
         平均STスコアを計算
 
-        スタートタイミングは勝率に強く影響する。
-        0.10-0.15秒が最も勝率が高く（24.38%）、
-        0.20秒以上は低い（9.64%）。
+        スタートタイミングはROIに影響する（TJ-3b 2026-02-27更新）。
+        0.10-0.15秒が最も勝率が高いが低オッズ傾向、
+        0.17秒以上は勝率低いが高オッズで高ROI傾向。
 
         Args:
             avg_st: 平均スタートタイミング（秒）
@@ -2048,12 +2093,15 @@ class ExtendedScorer:
 
         # 9. 展示タイムスコア (設定: exhibition) - 重要指標のため強化
         exhibition_max = float(weights.get('exhibition', 10))  # 8→10に強化
-        exhibition_result = {'score': exhibition_max * 0.5, 'description': '展示データなし'}
+        # TJ-9: 会場別展示タイム信頼性で重みを調整（信頼性低い会場ほど影響を弱める）
+        venue_exh_multiplier = self._get_venue_exhibition_multiplier(venue_code)
+        effective_exhibition_max = exhibition_max * venue_exh_multiplier
+        exhibition_result = {'score': effective_exhibition_max * 0.5, 'description': '展示データなし'}
         if race_id:
             exhibition_result = self.calculate_exhibition_time_score(
                 race_id,
                 pit_number,
-                max_score=exhibition_max
+                max_score=effective_exhibition_max
             )
 
         # 10. チルト角度スコア (設定: tilt) - 影響小のため低下

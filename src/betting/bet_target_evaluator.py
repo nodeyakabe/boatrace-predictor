@@ -405,6 +405,9 @@ class BetTargetEvaluator:
         # 各条件をチェック（優先度順にソート）
         sorted_conditions = sorted(conditions, key=lambda x: x.get('priority', 999))
 
+        # オッズ未取得時のCANDIDATE候補（全条件チェック後に返すため）
+        first_candidate_target = None
+
         for i, cond in enumerate(sorted_conditions):
             # 級別チェック
             if c1_rank not in cond['c1_rank']:
@@ -530,9 +533,9 @@ class BetTargetEvaluator:
 
             # オッズが不明な場合
             if odds is None or odds == 0:
-                # 直前情報がまだなら「候補」
-                if not has_beforeinfo:
-                    return BetTarget(
+                # 直前情報がまだなら「候補」として記録（全条件チェック後に返す）
+                if not has_beforeinfo and first_candidate_target is None:
+                    first_candidate_target = BetTarget(
                         status=BetStatus.CANDIDATE,
                         confidence=confidence,
                         method=cond['method'],
@@ -545,9 +548,8 @@ class BetTargetEvaluator:
                         reason=f'オッズ未取得。{odds_range}なら購入対象',
                         needs_beforeinfo=True
                     )
-                else:
-                    # 直前情報取得後もオッズ不明なら対象外
-                    continue
+                # 他の条件もチェックするためcontinue
+                continue
 
             # オッズ範囲チェック（パターンH対応）
             use_pattern_h = cond.get('use_pattern_h', True)
@@ -618,6 +620,10 @@ class BetTargetEvaluator:
                 reason=reason,
                 use_pattern_h=use_pattern_h
             )
+
+        # オッズ未取得でCANDIDATE候補がある場合（全条件確認済み）
+        if first_candidate_target is not None:
+            return first_candidate_target
 
         # オッズが範囲外の場合、候補として返す（直前情報でオッズが変動する可能性）
         if not has_beforeinfo and (old_odds or new_odds):

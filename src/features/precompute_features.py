@@ -3,6 +3,8 @@
 
 選手特徴量と会場特徴量を事前に計算してDBに保存し、
 学習時に高速に読み込めるようにする。
+
+2026-02-26 最適化: N+1クエリを一括ロード+pandasに置き換え（95%以上の高速化）
 """
 
 import sqlite3
@@ -95,78 +97,126 @@ class FeaturePrecomputer:
         Args:
             start_date: 開始日（YYYY-MM-DD）
             end_date: 終了日（YYYY-MM-DD）
-            batch_size: バッチサイズ
+            batch_size: 互換性のため残存（一括処理では未使用）
         """
         conn = sqlite3.connect(self.db_path)
-
         print(f"\n選手特徴量計算: {start_date} 〜 {end_date}")
 
-        # 既存データの最大日付を取得
+        # 既存データの範囲確認
         cursor = conn.cursor()
-        cursor.execute("SELECT MAX(race_date) FROM racer_features")
-        max_date_result = cursor.fetchone()[0]
+        cursor.execute("SELECT MIN(race_date), MAX(race_date) FROM racer_features")
+        min_d, max_d = cursor.fetchone()
+        conn.close()
 
-        # 既存データがある場合は、既存データの範囲を確認
-        if max_date_result:
-            print(f"既存データ: 〜 {max_date_result}")
-            # 既存データの最小日付も取得
-            cursor.execute("SELECT MIN(race_date) FROM racer_features")
-            min_date_result = cursor.fetchone()[0]
-            print(f"既存データ範囲: {min_date_result} 〜 {max_date_result}")
-
-            # 要求期間が既存データに完全に含まれているかチェック
-            if min_date_result and min_date_result <= start_date and max_date_result >= end_date:
+        if min_d:
+            print(f"既存データ範囲: {min_d} 〜 {max_d}")
+            if min_d <= start_date and max_d >= end_date:
                 print("[OK] 既に全期間のデータが存在します")
-                conn.close()
                 return
 
-        # 対象期間のレース一覧取得
-        query = """
+        self._compute_racer_features_bulk(start_date, end_date)
+        print("[OK] 選手特徴量計算完了")
+
+    def _compute_racer_features_bulk(self, start_date: str, end_date: str) -> int:
+        """
+        選手特徴量一括計算（高速版）
+
+        全結果データを一括メモリロードし、pandas+numpyで処理することで
+        N+1クエリ問題を解消。推定処理時間: ~10分（旧版: 2〜5時間）
+
+        Returns:
+            保存件数
+        """
+        conn = sqlite3.connect(self.db_path)
+        computed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # ---- Step 1: 全結果データを一括ロード ----
+        print("  [Bulk] 全結果データ読み込み中...")
+        hist_df = pd.read_sql_query("""
+            SELECT
+                e.racer_number,
+                r.race_date,
+                r.race_number,
+                CAST(res.rank AS INTEGER) AS rank
+            FROM results res
+            JOIN races r ON res.race_id = r.id
+            JOIN entries e ON res.race_id = e.race_id
+                          AND res.pit_number = e.pit_number
+            WHERE res.rank IN ('1', '2', '3', '4', '5', '6')
+            ORDER BY e.racer_number, r.race_date, r.race_number
+        """, conn)
+        print(f"  [Bulk] 結果データ: {len(hist_df):,}件")
+
+        # ---- Step 2: 対象（racer_number, race_date）を取得 ----
+        target_df = pd.read_sql_query("""
             SELECT DISTINCT
                 e.racer_number,
                 r.race_date
             FROM entries e
             JOIN races r ON e.race_id = r.id
             WHERE r.race_date BETWEEN ? AND ?
-            ORDER BY r.race_date, e.racer_number
-        """
-
-        df_targets = pd.read_sql_query(query, conn, params=(start_date, end_date))
-        total = len(df_targets)
-
-        print(f"対象: {total:,}件")
-
-        # バッチ処理
-        computed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        batch_data = []
-
-        for idx, row in df_targets.iterrows():
-            racer_number = row['racer_number']
-            race_date = row['race_date']
-
-            # 直近N戦の成績を取得
-            features = self._calculate_racer_recent_performance(
-                conn, racer_number, race_date
-            )
-
-            features['racer_number'] = racer_number
-            features['race_date'] = race_date
-            features['computed_at'] = computed_at
-
-            batch_data.append(features)
-
-            # バッチ保存
-            if len(batch_data) >= batch_size:
-                self._save_racer_features_batch(conn, batch_data)
-                batch_data = []
-                print(f"  進捗: {idx+1:,}/{total:,} ({(idx+1)/total*100:.1f}%)")
-
-        # 残りを保存
-        if batch_data:
-            self._save_racer_features_batch(conn, batch_data)
+            ORDER BY e.racer_number, r.race_date
+        """, conn, params=(start_date, end_date))
+        total = len(target_df)
+        print(f"  [Bulk] 対象: {total:,}件")
 
         conn.close()
-        print("[OK] 選手特徴量計算完了")
+
+        # ---- Step 3: 選手別に履歴をインデックス化 ----
+        hist_by_racer = {}
+        for racer, grp in hist_df.groupby('racer_number', sort=False):
+            hist_by_racer[racer] = (
+                grp['race_date'].values,
+                grp['rank'].values
+            )
+
+        # ---- Step 4: シーケンシャルスキャンで特徴量計算 ----
+        rows = []
+        for racer, grp_tgt in target_df.groupby('racer_number', sort=False):
+            target_dates = np.sort(grp_tgt['race_date'].values)
+            hist_dates, hist_ranks = hist_by_racer.get(
+                racer, (np.array([]), np.array([]))
+            )
+
+            ptr = 0  # hist_dates内で race_date 未満の境界ポインタ
+            for race_date in target_dates:
+                # race_date より前のデータを全て取得（シーケンシャル）
+                while ptr < len(hist_dates) and hist_dates[ptr] < race_date:
+                    ptr += 1
+
+                past = hist_ranks[:ptr]
+                n = len(past)
+
+                rows.append((
+                    racer,
+                    race_date,
+                    float(np.mean(past[-3:])) if n >= 3 else None,
+                    float(np.mean(past[-5:])) if n >= 5 else None,
+                    float(np.mean(past[-10:])) if n >= 10 else None,
+                    float(np.mean(past[-3:] == 1)) if n >= 3 else None,
+                    float(np.mean(past[-5:] == 1)) if n >= 5 else None,
+                    float(np.mean(past[-10:] == 1)) if n >= 10 else None,
+                    n,
+                    computed_at,
+                ))
+
+        # ---- Step 5: バルクINSERT ----
+        print(f"  [Bulk] INSERT: {len(rows):,}件...")
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.executemany("""
+            INSERT OR REPLACE INTO racer_features (
+                racer_number, race_date,
+                recent_avg_rank_3, recent_avg_rank_5, recent_avg_rank_10,
+                recent_win_rate_3, recent_win_rate_5, recent_win_rate_10,
+                total_races, computed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, rows)
+        conn.commit()
+        conn.close()
+
+        print(f"  [Bulk] {len(rows):,}件 保存完了")
+        return len(rows)
 
     def _calculate_racer_recent_performance(
         self,
@@ -174,9 +224,8 @@ class FeaturePrecomputer:
         racer_number: str,
         race_date: str
     ) -> dict:
-        """選手の直近N戦成績を計算"""
+        """選手の直近N戦成績を計算（レガシー: 単一行処理用）"""
 
-        # race_dateより前の直近レース結果を取得
         query = """
             SELECT
                 CAST(res.rank AS INTEGER) as rank
@@ -221,7 +270,7 @@ class FeaturePrecomputer:
         conn: sqlite3.Connection,
         batch_data: List[dict]
     ):
-        """選手特徴量をバッチ保存"""
+        """選手特徴量をバッチ保存（レガシー）"""
         cursor = conn.cursor()
 
         for data in batch_data:
@@ -249,30 +298,53 @@ class FeaturePrecomputer:
     ):
         """会場別選手成績を一括計算"""
         conn = sqlite3.connect(self.db_path)
-
         print(f"\n会場別選手特徴量計算: {start_date} 〜 {end_date}")
 
-        # 既存データの最大日付を取得
+        # 既存データの範囲確認
         cursor = conn.cursor()
-        cursor.execute("SELECT MAX(race_date) FROM racer_venue_features")
-        max_date_result = cursor.fetchone()[0]
+        cursor.execute("SELECT MIN(race_date), MAX(race_date) FROM racer_venue_features")
+        min_d, max_d = cursor.fetchone()
+        conn.close()
 
-        # 既存データがある場合は、既存データの範囲を確認
-        if max_date_result:
-            print(f"既存データ: 〜 {max_date_result}")
-            # 既存データの最小日付も取得
-            cursor.execute("SELECT MIN(race_date) FROM racer_venue_features")
-            min_date_result = cursor.fetchone()[0]
-            print(f"既存データ範囲: {min_date_result} 〜 {max_date_result}")
-
-            # 要求期間が既存データに完全に含まれているかチェック
-            if min_date_result and min_date_result <= start_date and max_date_result >= end_date:
+        if min_d:
+            print(f"既存データ範囲: {min_d} 〜 {max_d}")
+            if min_d <= start_date and max_d >= end_date:
                 print("[OK] 既に全期間のデータが存在します")
-                conn.close()
                 return
 
-        # 対象取得
-        query = """
+        self._compute_venue_features_bulk(start_date, end_date)
+        print("[OK] 会場別選手特徴量計算完了")
+
+    def _compute_venue_features_bulk(self, start_date: str, end_date: str) -> int:
+        """
+        会場別選手特徴量一括計算（高速版）
+
+        Returns:
+            保存件数
+        """
+        conn = sqlite3.connect(self.db_path)
+        computed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # ---- Step 1: 全結果データを一括ロード（venue_code付き） ----
+        print("  [Bulk] 全会場別結果データ読み込み中...")
+        hist_df = pd.read_sql_query("""
+            SELECT
+                e.racer_number,
+                r.venue_code,
+                r.race_date,
+                r.race_number,
+                CAST(res.rank AS INTEGER) AS rank
+            FROM results res
+            JOIN races r ON res.race_id = r.id
+            JOIN entries e ON res.race_id = e.race_id
+                          AND res.pit_number = e.pit_number
+            WHERE res.rank IN ('1', '2', '3', '4', '5', '6')
+            ORDER BY e.racer_number, r.venue_code, r.race_date, r.race_number
+        """, conn)
+        print(f"  [Bulk] 結果データ: {len(hist_df):,}件")
+
+        # ---- Step 2: 対象取得 ----
+        target_df = pd.read_sql_query("""
             SELECT DISTINCT
                 e.racer_number,
                 r.venue_code,
@@ -280,44 +352,67 @@ class FeaturePrecomputer:
             FROM entries e
             JOIN races r ON e.race_id = r.id
             WHERE r.race_date BETWEEN ? AND ?
-            ORDER BY r.race_date, e.racer_number, r.venue_code
-        """
-
-        df_targets = pd.read_sql_query(query, conn, params=(start_date, end_date))
-        total = len(df_targets)
-
-        print(f"対象: {total:,}件")
-
-        computed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        batch_data = []
-
-        for idx, row in df_targets.iterrows():
-            racer_number = row['racer_number']
-            venue_code = row['venue_code']
-            race_date = row['race_date']
-
-            # 会場別成績計算
-            features = self._calculate_venue_performance(
-                conn, racer_number, venue_code, race_date
-            )
-
-            features['racer_number'] = racer_number
-            features['venue_code'] = venue_code
-            features['race_date'] = race_date
-            features['computed_at'] = computed_at
-
-            batch_data.append(features)
-
-            if len(batch_data) >= batch_size:
-                self._save_venue_features_batch(conn, batch_data)
-                batch_data = []
-                print(f"  進捗: {idx+1:,}/{total:,} ({(idx+1)/total*100:.1f}%)")
-
-        if batch_data:
-            self._save_venue_features_batch(conn, batch_data)
+            ORDER BY e.racer_number, r.venue_code, r.race_date
+        """, conn, params=(start_date, end_date))
+        total = len(target_df)
+        print(f"  [Bulk] 対象: {total:,}件")
 
         conn.close()
-        print("[OK] 会場別選手特徴量計算完了")
+
+        # ---- Step 3: (racer, venue)別に履歴をインデックス化 ----
+        hist_by_key = {}
+        for key, grp in hist_df.groupby(
+            ['racer_number', 'venue_code'], sort=False
+        ):
+            hist_by_key[key] = (
+                grp['race_date'].values,
+                grp['rank'].values
+            )
+
+        # ---- Step 4: シーケンシャルスキャンで特徴量計算 ----
+        rows = []
+        for key, grp_tgt in target_df.groupby(
+            ['racer_number', 'venue_code'], sort=False
+        ):
+            racer, venue = key
+            target_dates = np.sort(grp_tgt['race_date'].values)
+            hist_dates, hist_ranks = hist_by_key.get(
+                key, (np.array([]), np.array([]))
+            )
+
+            ptr = 0
+            for race_date in target_dates:
+                while ptr < len(hist_dates) and hist_dates[ptr] < race_date:
+                    ptr += 1
+
+                past = hist_ranks[:ptr]
+                n = len(past)
+
+                rows.append((
+                    racer,
+                    venue,
+                    race_date,
+                    float(np.mean(past == 1)) if n > 0 else None,
+                    float(np.mean(past)) if n > 0 else None,
+                    n,
+                    computed_at,
+                ))
+
+        # ---- Step 5: バルクINSERT ----
+        print(f"  [Bulk] INSERT: {len(rows):,}件...")
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.executemany("""
+            INSERT OR REPLACE INTO racer_venue_features (
+                racer_number, venue_code, race_date,
+                venue_win_rate, venue_avg_rank, venue_races, computed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, rows)
+        conn.commit()
+        conn.close()
+
+        print(f"  [Bulk] {len(rows):,}件 保存完了")
+        return len(rows)
 
     def _calculate_venue_performance(
         self,
@@ -326,7 +421,7 @@ class FeaturePrecomputer:
         venue_code: str,
         race_date: str
     ) -> dict:
-        """会場別選手成績を計算"""
+        """会場別選手成績を計算（レガシー: 単一行処理用）"""
 
         query = """
             SELECT
@@ -359,7 +454,7 @@ class FeaturePrecomputer:
         conn: sqlite3.Connection,
         batch_data: List[dict]
     ):
-        """会場別特徴量をバッチ保存"""
+        """会場別特徴量をバッチ保存（レガシー）"""
         cursor = conn.cursor()
 
         for data in batch_data:

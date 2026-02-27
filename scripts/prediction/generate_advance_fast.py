@@ -108,7 +108,8 @@ def _flush_csv_buffer(csv_buffer, csv_path, fieldnames):
                 writer.writeheader()
             writer.writerows(csv_buffer)
         return True
-    except Exception:
+    except Exception as e:
+        print(f"  [!] CSV書き出しエラー ({csv_path}): {e}", flush=True)
         return False
 
 

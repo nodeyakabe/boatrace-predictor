@@ -4,6 +4,12 @@
 import sqlite3
 from typing import Dict, List, Set
 
+import sys
+import os
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, PROJECT_ROOT)
+from config.bet_conditions import GLOBAL_VENUE_MONTH_EXCLUDES
+
 def get_race_ids_for_condition(
     cursor: sqlite3.Cursor,
     cond: Dict,
@@ -66,6 +72,19 @@ def get_race_ids_for_condition(
     if cond.get('month_exclude'):
         months = ','.join(map(str, cond['month_exclude']))
         month_exclude_clause = f"AND CAST(strftime('%m', r.race_date) AS INTEGER) NOT IN ({months})"
+
+    # 会場×月除外フィルター（standard_backtest.pyと同じロジック）
+    venue_month_exclude_clause = ""
+    combined_excludes = list(cond.get('venue_month_exclude') or []) + list(GLOBAL_VENUE_MONTH_EXCLUDES or [])
+    if combined_excludes:
+        conditions = []
+        for venue, month in combined_excludes:
+            if isinstance(venue, int):
+                venue_code = f"'{venue:02d}'"
+            else:
+                venue_code = f"'{venue}'"
+            conditions.append(f"(r.venue_code = {venue_code} AND CAST(strftime('%m', r.race_date) AS INTEGER) = {month})")
+        venue_month_exclude_clause = f"AND NOT ({' OR '.join(conditions)})"
 
     # 逃げ率フィルター（Tier 2と同じ重複対策：最新レコードのみ）
     escape_rate_join = ""
@@ -161,6 +180,7 @@ def get_race_ids_for_condition(
         {predicted_course_clause}
         {c1_second_rate_clause}
         {month_exclude_clause}
+        {venue_month_exclude_clause}
         {escape_rate_clause}
         {bias_clause}
         {motor_rate_clause}
@@ -193,6 +213,7 @@ def get_race_ids_for_condition(
         {predicted_course_clause}
         {c1_second_rate_clause}
         {month_exclude_clause}
+        {venue_month_exclude_clause}
         {escape_rate_clause}
         {bias_clause}
         {motor_rate_clause}
