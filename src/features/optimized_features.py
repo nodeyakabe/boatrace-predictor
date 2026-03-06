@@ -233,8 +233,8 @@ class OptimizedFeatureGenerator:
         features['actual_course'] = race_data.get('actual_course', 0)
         features['pit_number'] = race_data.get('pit_number', 0)
         features['win_rate'] = race_data.get('win_rate', 0.0)
-        features['exhibition_time'] = race_data.get('exhibition_time', 0.0)
-        features['st_time'] = race_data.get('st_time', 0.0)
+        features['exhibition_time'] = race_data.get('exhibition_time')  # 欠損はNone（0.0は最速値として誤扱いされるため使わない）
+        features['st_time'] = race_data.get('st_time')  # 欠損はNone
 
         # 会場・グレード関連（重要度：高）
         features['venue_pit1_win_rate'] = race_data.get('venue_pit1_win_rate', 0.0)

@@ -307,7 +307,7 @@ class SecondPlaceFeatureGenerator:
         winner_row = race_features.iloc[winner_idx]
         winner_racer = winner_row.get('racer_number', '')
         winner_st = winner_row.get('st_time', 0.15) or 0.15
-        winner_exhibition = winner_row.get('exhibition_time', 6.8) or 6.8
+        winner_exhibition = winner_row.get('exhibition_time') or float('nan')
 
         # 1着艇の膨れ率
         fukure = self.calculate_winner_fukure_rate(
@@ -335,7 +335,7 @@ class SecondPlaceFeatureGenerator:
             features['relative_st'] = winner_st - st
             features['st_advantage'] = 1 if st < winner_st else 0
 
-            exhibition = row.get('exhibition_time', 6.8) or 6.8
+            exhibition = row.get('exhibition_time') or float('nan')
             features['relative_exhibition'] = winner_exhibition - exhibition
 
             # コース関連
@@ -457,8 +457,8 @@ def create_second_training_dataset(db_path: str,
                 'race_date': race_date,
                 'win_rate': row['win_rate'] or 0.0,
                 'racer_second_rate': row['racer_second_rate'] or 0.0,
-                'exhibition_time': row['exhibition_time'] or 0.0,
-                'st_time': row['st_time'] or 0.0,
+                'exhibition_time': row['exhibition_time'],  # 欠損はNone（0.0は最速値として誤扱いされるため使わない）
+                'st_time': row['st_time'],  # 欠損はNone
                 'actual_course': row['actual_course'] or row['pit_number'],
             }
 
@@ -469,7 +469,7 @@ def create_second_training_dataset(db_path: str,
             # 1着艇との関係
             features['winner_course'] = winner_course
             features['winner_st'] = winner_row['st_time'].iloc[0] or 0.15
-            features['winner_exhibition'] = winner_row['exhibition_time'].iloc[0] or 6.8
+            features['winner_exhibition'] = winner_row['exhibition_time'].iloc[0] or float('nan')
 
             winner_st = features['winner_st']
             my_st = features['st_time'] or 0.15

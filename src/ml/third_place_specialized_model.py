@@ -75,24 +75,39 @@ class ThirdPlaceSpecializedScorer:
         self.use_stats = self.flow_stats is not None
 
     def _load_flow_stats(self, path: str) -> Optional[Dict]:
-        """統計ファイルを読み込む"""
-        # 複数のエンコーディングを試す
-        for encoding in ['utf-8', 'cp932', 'shift-jis']:
+        """統計ファイルを読み込む（リトライあり、エンコーディング自動判定）"""
+        import time as _time
+        for attempt in range(3):
             try:
-                with open(path, 'r', encoding=encoding) as f:
-                    stats = json.load(f)
+                with open(path, 'rb') as f:
+                    raw = f.read()
+                # UTF-8を試みて失敗したらCP932にフォールバック
+                for enc in ('utf-8', 'cp932'):
+                    try:
+                        stats = json.loads(raw.decode(enc))
+                        break
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        continue
+                else:
+                    raise ValueError("すべてのエンコーディングで失敗")
                 # キーを整数に変換
                 converted = {}
                 for winner_course, kimarite_data in stats.items():
                     converted[int(winner_course)] = kimarite_data
-                logger.info(f"決まり手統計を読み込みました ({encoding}): {path}")
+                logger.info(f"決まり手統計を読み込みました: {path}")
                 return converted
-            except UnicodeDecodeError:
-                continue
-            except Exception as e:
-                logger.warning(f"統計ファイル読み込み失敗 ({encoding}): {e}")
+            except FileNotFoundError:
+                logger.warning(f"統計ファイルが見つかりません: {path}")
                 return None
-        logger.warning(f"統計ファイル読み込み失敗: すべてのエンコーディングで失敗")
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
+                if attempt < 2:
+                    _time.sleep(0.5)
+                    continue
+                logger.warning(f"統計ファイル読み込み失敗 (3回試行): {e}")
+                return None
+            except Exception as e:
+                logger.warning(f"統計ファイル読み込み失敗: {e}")
+                return None
         return None
 
     def calculate_third_scores(

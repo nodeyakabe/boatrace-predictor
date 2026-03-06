@@ -937,12 +937,15 @@ class ResultScraper(BaseScraper):
                 classes = weather_image.get('class', [])
                 for cls in classes:
                     if 'is-weather' in cls and len(cls) > 10:
-                        # is-weather1 -> 晴れ, is-weather2 -> 曇り, is-weather3 -> 雨（推測）
+                        # beforeinfo_scraperと表記を統一（'晴'/'曇'/'雨'/'雪'/'霧'/'台風'）
                         weather_num = cls.replace('is-weather', '')
                         weather_map = {
-                            '1': '晴れ',
-                            '2': '曇り',
-                            '3': '雨'
+                            '1': '晴',
+                            '2': '曇',
+                            '3': '雨',
+                            '4': '雪',
+                            '5': '霧',
+                            '6': '台風'
                         }
                         weather_data['weather_condition'] = weather_map.get(weather_num, '不明')
                         break

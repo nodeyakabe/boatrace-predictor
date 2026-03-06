@@ -44,7 +44,7 @@ def send_discord_notification(message: str) -> bool:
     data = {"content": message}
 
     try:
-        response = requests.post(DISCORD_WEBHOOK_URL, json=data)
+        response = requests.post(DISCORD_WEBHOOK_URL, json=data, timeout=30)
 
         if response.status_code == 204:
             print(f"[OK] Discord通知送信成功: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

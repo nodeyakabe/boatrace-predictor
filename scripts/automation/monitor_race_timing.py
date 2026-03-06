@@ -196,7 +196,7 @@ class RaceMonitor:
         }
 
     def _get_predictions(self, cursor, race_id: int) -> Optional[Dict]:
-        """予測データを取得"""
+        """予測データを取得（before優先、なければadvanceにフォールバック）"""
         cursor.execute("""
             SELECT
                 pit_number,
@@ -209,6 +209,21 @@ class RaceMonitor:
         """, (race_id,))
 
         predictions = [dict(row) for row in cursor.fetchall()]
+
+        # before予測がなければadvance予測にフォールバック
+        if len(predictions) < 3:
+            cursor.execute("""
+                SELECT
+                    pit_number,
+                    rank_prediction,
+                    confidence
+                FROM race_predictions
+                WHERE race_id = ?
+                  AND prediction_type = 'advance'
+                ORDER BY rank_prediction
+            """, (race_id,))
+            predictions = [dict(row) for row in cursor.fetchall()]
+
         if len(predictions) < 3:
             return None
 

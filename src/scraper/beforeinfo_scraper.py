@@ -446,19 +446,18 @@ class BeforeInfoScraper:
                                 start_timings[pit_number] = st_value
                         elif 'L' in st_text:
                             # "L"マーク（出遅れ）の処理
-                            # 通常のSTとして処理（正の値）
+                            # result_scraper方式に統一: "0" + num_part（例: ".09" → "0.09"）
                             num_part = st_text.replace('L', '')
                             if num_part:
-                                full_st = f"{pit_number}{num_part}"
-                                st_value = float(full_st)
-                                if 0.0 <= st_value <= 9.99:
+                                st_value = float(f"0{num_part}")
+                                if 0.0 <= st_value <= 2.00:
                                     start_timings[pit_number] = st_value
                         else:
-                            # 正常なST: ".09" → "1.09"
-                            full_st = f"{pit_number}{st_text}"
-                            st_value = float(full_st)
-                            # STは通常0.00〜2.00の範囲
-                            if 0.0 <= st_value <= 9.99:
+                            # 正常なST: ".09" → "0.09"（result_scraper方式に統一）
+                            # ※旧実装は f"{pit_number}{st_text}" で "1.09" と記録していたが
+                            #   result_scraperと異なるスケールとなりパターンボーナスで誤判定が発生した
+                            st_value = float(f"0{st_text}")
+                            if 0.0 <= st_value <= 2.00:
                                 start_timings[pit_number] = st_value
                     except ValueError:
                         pass
@@ -522,10 +521,10 @@ class BeforeInfoScraper:
                         weather_data['water_temp'] = float(value_text.replace('℃', '').replace('度', ''))
                     # 風速
                     elif '風速' in title:
-                        weather_data['wind_speed'] = int(value_text.replace('m', '').replace('メートル', ''))
+                        weather_data['wind_speed'] = float(value_text.replace('m', '').replace('メートル', ''))
                     # 波高
                     elif '波高' in title:
-                        weather_data['wave_height'] = int(value_text.replace('cm', '').replace('センチ', ''))
+                        weather_data['wave_height'] = float(value_text.replace('cm', '').replace('センチ', ''))
                 except (ValueError, AttributeError):
                     pass
 

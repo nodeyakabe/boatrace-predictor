@@ -415,9 +415,11 @@ class TodayPredictionWorkflow:
                 })
         conn.close()
 
+        print(f"[DEBUG] オッズ取得開始: 対象{len(all_races)}レース (既存スキップ: {len(existing_race_ids)}件) 時刻={datetime.now().strftime('%H:%M:%S')}", flush=True)
         logger.info(f"オッズ取得: 対象{len(all_races)}レース (既存スキップ: {len(existing_race_ids)}件)")
 
         if not all_races:
+            print(f"[DEBUG] オッズ取得対象なし（全レース既取得済み）", flush=True)
             return 0
 
         # 合計数を設定
@@ -425,16 +427,34 @@ class TodayPredictionWorkflow:
             self._odds_total = len(all_races)
 
         def fetch_single_odds(race_info):
+            venue = race_info['venue_code']
+            rno = race_info['race_number']
+            rdate = race_info['race_date']
             try:
                 scraper = OddsScraper(delay=0.1, max_retries=1)
-                odds = scraper.get_trifecta_odds(
-                    race_info['venue_code'],
-                    race_info['race_date'],
-                    race_info['race_number']
-                )
+                odds = scraper.get_trifecta_odds(venue, rdate, rno)
                 scraper.close()
 
-                if odds and len(odds) > 50:
+                if odds is None:
+                    print(f"[DEBUG] オッズ取得NULL: {venue}場{rno}R({rdate}) → Noneが返却（未発売or解析失敗）", flush=True)
+                    with self._parallel_lock:
+                        self._odds_count += 1
+                    self._update_parallel_progress()
+                    return False
+                elif len(odds) == 0:
+                    print(f"[DEBUG] オッズ取得空: {venue}場{rno}R({rdate}) → 空dict", flush=True)
+                    with self._parallel_lock:
+                        self._odds_count += 1
+                    self._update_parallel_progress()
+                    return False
+                elif len(odds) <= 50:
+                    print(f"[DEBUG] オッズ件数不足: {venue}場{rno}R({rdate}) → {len(odds)}件(閾値51件未満のため破棄)", flush=True)
+                    with self._parallel_lock:
+                        self._odds_count += 1
+                    self._update_parallel_progress()
+                    return False
+                else:
+                    print(f"[DEBUG] オッズ取得成功: {venue}場{rno}R({rdate}) → {len(odds)}件", flush=True)
                     conn = sqlite3.connect(self.db_path, timeout=30.0)
                     cursor = conn.cursor()
                     cursor.execute(
@@ -454,12 +474,8 @@ class TodayPredictionWorkflow:
                         self._odds_count += 1
                     self._update_parallel_progress()
                     return True
-                else:
-                    with self._parallel_lock:
-                        self._odds_count += 1
-                    self._update_parallel_progress()
-                    return False
-            except Exception:
+            except Exception as e:
+                print(f"[DEBUG] オッズ取得例外: {venue}場{rno}R({rdate}) → {e}", flush=True)
                 with self._parallel_lock:
                     self._odds_count += 1
                 self._update_parallel_progress()
@@ -518,7 +534,7 @@ class TodayPredictionWorkflow:
 
             try:
                 result = subprocess.run(
-                    [sys.executable, script_path, '--date', target_date],
+                    [sys.executable, script_path, '--date', target_date, '--type', 'advance'],
                     capture_output=True,
                     encoding='utf-8',
                     errors='replace',  # デコードエラーを無視

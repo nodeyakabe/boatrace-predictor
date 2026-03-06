@@ -87,18 +87,18 @@ def retry_with_backoff(
                         def timeout_handler(signum, frame):
                             raise TimeoutError(f"処理がタイムアウトしました（{config.timeout}秒）")
 
-                        # Windowsではsignal.SIGALRMが使えないため、threading.Timerを使用
+                        # Windowsではsignal.SIGALRMが使えないため、threading.Eventを使用
                         import threading
-                        timer = None
+                        timed_out = threading.Event()
+                        timer = threading.Timer(config.timeout, timed_out.set)
                         try:
-                            # タイムアウトタイマーを設定
-                            timer = threading.Timer(config.timeout, lambda: (_ for _ in ()).throw(TimeoutError(f"処理がタイムアウトしました（{config.timeout}秒）")))
                             timer.start()
                             result = func(*args, **kwargs)
+                            if timed_out.is_set():
+                                raise TimeoutError(f"処理がタイムアウトしました（{config.timeout}秒）")
                             return result
                         finally:
-                            if timer:
-                                timer.cancel()
+                            timer.cancel()
                     else:
                         return func(*args, **kwargs)
 

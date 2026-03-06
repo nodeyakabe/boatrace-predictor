@@ -117,12 +117,13 @@ def fetch_venue_day_parallel(args):
 
     for race_number in range(1, 13):
         max_retries = 3
+        data_found = False
         for retry in range(max_retries):
             try:
                 # 出走表取得
                 race_data = race_scraper.get_race_card(venue_code, race_date_yyyymmdd, race_number)
                 if not race_data or not race_data.get('entries'):
-                    break  # データなしは正常終了
+                    break  # データなしは正常終了（リトライ不要）
 
                 race_data['venue_code'] = venue_code
                 race_data['race_date'] = race_date_yyyymmdd
@@ -144,6 +145,7 @@ def fetch_venue_day_parallel(args):
                     'result': result_data
                 })
                 success_count += 1
+                data_found = True
 
                 time.sleep(0.1)  # レート制限
                 break  # 成功したらリトライループを抜ける
@@ -151,6 +153,12 @@ def fetch_venue_day_parallel(args):
             except Exception as e:
                 if retry < max_retries - 1:
                     time.sleep(2 ** retry)  # 指数バックオフ
+                else:
+                    print(f"取得失敗(3回リトライ後): {venue_code} {race_date_yyyymmdd} R{race_number}: {e}")
+
+        # R1でデータなし → 当日未開催と判断して残りのレース番号をスキップ
+        if race_number == 1 and not data_found:
+            break
 
     return venue_code, race_date, success_count, races_data, incomplete_results
 

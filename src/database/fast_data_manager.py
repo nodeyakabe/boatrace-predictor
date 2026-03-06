@@ -211,12 +211,19 @@ class FastDataManager:
                 )
                 values_list.append(values)
 
-            # 一括INSERT OR REPLACE
+            # 一括UPSERT（COALESCE で既存カラムを保護）
+            # INSERT OR REPLACE は既存行を削除して再挿入するため exhibition_time 等が NULL になる危険がある
             self.cursor.executemany("""
-                INSERT OR REPLACE INTO race_details (
+                INSERT INTO race_details (
                     race_id, pit_number, exhibition_time, tilt_angle,
                     parts_replacement, actual_course, st_time
                 ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(race_id, pit_number) DO UPDATE SET
+                    exhibition_time = COALESCE(excluded.exhibition_time, exhibition_time),
+                    tilt_angle = COALESCE(excluded.tilt_angle, tilt_angle),
+                    parts_replacement = COALESCE(excluded.parts_replacement, parts_replacement),
+                    actual_course = COALESCE(excluded.actual_course, actual_course),
+                    st_time = COALESCE(excluded.st_time, st_time)
             """, values_list)
 
             return True

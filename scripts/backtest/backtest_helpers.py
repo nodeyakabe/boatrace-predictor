@@ -126,6 +126,23 @@ def get_race_ids_for_condition(
         """
         bias_clause = f"AND pbs.bias_index IS NOT NULL AND pbs.bias_index < {cond['bias_max']} "
 
+    # 予測順位別級別フィルター（B2条件対応: 予測1-3位のいずれかが指定級別）
+    predicted_rank_class_clause = ""
+    if cond.get('predicted_rank_has_class') and cond.get('predicted_rank_range'):
+        class_list = "','".join(cond['predicted_rank_has_class'])
+        rank_min, rank_max = cond['predicted_rank_range']
+        predicted_rank_class_clause = f"""
+        AND EXISTS (
+            SELECT 1
+            FROM race_predictions rp_class
+            LEFT JOIN racers r_class ON rp_class.racer_number = r_class.racer_number
+            WHERE rp_class.race_id = r.id
+            AND rp_class.prediction_type = 'before'
+            AND rp_class.rank_prediction BETWEEN {rank_min} AND {rank_max}
+            AND r_class.rank IN ('{class_list}')
+        )
+        """
+
     # スコア差フィルター（rp1.total_score - rp2.total_score >= min_score_gap）
     score_gap_clause = ""
     if cond.get('min_score_gap') is not None:
@@ -186,6 +203,7 @@ def get_race_ids_for_condition(
         {motor_rate_clause}
         {score_gap_clause}
         {avg_st_clause}
+        {predicted_rank_class_clause}
         """
     else:
         # 1点買い: 3位までの予測でOK
@@ -219,6 +237,7 @@ def get_race_ids_for_condition(
         {motor_rate_clause}
         {score_gap_clause}
         {avg_st_clause}
+        {predicted_rank_class_clause}
         """
 
     cursor.execute(query)

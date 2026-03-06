@@ -65,13 +65,15 @@ def get_todays_target_and_candidates(db_path: str) -> tuple:
             if not race_data:
                 continue
 
-            # 予測データを取得
-            predictions = _get_predictions_for_eval(cursor, race_id)
+            # 予測データを取得（before優先、なければadvance）
+            predictions, prediction_type = _get_predictions_for_eval(cursor, race_id)
             if not predictions:
                 continue
 
-            # オッズデータを取得
-            odds_data = _get_odds_data_for_eval(cursor, race_id, predictions)
+            has_beforeinfo = prediction_type == 'before'
+
+            # オッズデータを取得（全組み合わせ）
+            odds_data = _get_odds_data_for_eval(cursor, race_id)
 
             # BetTargetEvaluatorで購入判定
             try:
@@ -79,7 +81,7 @@ def get_todays_target_and_candidates(db_path: str) -> tuple:
                     race_data=race_data,
                     predictions=predictions,
                     odds_data=odds_data,
-                    has_beforeinfo=True  # before予測を使用
+                    has_beforeinfo=has_beforeinfo
                 )
 
                 # 会場名マップ（venue_codeは"01", "02"などのテキスト型）
@@ -193,34 +195,50 @@ def _get_race_data_for_eval(cursor, race_id: int):
 
 
 def _get_predictions_for_eval(cursor, race_id: int):
-    """評価用の予測データを取得"""
-    cursor.execute("""
-        SELECT pit_number, rank_prediction, confidence
-        FROM race_predictions
-        WHERE race_id = ? AND prediction_type = 'before'
-        ORDER BY rank_prediction
-    """, (race_id,))
-    predictions = [dict(row) for row in cursor.fetchall()]
-    if len(predictions) < 3:
-        return None
+    """評価用の予測データを取得（before優先、なければadvance）
 
-    old_pred = [p['pit_number'] for p in predictions[:3]]
-    return {
-        'confidence': predictions[0]['confidence'],
-        'old_prediction': old_pred,
-        'new_prediction': old_pred
-    }
+    Returns:
+        tuple: (predictions_dict, prediction_type) or (None, None)
+    """
+    for prediction_type in ('before', 'advance'):
+        cursor.execute("""
+            SELECT pit_number, rank_prediction, confidence
+            FROM race_predictions
+            WHERE race_id = ? AND prediction_type = ?
+            ORDER BY rank_prediction
+        """, (race_id, prediction_type))
+        rows = [dict(row) for row in cursor.fetchall()]
+        if len(rows) >= 3:
+            all_pred = [p['pit_number'] for p in rows]  # 全件（パターンH用に5位以上が必要）
+
+            # 1着予測選手の登録番号を取得（逃げ率/バイアスフィルター用）
+            first_racer_number = None
+            if all_pred:
+                cursor.execute(
+                    "SELECT racer_number FROM entries WHERE race_id = ? AND pit_number = ?",
+                    (race_id, all_pred[0])
+                )
+                row = cursor.fetchone()
+                if row:
+                    first_racer_number = row['racer_number']
+
+            return {
+                'confidence': rows[0]['confidence'],
+                'old_prediction': all_pred,
+                'new_prediction': all_pred,
+                'first_racer_number': first_racer_number,
+            }, prediction_type
+    return None, None
 
 
-def _get_odds_data_for_eval(cursor, race_id: int, predictions: dict):
-    """評価用のオッズデータを取得"""
-    old_pred = predictions['old_prediction']
-    combination = '-'.join(map(str, old_pred))
-    cursor.execute("SELECT odds FROM trifecta_odds WHERE race_id = ? AND combination = ?", (race_id, combination))
-    row = cursor.fetchone()
-    if row and row['odds']:
-        return {combination: row['odds']}
-    return None
+def _get_odds_data_for_eval(cursor, race_id: int):
+    """評価用のオッズデータを取得（全組み合わせ）"""
+    cursor.execute(
+        "SELECT combination, odds FROM trifecta_odds WHERE race_id = ?",
+        (race_id,)
+    )
+    result = {row['combination']: row['odds'] for row in cursor.fetchall() if row['odds']}
+    return result if result else None
 
 
 def progress_callback(step: str, message: str, progress: int):

@@ -806,7 +806,7 @@ class RacePredictor:
             weather_row = cursor.fetchone()
             cursor.close()
 
-        if weather_row and weather_row.get('wind_speed') is not None:
+        if weather_row and weather_row['wind_speed'] is not None:
             wind_speed = weather_row['wind_speed']
             wave_height = weather_row['wave_height']
             wind_direction = weather_row['wind_direction']

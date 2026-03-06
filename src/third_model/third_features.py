@@ -440,8 +440,8 @@ def create_third_training_dataset(db_path: str,
                 'win_rate': row['win_rate'] or 0.0,
                 'racer_second_rate': row['racer_second_rate'] or 0.0,
                 'racer_third_rate': row['racer_third_rate'] or 0.0,
-                'exhibition_time': row['exhibition_time'] or 0.0,
-                'st_time': row['st_time'] or 0.0,
+                'exhibition_time': row['exhibition_time'],  # 欠損はNone（0.0は最速値として誤扱いされるため使わない）
+                'st_time': row['st_time'],  # 欠損はNone
                 'actual_course': row['actual_course'] or row['pit_number'],
             }
 

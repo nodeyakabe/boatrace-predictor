@@ -346,8 +346,8 @@ class EntryFeatureGenerator:
                 'pit_number': row['pit_number'],
                 'racer_number': row['racer_number'],
                 'win_rate': row['win_rate'] or 0.0,
-                'exhibition_time': row['exhibition_time'] or 0.0,
-                'st_time': row['st_time'] or 0.0,
+                'exhibition_time': row['exhibition_time'],  # 欠損はNone（0.0は最速値として誤扱いされるため使わない）
+                'st_time': row['st_time'],  # 欠損はNone
             }
 
             # 級別スコア
@@ -463,8 +463,8 @@ def create_entry_training_dataset(db_path: str,
                 'venue_code': venue_code,
                 'race_date': race_date,
                 'win_rate': row['win_rate'] or 0.0,
-                'exhibition_time': row['exhibition_time'] or 0.0,
-                'st_time': row['st_time'] or 0.0,
+                'exhibition_time': row['exhibition_time'],  # 欠損はNone（0.0は最速値として誤扱いされるため使わない）
+                'st_time': row['st_time'],  # 欠損はNone
             }
 
             # 級別スコア

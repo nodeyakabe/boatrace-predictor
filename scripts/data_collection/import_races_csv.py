@@ -211,15 +211,16 @@ def import_entries(conn, rows: list, race_id_map: dict, dry_run: bool) -> dict:
     if dry_run:
         return {'rows': len(rows), 'inserted': 0, 'errors': 0}
 
-    # race_idごとにグループ化
+    # race_idごとにグループ化（pit_numberで重複排除：後勝ち）
     by_race = {}
     for row in rows:
         rid = lookup_race_id(race_id_map, row)
         if rid is None:
             continue
+        pit = row.get('pit_number')
         if rid not in by_race:
-            by_race[rid] = []
-        by_race[rid].append(row)
+            by_race[rid] = {}
+        by_race[rid][pit] = row
 
     cur = conn.cursor()
     inserted = 0
@@ -236,7 +237,7 @@ def import_entries(conn, rows: list, race_id_map: dict, dry_run: bool) -> dict:
         # 新データを挿入
         values_list = []
         for rid in batch_ids:
-            for row in by_race[rid]:
+            for row in by_race[rid].values():
                 try:
                     values_list.append((
                         rid,
@@ -296,15 +297,16 @@ def import_results(conn, rows: list, race_id_map: dict, dry_run: bool) -> dict:
     if dry_run:
         return {'rows': len(rows), 'inserted': 0, 'errors': 0}
 
-    # race_idごとにグループ化
+    # race_idごとにグループ化（pit_numberで重複排除：後勝ち）
     by_race = {}
     for row in rows:
         rid = lookup_race_id(race_id_map, row)
         if rid is None:
             continue
+        pit = row.get('pit_number')
         if rid not in by_race:
-            by_race[rid] = []
-        by_race[rid].append(row)
+            by_race[rid] = {}
+        by_race[rid][pit] = row
 
     cur = conn.cursor()
     inserted = 0
@@ -321,7 +323,7 @@ def import_results(conn, rows: list, race_id_map: dict, dry_run: bool) -> dict:
         # 新データを挿入
         values_list = []
         for rid in batch_ids:
-            for row in by_race[rid]:
+            for row in by_race[rid].values():
                 try:
                     values_list.append((
                         rid,
@@ -384,10 +386,20 @@ def import_race_details(conn, rows: list, race_id_map: dict, dry_run: bool) -> d
 
         try:
             cur.executemany("""
-                INSERT OR REPLACE INTO race_details
+                INSERT INTO race_details
                     (race_id, pit_number, exhibition_time, tilt_angle,
                      parts_replacement, actual_course, st_time)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(race_id, pit_number) DO UPDATE SET
+                    actual_course     = COALESCE(excluded.actual_course, actual_course),
+                    st_time           = COALESCE(excluded.st_time, st_time),
+                    exhibition_time   = COALESCE(excluded.exhibition_time, exhibition_time),
+                    tilt_angle        = COALESCE(excluded.tilt_angle, tilt_angle),
+                    parts_replacement = CASE
+                        WHEN excluded.parts_replacement IS NOT NULL AND excluded.parts_replacement != ''
+                        THEN excluded.parts_replacement
+                        ELSE parts_replacement
+                    END
             """, values_list)
             inserted += len(values_list)
         except Exception as e:

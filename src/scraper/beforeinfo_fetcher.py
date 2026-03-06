@@ -163,14 +163,14 @@ class BeforeInfoFetcher:
                 if wind_elem:
                     match = re.search(r'(\d+)cm', wind_elem)
                     if match:
-                        weather_info['wind_speed'] = int(match.group(1))
+                        weather_info['wind_speed'] = float(match.group(1))
 
                 # 波高（例: 6cm）
                 wave_elem = weather_section.find(string=re.compile(r'(\d+)cm'))
                 if wave_elem:
                     match = re.search(r'(\d+)cm', str(wave_elem))
-                    if match and weather_info['wind_speed'] != int(match.group(1)):
-                        weather_info['wave_height'] = int(match.group(1))
+                    if match and weather_info['wind_speed'] != float(match.group(1)):
+                        weather_info['wave_height'] = float(match.group(1))
 
                 # 天候（晴、曇、雨など）
                 weather_elem = weather_section.find('span', class_=re.compile('weather.*icon.*'))
