@@ -50,30 +50,12 @@
 
 ## ⚠️ 参照してはいけないドキュメント
 
-以下のドキュメントは**過去ログ**であり、最新情報ではありません。参照すると誤認識の原因になります：
+以下のドキュメントは**過去ログ**であり、最新情報ではありません：
 
-### 1. 日付付きファイル（`*_2025*.md`, `*_2026*.md`）
-
-- 作成当時の分析結果であり、現在のシステムと乖離している可能性
-- 例: `docs/analysis/*_20251215.md` ～ `*_20251222.md`（約45ファイル）
-- 例: `docs/implementation/*_2025*.md`
-- 例: `docs/PROJECT_CLEANUP_LOG_20251222.md`
-- 例: `docs/DOCUMENT_CLEANUP_PROPOSAL_20260114.md`
-
-### 2. docs/implementation/ 配下のレポート
-
-- 完了済みの実装記録（過去ログ）
-- 参照するなら `docs/architecture/` の最新版を使用
-
-### 3. docs/archive/ 配下
-
-- 明示的にアーカイブされた古いドキュメント
-- 過去の経緯確認以外では参照不要
-
-### 4. docs/analysis/ 配下の古いレポート
-
-- 大半が過去の分析レポート
-- 最新の分析結果は `docs/performance/` を参照
+- **`docs/archive/` 配下すべて** — 明示的にアーカイブ済み。参照禁止。
+  - `archive/analysis/` `archive/analysis_2025/` `archive/implementation/` `archive/reports_2025/` `archive/reports_2026/` `archive/performance_old/`
+- **日付付きファイル**（`*_2025*.md`, `*_2026*.md`）— いずれかのarchiveサブディレクトリに移動済み
+- **`docs/implementation/`** — 全ファイルをarchiveに移動済み（空ディレクトリ）
 
 **例外（参照必須）**:
 - `docs/improvement_attempts/REJECTED_IDEAS.md` - 不採用案の確認に必須
@@ -566,31 +548,50 @@ python scripts/data_collection/import_beforeinfo_csv_to_db.py \
 ## ディレクトリ構成
 
 ```
-├── src/           # ソースコード
+├── src/           # ソースコード（261ファイル）
 ├── scripts/       # 運用スクリプト
-│   ├── prediction/     # 予測生成
+│   ├── prediction/     # 予測生成（現役4ファイル）
 │   ├── backtest/       # バックテスト
 │   ├── analysis/       # 分析
+│   ├── automation/     # 自動化パイプライン（daily_scheduler, block_a/c/d等）
+│   ├── validation/     # 検証（verify_prediction_consistency.py等）
 │   ├── data_collection/# データ収集
 │   ├── maintenance/    # メンテナンス
-│   └── templates/      # スクリプトテンプレート
+│   ├── templates/      # スクリプトテンプレート
+│   └── _one_time/      # 一時・年度限定スクリプト（使用後移動済み）
 ├── config/        # 設定
-├── docs/          # ドキュメント（最新版）
+├── docs/          # ドキュメント
+│   ├── HANDOVER.md          # ★引継ぎ資料（常に最新）
+│   ├── 残タスク一覧.md       # ★唯一の最新タスク情報源
+│   ├── QUICK_REFERENCE.md   # テーブル早見表・よく使うクエリ
 │   ├── architecture/        # システム設計・予測ロジック
-│   ├── performance/         # 年度別成績・テスト結果
+│   ├── performance/         # 年度別成績・テスト結果（最新版のみ）
 │   ├── presets/             # 購入条件・プリセット
 │   ├── improvement_attempts/ # 不採用案・検証履歴
-│   ├── guides/              # ガイド
-│   ├── analysis/            # 最新の分析結果のみ
+│   ├── guides/              # ガイド類（56ファイル）
+│   ├── knowledge/           # 予測ロジック知見ベース
+│   ├── checklists/          # 検証チェックリスト
+│   ├── lessons_learned/     # 過去の教訓
+│   ├── templates/           # ドキュメントテンプレート
 │   ├── maintenance/         # メンテナンス記録
 │   └── archive/             # 過去ログ（★参照禁止）
+│       ├── analysis/        # 分析レポート（90ファイル）
 │       ├── analysis_2025/   # 2025年の分析レポート（51ファイル）
-│       ├── implementation/  # 完了済み実装レポート（29ファイル）
-│       └── reports_2025/    # 2025年のその他レポート（4ファイル）
+│       ├── implementation/  # 完了済み実装レポート（36ファイル）
+│       ├── reports_2025/    # 2025年のその他レポート（4ファイル）
+│       ├── reports_2026/    # 2026年の過去レポート（14ファイル）
+│       └── performance_old/ # 旧ベースライン・補完完了レポート
 ├── ui/            # Streamlit UI
 ├── tests/         # テスト
+├── temp/          # 一時ファイル（展示データJSON等）
+├── migrations/    # DBマイグレーション
+├── logs/          # ログ（直近3月分のみ保持）
 ├── data/          # データ（Git管理外）
+│   ├── boatrace.db          # 本番DB（6.0GB）
+│   ├── backups/             # 自動バックアップ（定期削除対象）
+│   └── predictions_csv/     # 予測CSV中間ファイル
 └── models/        # MLモデル（Git管理外）
+    └── conditional_rank_v3_*  # 最新版モデル（v1/v2は削除済み）
 ```
 
-**重要**: docs/archive/ 配下は過去ログです。参照不要。
+**重要**: `docs/archive/` 配下は過去ログです。参照不要。

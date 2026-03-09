@@ -16,7 +16,7 @@ meta:
 # ============================================================
 extended_scorer:
   # 各要素の最大スコア（合計62点）
-  class_score: 10        # 級別スコア (A1=10, A2=7, B1=4, B2=1)
+  class_score: 0         # 級別スコア（course_rank_scoreと重複するため無効化 2026-03-09）
   fl_penalty_max: -10    # F/Lペナルティ最大（負の値）
   session: 5             # 節間成績スコア
   prev_race: 5           # 前走レベルスコア
@@ -24,14 +24,16 @@ extended_scorer:
   matchup: 5             # 選手間相性スコア
   motor: 5               # モーター特性スコア
   start_timing: 10       # 平均STスコア（8→10: 統計分析により最適化）
-  exhibition: 8          # 展示タイムスコア（10→8: 統計分析により最適化）
+  exhibition: 4          # 展示タイムスコア（8→4: compound_buffとの重複整理 2026-03-09）
   tilt: 3                # チルト角度スコア
+  chikusen_time: 0       # 直線タイムスコア（データ充足率0.1%のため無効化 2026-03-09）
   recent_form: 8         # 直近成績スコア
   venue_affinity: 3      # 会場別勝率スコア
+  motor_second_rate: 3   # モーター2連対率スコア（充足率95.4%・2026-03-09有効化）
 
   # 正規化設定
   total_weight: 20.0     # ExtendedScoreの最終的な重み
-  max_possible: 62       # 合計最大スコア
+  max_possible: 65       # 合計最大スコア（chikusen_time除外+motor_second_rate追加+class_score無効化で更新 2026-03-09）
   min_possible: -10      # 合計最小スコア
 
 # ============================================================
@@ -159,7 +161,7 @@ adjustment_limits:
   max_rule_adjustment: 10.0          # 法則補正の最大値
   max_weather_adjustment: 8.0        # 天候補正の最大値
   max_tide_adjustment: 5.0           # 潮位補正の最大値
-  max_compound_buff: 15.0            # 複合バフの最大値
+  max_compound_buff: 12.0            # 複合バフの最大値（15→12: compound_buff全体圧縮 2026-03-09）
 
 # ============================================================
 # コース×ランク勝率（全国平均）

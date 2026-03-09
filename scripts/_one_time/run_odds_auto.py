@@ -73,7 +73,7 @@ def run(cmd, desc):
     """サブプロセスを実行してログ出力"""
     log(f"開始: {desc}")
     log(f"コマンド: {' '.join(str(c) for c in cmd)}")
-    ret = subprocess.run(cmd, cwd=str(ROOT), capture_output=False)
+    ret = subprocess.run(cmd, cwd=str(ROOT), capture_output=False, stdin=subprocess.DEVNULL)
     if ret.returncode == 0:
         log(f"完了: {desc}")
     else:

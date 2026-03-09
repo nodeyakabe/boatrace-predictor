@@ -2155,11 +2155,11 @@ class ExtendedScorer:
                 target_date
             )
 
-        # 16. モーター2連対率スコア
+        # 16. モーター2連対率スコア（2026-03-09有効化: 充足率95.4%）
         motor_second_rate = entry.get('motor_second_rate')
         motor_second_rate_result = self.calculate_motor_second_rate_score(
             motor_second_rate,
-            max_score=0.0
+            max_score=float(weights.get('motor_second_rate', 3))
         )
 
         # 総合スコア計算

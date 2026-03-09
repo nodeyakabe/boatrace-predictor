@@ -40,7 +40,7 @@ def get_exhibition_buff_rules() -> List[CompoundBuffRule]:
             BuffCondition(ConditionType.EXHIBITION_RANK, 1),
             BuffCondition(ConditionType.COURSE, 1),
         ],
-        buff_value=20.0,  # 調整: multiplier 2.0→0.42（95→20）
+        buff_value=12.0,  # 調整: 20→12（60%圧縮 2026-03-09 compound_buff整理）
         confidence=1.0,
         sample_count=4785,
         hit_rate=64.45,
@@ -56,7 +56,7 @@ def get_exhibition_buff_rules() -> List[CompoundBuffRule]:
             BuffCondition(ConditionType.EXHIBITION_RANK, 1),  # 追加：展示1位条件
             BuffCondition(ConditionType.COURSE, [2, 3]),
         ],
-        buff_value=4.0,  # 調整: 8→4
+        buff_value=2.4,  # 調整: 4→2.4（60%圧縮 2026-03-09）
         confidence=1.0,
         sample_count=2000,
         hit_rate=35.0,
@@ -72,7 +72,7 @@ def get_exhibition_buff_rules() -> List[CompoundBuffRule]:
             BuffCondition(ConditionType.EXHIBITION_RANK, 1),  # 追加：展示1位条件
             BuffCondition(ConditionType.COURSE, [4, 5, 6]),
         ],
-        buff_value=1.5,  # 調整: 3→1.5
+        buff_value=0.9,  # 調整: 1.5→0.9（60%圧縮 2026-03-09）
         confidence=1.0,
         sample_count=800,
         hit_rate=15.0,
@@ -88,7 +88,7 @@ def get_exhibition_buff_rules() -> List[CompoundBuffRule]:
             BuffCondition(ConditionType.EXHIBITION_RANK, [4, 5, 6]),  # 追加：展示4-6位条件
             BuffCondition(ConditionType.COURSE, [4, 5, 6]),
         ],
-        buff_value=-4.0,  # 調整: -8→-4
+        buff_value=-2.4,  # 調整: -4→-2.4（60%圧縮 2026-03-09）
         confidence=1.0,
         sample_count=14946,
         hit_rate=0.92,
@@ -108,7 +108,7 @@ def get_exhibition_buff_rules() -> List[CompoundBuffRule]:
             BuffCondition(ConditionType.EXHIBITION_RANK, 1),
             BuffCondition(ConditionType.RACER_RANK, 'A1'),
         ],
-        buff_value=12.0,  # 調整: multiplier 2.0→0.47（51→12）
+        buff_value=7.2,  # 調整: 12→7.2（60%圧縮 2026-03-09）
         confidence=1.0,
         sample_count=4587,
         hit_rate=42.34,
@@ -124,7 +124,7 @@ def get_exhibition_buff_rules() -> List[CompoundBuffRule]:
             BuffCondition(ConditionType.EXHIBITION_RANK, 1),  # 追加：展示1位条件
             BuffCondition(ConditionType.RACER_RANK, 'A2'),
         ],
-        buff_value=3.0,  # 調整: 6→3
+        buff_value=1.8,  # 調整: 3→1.8（60%圧縮 2026-03-09）
         confidence=1.0,
         sample_count=2500,
         hit_rate=35.7,
@@ -140,7 +140,7 @@ def get_exhibition_buff_rules() -> List[CompoundBuffRule]:
             BuffCondition(ConditionType.EXHIBITION_RANK, 1),  # 追加：展示1位条件
             BuffCondition(ConditionType.RACER_RANK, 'B1'),
         ],
-        buff_value=1.5,  # 調整: 3→1.5
+        buff_value=0.9,  # 調整: 1.5→0.9（60%圧縮 2026-03-09）
         confidence=1.0,
         sample_count=1500,
         hit_rate=21.3,
@@ -156,7 +156,7 @@ def get_exhibition_buff_rules() -> List[CompoundBuffRule]:
             BuffCondition(ConditionType.EXHIBITION_RANK, 1),  # 追加：展示1位条件
             BuffCondition(ConditionType.RACER_RANK, 'B2'),
         ],
-        buff_value=0.5,  # 調整: 1.0→0.5
+        buff_value=0.3,  # 調整: 0.5→0.3（60%圧縮 2026-03-09）
         confidence=1.0,
         sample_count=500,
         hit_rate=7.5,
@@ -177,7 +177,7 @@ def get_exhibition_buff_rules() -> List[CompoundBuffRule]:
             BuffCondition(ConditionType.START_TIMING, 'good'),  # ST≤0.15
             BuffCondition(ConditionType.COURSE, [1, 2]),
         ],
-        buff_value=6.0,  # 調整: 12→6
+        buff_value=3.6,  # 調整: 6→3.6（60%圧縮 2026-03-09）
         confidence=1.0,
         sample_count=5000,
         hit_rate=36.6,
@@ -193,7 +193,7 @@ def get_exhibition_buff_rules() -> List[CompoundBuffRule]:
             BuffCondition(ConditionType.EXHIBITION_RANK, [1, 2]),  # 追加：展示TOP2条件
             BuffCondition(ConditionType.COURSE, [1, 2]),
         ],
-        buff_value=3.0,  # 調整: 6→3
+        buff_value=1.8,  # 調整: 3→1.8（60%圧縮 2026-03-09）
         confidence=1.0,
         sample_count=3000,
         hit_rate=22.3,
@@ -209,7 +209,7 @@ def get_exhibition_buff_rules() -> List[CompoundBuffRule]:
             BuffCondition(ConditionType.EXHIBITION_RANK, [3, 4, 5, 6]),  # 追加：展示3位以下条件
             BuffCondition(ConditionType.COURSE, [4, 5, 6]),
         ],
-        buff_value=-5.0,  # 調整: -10→-5
+        buff_value=-3.0,  # 調整: -5→-3.0（60%圧縮 2026-03-09）
         confidence=1.0,
         sample_count=8000,
         hit_rate=2.6,

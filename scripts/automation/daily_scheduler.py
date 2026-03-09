@@ -32,6 +32,43 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+
+class _TeeStream:
+    """stdout/stderrをコンソールとファイルに同時出力するTeeラッパー"""
+    def __init__(self, original, log_file):
+        self._original = original
+        self._log_file = log_file
+
+    def write(self, data):
+        self._original.write(data)
+        try:
+            self._log_file.write(data)
+            self._log_file.flush()
+        except Exception:
+            pass
+
+    def flush(self):
+        self._original.flush()
+        try:
+            self._log_file.flush()
+        except Exception:
+            pass
+
+    def __getattr__(self, name):
+        return getattr(self._original, name)
+
+
+def _setup_file_logging():
+    """ログファイルへの出力設定"""
+    log_dir = project_root / "logs"
+    log_dir.mkdir(exist_ok=True)
+    today_str = datetime.now().strftime("%Y%m%d")
+    log_path = log_dir / f"scheduler_{today_str}.log"
+    log_file = open(log_path, "a", encoding="utf-8", buffering=1)
+    sys.stdout = _TeeStream(sys.__stdout__, log_file)
+    sys.stderr = _TeeStream(sys.__stderr__, log_file)
+    print(f"[INFO] ログファイル: {log_path}", flush=True)
+
 from scripts.automation.monitor_race_timing import RaceMonitor
 from scripts.automation.notify import send_discord_notification, send_error_notification
 from scripts.automation.block_a_yesterday_data import BlockARunner
@@ -282,6 +319,9 @@ def print_status():
 def main():
     """メイン処理"""
     global running
+
+    # ログファイルへの出力設定
+    _setup_file_logging()
 
     # ロックファイルを取得（二重起動チェック）
     if not acquire_lock():

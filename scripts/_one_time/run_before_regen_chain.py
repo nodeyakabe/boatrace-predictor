@@ -64,22 +64,22 @@ def run_year(year):
     result = subprocess.run(cmd, cwd=BASE_DIR)
 
     if result.returncode != 0:
-        log(f"⚠️ {year}年 生成失敗 (returncode={result.returncode}) → 次年度に進む")
+        log(f"[WARN] {year}年 生成失敗 (returncode={result.returncode}) -> 次年度に進む")
     else:
-        log(f"✅ {year}年 完了")
+        log(f"[OK] {year}年 完了")
 
     # WALが膨らんでいればここでTRUNCATEしてディスク節約
     wal_checkpoint()
     time.sleep(30)
 
 def main():
-    log("before予測 残り全年度 チェーンスクリプト 開始")
+    log("before予測 残り全年度 チェーンスクリプト 開始（再起動版2: 2023/2022/2021完了済み）")
 
-    # Step 1: 2023年 May-Dec が完了するまで待機
-    wait_for_2023_completion()
+    # Step 1: 2023/2022/2021 は完了済みのためスキップ
+    log("2023/2022/2021 は完了済み -> スキップ")
 
     # Step 2: 残り年度を順番に実行（ディスクI/O考慮で直列）
-    years_to_run = [2022, 2021, 2020, 2024, 2025]
+    years_to_run = [2020, 2024, 2025]
     for year in years_to_run:
         run_year(year)
 

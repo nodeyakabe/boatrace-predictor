@@ -321,12 +321,13 @@ def _load_extended_score_weights():
             'chikusen_time': es.get('chikusen_time', 4),  # 直線タイムスコア追加
             'recent_form': es.get('recent_form', 8),
             'venue_affinity': es.get('venue_affinity', 3),
+            'motor_second_rate': es.get('motor_second_rate', 3),  # モーター2連対率（2026-03-09有効化）
             'place_rate': 5,  # YAMLにない場合のデフォルト
         }
     except Exception:
         # YAMLロード失敗時のフォールバック
         return {
-            'class': 10,
+            'class': 0,  # course_rank_scoreと重複するため無効化（2026-03-09）
             'fl_penalty': 10,
             'session': 5,
             'prev_race': 5,
@@ -336,9 +337,10 @@ def _load_extended_score_weights():
             'start_timing': 10,
             'exhibition': 10,
             'tilt': 2,
-            'chikusen_time': 4,  # 直線タイムスコア追加
+            'chikusen_time': 0,  # データ充足率0.1%のため無効化（2026-03-09）
             'recent_form': 8,
             'venue_affinity': 8,
+            'motor_second_rate': 3,  # モーター2連対率（2026-03-09有効化）
             'place_rate': 5,
         }
 

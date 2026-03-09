@@ -118,8 +118,8 @@ def get_todays_target_and_candidates(db_path: str) -> tuple:
                 # 候補レース（オッズが条件の80%以上ある場合のみ）
                 elif bet_target.status == BetStatus.CANDIDATE:
                     # オッズが条件に近い場合のみ候補とする
-                    if bet_target.odds is None:
-                        # オッズ未取得の場合は候補に含める
+                    if bet_target.odds is None or bet_target.odds == 0:
+                        # オッズ未取得（None or 0）の場合は候補に含める
                         candidate_races.append({
                             'venue': venue_name,
                             'race_num': race_number,

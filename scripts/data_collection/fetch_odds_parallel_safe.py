@@ -137,6 +137,18 @@ class SafeParallelOddsFetcher:
             self.logger.info(f"自動バックアップ作成: {backup_path}")
             self.last_backup_time = time.time()
 
+            # 古いバックアップを削除（最新2件のみ保持）
+            existing = sorted(
+                [f for f in os.listdir(backup_dir) if f.startswith('boatrace_auto_backup_') and f.endswith('.db')],
+                reverse=True
+            )
+            for old_file in existing[2:]:
+                try:
+                    os.remove(os.path.join(backup_dir, old_file))
+                    self.logger.info(f"古いバックアップ削除: {old_file}")
+                except Exception:
+                    pass
+
         except Exception as e:
             self.logger.error(f"バックアップ作成エラー: {e}")
 

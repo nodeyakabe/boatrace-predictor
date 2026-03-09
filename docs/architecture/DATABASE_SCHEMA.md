@@ -1,8 +1,9 @@
 # ボートレース予想システム データベース仕様書
 
 **生成日時**: 2025-12-08 13:41:52
-**最終更新**: 2026-02-09 13:30:00 (日付形式統一ポリシー確立)
+**最終更新**: 2026-03-09（DB実態に合わせて全面更新）
 **データベース**: data/boatrace.db
+**総レコード数**: 約6千万件（trifecta_odds 3,350万件を含む）
 
 ## 📅 日付形式の統一ポリシー
 
@@ -44,103 +45,109 @@ GROUP BY format;
 
 ## 🔄 最新の変更履歴
 
-### 2026-02-09: 日付形式の統一（重要）
+### 2026-03-09: DB実態に合わせた全面更新
+
+**変更内容:**
+- 全テーブルのレコード数を実測値に更新（総計約6千万件）
+- データ充足率を2026-03-05実測値に更新（全テーブル95%以上達成）
+- 不足テーブル説明を追加（ml_analysis_features, player_bias_stats, player_meta_stats, compound_rules等）
+- 「補完優先順位」セクションを削除（全て完了済み）
+- chikusen_time/isshu_time/mawariashi_timeは「前日のみ・永久欠損」と明記（Boatersサイト独自データ、公式APIに存在しない）
+
+### 2026-03-06: st_time 2スケール混在問題修正
+
+**変更内容:**
+- DB全件修正（813,804件 updated）
+- st_time >= 1.0 のレコードを `st_time - FLOOR(st_time)` で正規化
+- before予測の全年度再生成を実施
+
+### 2026-03-04: 2スケール混在問題（A率膨張）解消
+
+**変更内容:**
+- 全年度（2020-2025）・全タイプ（advance/before）の予測を再生成
+- A率を正常範囲（2-9%）に統一
+
+### 2026-02-09: 日付形式の統一
 
 **変更内容:**
 - DB内の全race_dateを`YYYY-MM-DD`形式に統一
 - 古いYYYYMMDD形式のデータ（37,320件）を削除
-- 投入スクリプト全関数に日付変換コードのコメント追加
-
-**影響:**
-- 日付形式混在問題を解決
-- データ重複問題を解決
-- 307,233件のレースデータが統一形式で整理
-
-**詳細:** [docs/TROUBLE_ANALYSIS_20260209.md](../TROUBLE_ANALYSIS_20260209.md)
 
 ### 2026-01-08: 指標データテーブル追加
 
 **新規テーブル:**
-- `player_escape_stats` (104,757件) - 選手別逃げ率
-- `stadium_attack_stats` (168件) - 会場別まくり率・差し率
-
-**詳細:** [INDICATOR_STATS_SPEC.md](INDICATOR_STATS_SPEC.md)
+- `player_escape_stats` - 選手別逃げ率
+- `stadium_attack_stats` - 会場別まくり率・差し率
 
 ### 2025-12-12: Phase 1 DB最適化完了
 
 **削除されたカラム:**
-- ❌ `races.grade` → `race_grade` に統一
-- ❌ `results.winning_technique` → `kimarite` (TEXT)に統一
-
-**影響:**
-- races: 133,755件（gradeカラム削除、race_gradeに統一）
-- results: 781,989件（winning_techniqueカラム削除）
-- VIEW: `race_details_extended` を更新（r.grade → r.race_grade）
-
-**詳細:** [docs/DATABASE_OPTIMIZATION_REPORT.md](DATABASE_OPTIMIZATION_REPORT.md)
+- `races.grade` → `race_grade` に統一
+- `results.winning_technique` → `kimarite` (TEXT)に統一
 
 ## 📊 外部収集データ種一覧
 
-**最終更新**: 2026-02-10
+**最終更新**: 2026-03-09
 **総データ種**: 17種類
-**総レコード数**: 約26.5百万件
+**総レコード数**: 約6千万件
 
 ### 収集データ種（公式API・外部ソース）
 
 | # | テーブル名 | レコード数 | 充足率 | データ種 | 収集ソース | 補完可否 |
 |---|-----------|-----------|-------|---------|----------|---------|
-| 1 | **races** | 307,533 | 100% | レース基本情報 | 公式API | ✅ 補完可 |
-| 2 | **entries** | 1,803,640 | 100% | 出走表（選手・モーター・ボート） | 公式API | ✅ 補完可 |
-| 3 | **results** | 1,563,645 | 100% | レース結果（着順） | 公式API | ✅ 補完可 |
-| 4 | **results.kimarite** | 242,076 | **15.5%** | 決まり手 | 公式API | ✅ **補完必須** |
-| 5 | **race_details** | 1,179,692 | - | レース詳細 | 公式API | 部分補完 |
-| 5-1 | ∟ st_time | 976,223 | 82.8% | STタイム | 公式API | ✅ 補完可 |
-| 5-2 | ∟ actual_course | 792,383 | 67.2% | 実際の進入コース | 公式API | ✅ 補完可 |
-| 5-3 | ∟ exhibition_time | 1,015,641 | 86.1% | 展示タイム | 公式API | ✅ 補完可 |
-| 5-4 | ∟ chikusen_time | 3,307 | **0.3%** | 直前タイム | 公式API？ | ❌ **前日のみ？** |
-| 5-5 | ∟ tilt_angle | 854,298 | 72.4% | チルト角 | 公式API | ✅ 補完可 |
-| 6 | **race_conditions** | 285,319 | - | レース条件 | 公式API | 部分補完 |
-| 6-1 | ∟ weather | 2,262 | **0.8%** | 天気 | 公式API | ⚠️ weatherテーブル推奨 |
-| 6-2 | ∟ wind_speed | 283,747 | 99.4% | 風速 | 公式API | ✅ 完全 |
-| 6-3 | ∟ wave_height | 283,747 | 99.4% | 波高 | 公式API | ✅ 完全 |
-| 6-4 | ∟ water_temperature | 272,619 | 95.5% | 水温 | 公式API | ✅ 補完可 |
-| 6-5 | ∟ temperature | 283,747 | 99.4% | 気温 | 公式API | ✅ 完全 |
-| 7 | **trifecta_odds** | 13,731,881 | 45.4% | 三連単オッズ | 公式API | ✅ 補完可 |
-| 8 | **exacta_odds** | 75 | 0.02% | 二連単オッズ | 公式API | ⚠️ ほぼ空 |
-| 9 | **win_odds** | 954 | 0.3% | 単勝オッズ | 公式API | ⚠️ ほぼ空 |
-| 10 | **payouts** | 1,036,207 | 43.3% | 払戻金 | 公式API | ✅ 補完可 |
-| 11 | **weather** | 11,528 | - | 天気（会場×日別） | 公式API | ✅ 補完可 |
-| 12 | **exhibition_data** | 13,695 | 0.7% | オリジナル展示 | 競艇場独自 | ❌ **前日のみ** |
-| 13 | **tide** | 27,353 | - | 潮汐（日次） | 潮位データ | ✅ 補完可 |
-| 14 | **race_tide_data** | 7,844 | 2.5% | レース時潮位 | 潮位データ | ✅ 補完可 |
-| 15 | **rdmdb_tide** | 6,475,040 | - | RDMDB潮位観測 | RDMDB | - |
+| 1 | **races** | 386,072 | 100% | レース基本情報 | 公式API | ✅ 補完可 |
+| 2 | **entries** | 2,294,136 | 100% | 出走表（選手・モーター・ボート） | 公式API | ✅ 補完可 |
+| 3 | **results** | 2,233,764 | 98-100% | レース結果（着順・決まり手） | 公式API | ✅ 補完可 |
+| 4 | **race_details** | 2,286,080 | 100% | レース詳細（展示タイム・ST・進入コース） | 公式API | ✅ 補完可 |
+| 5 | **race_conditions** | 377,808 | 98-100% | レース条件（天候・風・波） | 公式API | ✅ 補完可 |
+| 6 | **trifecta_odds** | 33,499,007 | 97-99% | 三連単オッズ | 公式API | ✅ 補完可 |
+| 7 | **payouts** | 3,531,829 | 97-99% | 払戻金 | 公式API | ✅ 補完可 |
+| 8 | **race_predictions** | 3,339,304 | 100% | 予測データ（2020-2025年） | 自動生成 | ✅ 再生成可 |
+| 9 | **rdmdb_tide** | 6,475,040 | 100% | RDMDB潮位観測 | RDMDB | - |
+| 10 | **exacta_odds** | 75 | ほぼ空 | 二連単オッズ | 公式API | ⚠️ 未収集 |
+| 11 | **win_odds** | 954 | ほぼ空 | 単勝オッズ | 公式API | ⚠️ 未収集 |
+| 12 | **exhibition_data** | 31,263 | 少量 | オリジナル展示 | 競艇場独自 | ❌ 当日のみ |
+| 13 | **weather** | 11,528 | - | 天気（会場×日別） | 公式API | ✅ 補完可 |
+| 14 | **tide** | 27,353 | - | 潮汐（日次） | 潮位データ | ✅ 補完可 |
+| 15 | **race_tide_data** | 7,844 | 少量 | レース時潮位 | 潮位データ | ✅ 補完可 |
 | 16 | **racers** | 1,602 | 100% | 選手マスタ | 公式API | ✅ 補完可 |
 | 17 | **venues** | 24 | 100% | 会場マスタ | 公式API | ✅ 完全 |
 
+### データ充足状況（2026-03-05実測・補完完了後）
+
+| 年度 | races | entries% | results% | details% | trifecta% | payouts% | conditions% |
+|:----:|:-----:|:--------:|:--------:|:--------:|:---------:|:--------:|:-----------:|
+| 2020 | 29,436 | 100% | 98.9% | 100% | 97.2% | 98.9% | 98.9% |
+| 2021 | 55,728 | 100% | 98.6% | 100% | 98.6% | 98.6% | 98.6% |
+| 2022 | 56,436 | 97.8% | 96.3% | 100% | 98.5% | 96.3% | 98.5% |
+| 2023 | 55,992 | 100% | 98.9% | 100% | 98.9% | 98.9% | 98.9% |
+| 2024 | 55,167 | 100% | 100% | 100% | 99.5% | 97.7% | 99.6% |
+| 2025 | 25,041 | 97.0% | 99.2% | 100% | 99.2% | 99.1% | 100% |
+| 2026 | ~10,800 | - | - | 100% | 97-99% | - | - |
+
+全テーブル95%以上達成済み。追加補完は不要。
+
 ### 重要な注意事項
 
-#### ❌ 前日のみ取得可能（逃すと永久欠損）
+#### ❌ 当日のみ取得可能（逃すと永久欠損）
 1. **exhibition_data（オリジナル展示）**
-   - 競艇場独自データ
-   - 前日夜～当日朝のみ取得可能
-   - 過去データは取得不可
-   - 最終更新: 2023-11-19（約1,000日前）
+   - 競艇場独自データ（Boaters等）
+   - 当日のみ取得可能、過去データは取得不可
+2. **race_details.chikusen_time / isshu_time / mawariashi_time**
+   - Boatersサイト独自データ（公式 boatrace.jp には存在しない）
+   - 前日分のみ取得可能、過去データは補完不可・永久欠損
+   - ⚠️ `exhibition_time`（公式API由来、過去補完可能）とは別物
 
-2. **race_details.chikusen_time等（直前タイム系）** ⚠️
-   - 充足率0.3%（ほぼ空）
-   - 公式レース結果ページに含まれない可能性
-   - 要検証: 過去データ取得可否
+#### ✅ 過去データから補完可能
+1. **race_details.exhibition_time / actual_course / st_time**
+   - 公式の `/beforeinfo?hd=YYYYMMDD` で過去データもアクセス可能
+2. **全公式データ（レース・結果・オッズ）**
+   - 2020年～現在まで公式APIで常時公開
 
 #### ⚠️ データ二重化（どちらを使うべきか）
-- **天気**: `race_conditions.weather`(0.8%) vs `weather`テーブル(11,528件) → **weatherテーブル推奨**
-- **展示タイム**: `exhibition_data`(0.7%) vs `race_details.exhibition_time`(86.1%) → **race_details推奨**
-
-#### ✅ 補完優先順位
-1. **最優先**: results.kimarite（15.5% → 補完中）
-2. **高優先**: race_details.st_time（82.8%）、actual_course（67.2%）
-3. **中優先**: trifecta_odds（45.4%）、payouts（43.3%）
-4. **低優先**: race_details.tilt_angle（72.4%）
-5. **検証必要**: chikusen_time（0.3%、過去データ取得可否不明）
+- **天気**: `race_conditions.weather`(少量) vs `weather`テーブル(11,528件) → **weatherテーブル推奨**
+- **展示タイム**: `exhibition_data`(競艇場独自) vs `race_details.exhibition_time`(100%) → **race_details推奨**
+- **進入コース**: `actual_courses`テーブル(55,578件) vs `race_details.actual_course`(100%) → **race_details推奨**
 
 ---
 
@@ -149,70 +156,82 @@ GROUP BY format;
 ### テーブル一覧
 
 #### マスタデータ (8テーブル)
-- [racer_venue_features](#racer_venue_features) (8,952 件)
-- [venue_attack_patterns](#venue_attack_patterns) (0 件)
+- [racer_venue_features](#racer_venue_features) (182,360 件)
+- [venue_attack_patterns](#venue_attack_patterns) (24 件)
 - [venue_data](#venue_data) (24 件)
 - [venue_features](#venue_features) (96 件)
-- [venue_racer_patterns](#venue_racer_patterns) (0 件)
+- [venue_racer_patterns](#venue_racer_patterns) (27,838 件)
 - [venue_rules](#venue_rules) (308 件)
 - [venue_strategies](#venue_strategies) (24 件)
 - [venues](#venues) (24 件)
 
-#### 指標データ (2テーブル) ★NEW
-- [player_escape_stats](#player_escape_stats) (104,757 件) - 選手別逃げ率
-- [stadium_attack_stats](#stadium_attack_stats) (168 件) - 会場別まくり率・差し率
+#### 指標データ (4テーブル)
+- [player_escape_stats](#player_escape_stats) (291,657 件) - 選手別逃げ率
+- [player_bias_stats](#player_bias_stats) (1,830 件) - 選手バイアス統計
+- [player_meta_stats](#player_meta_stats) (2,055 件) - 選手メタ統計
+- [stadium_attack_stats](#stadium_attack_stats) (264 件) - 会場別まくり率・差し率
 
 #### レース基本情報 (8テーブル)
-- [race_conditions](#race_conditions) (130,792 件)
-- [race_details](#race_details) (790,680 件)
+- [race_conditions](#race_conditions) (377,808 件)
+- [race_details](#race_details) (2,286,080 件)
+- [race_tide_data](#race_tide_data) (7,844 件)
 - [race_tide_data_backup](#race_tide_data_backup) (12,334 件)
-- [racer_attack_patterns](#racer_attack_patterns) (0 件)
-- [racer_features](#racer_features) (8,939 件)
+- [racer_attack_patterns](#racer_attack_patterns) (2,023 件)
+- [racer_features](#racer_features) (177,770 件)
 - [racer_rules](#racer_rules) (215 件)
 - [racers](#racers) (1,602 件)
-- [races](#races) (133,327 件)
+- [races](#races) (386,072 件)
 
-#### オッズデータ (2テーブル)
-- [trifecta_odds](#trifecta_odds) (1,424,376 件)
-- [win_odds](#win_odds) (0 件)
+#### オッズデータ (3テーブル)
+- [trifecta_odds](#trifecta_odds) (33,499,007 件)
+- [exacta_odds](#exacta_odds) (75 件)
+- [win_odds](#win_odds) (954 件)
 
-#### 予想データ (2テーブル)
+#### 予想データ (3テーブル)
 - [prediction_history](#prediction_history) (18 件)
-- [race_predictions](#race_predictions) (196,692 件)
+- [race_predictions](#race_predictions) (3,339,304 件)
+- [race_predictions_before_hybrid](#race_predictions_before_hybrid) (94,836 件) - 旧ハイブリッド予測バックアップ
 
 #### 結果データ (3テーブル)
-- [payouts](#payouts) (1,027,127 件)
-- [results](#results) (779,318 件)
+- [payouts](#payouts) (3,531,829 件)
+- [results](#results) (2,233,764 件)
 - [results_backup](#results_backup) (24 件)
 
 #### 選手・モーター情報 (2テーブル)
-- [entries](#entries) (799,824 件)
+- [entries](#entries) (2,294,136 件)
 - [motor_features](#motor_features) (0 件)
 
-#### その他 (10テーブル)
-- [actual_courses](#actual_courses) (6 件)
+#### 分析・ML (3テーブル)
+- [ml_analysis_features](#ml_analysis_features) (569,780 件) - 機械学習分析特徴量
+- [compound_rules](#compound_rules) (113 件) - 複合ルール
+- [discovered_patterns](#discovered_patterns) (40 件) - 発見パターン
+
+#### その他 (12テーブル)
+- [actual_courses](#actual_courses) (55,578 件) - 進入コース別テーブル
 - [bet_history](#bet_history) (3 件)
-- [exhibition_data](#exhibition_data) (6 件)
+- [confidence_b_filter_results](#confidence_b_filter_results) (0 件)
+- [exhibition_data](#exhibition_data) (31,263 件)
 - [extracted_rules](#extracted_rules) (308 件)
+- [pattern_counter_conditions](#pattern_counter_conditions) (0 件)
 - [rdmdb_tide](#rdmdb_tide) (6,475,040 件)
 - [recommendations](#recommendations) (0 件)
-- [sqlite_sequence](#sqlite_sequence) (20 件)
-- [sqlite_stat1](#sqlite_stat1) (52 件)
+- [sqlite_sequence](#sqlite_sequence)
+- [sqlite_stat1](#sqlite_stat1)
 - [tide](#tide) (27,353 件)
-- [weather](#weather) (9,018 件)
+- [weather](#weather) (11,528 件)
 
 
 ---
 
 ## 🚨 よくある間違い（必読）
 
-**最終更新**: 2026-02-06
+**最終更新**: 2026-03-09
 
 ### **間違い1: カラム名と同じ名前のテーブルを見落とす**
 
 | データ | カラム（充足率低） | テーブル（充足率高） | 正しい使い方 |
 |--------|-------------------|---------------------|-------------|
-| **天候データ** | `race_conditions.weather`（0.79%） | `weather`テーブル（27.8%カバレッジ） | **weatherテーブルを使う** |
+| **天候データ** | `race_conditions.weather`（少量） | `weather`テーブル（11,528件） | **weatherテーブルを使う** |
 | | | 結合: `venue_code + race_date` | |
 
 **教訓**: 分析前に必ず全テーブル一覧を確認し、カラム名と同じ名前のテーブルがないかチェック！
@@ -223,8 +242,9 @@ GROUP BY format;
 
 | データ種別 | 保存場所1 | 保存場所2 | 推奨 |
 |-----------|---------|----------|:----:|
-| 展示データ | `race_details`（公式API、充足率85%） | `exhibition_data`（Boaters独自、充足率1%） | **保存場所1** |
-| 天候データ | `weather`テーブル（27.8%） | `race_conditions.weather`（0.79%） | **保存場所1** |
+| 展示データ | `race_details`（公式API、充足率100%） | `exhibition_data`（Boaters独自、31,263件） | **保存場所1** |
+| 天候データ | `weather`テーブル（11,528件） | `race_conditions.weather`（少量） | **保存場所1** |
+| 進入コース | `race_details.actual_course`（充足率100%） | `actual_courses`テーブル（55,578件） | **保存場所1** |
 
 **詳細**: [データ分析前の必須チェックリスト](../guides/DATA_ANALYSIS_CHECKLIST.md)
 
@@ -232,7 +252,7 @@ GROUP BY format;
 
 ## ⭐ テーブル活用状況一覧
 
-**最終更新**: 2026-02-06（weather追加）
+**最終更新**: 2026-03-09
 
 このセクションではテーブルの活用状況を一覧で確認できます。Claude Codeが効率的にデータを活用できるよう、充足率・活用状況・重要度を明記しています。
 
@@ -240,65 +260,57 @@ GROUP BY format;
 
 | テーブル名 | 件数 | 充足率 | 活用状況 | 備考 |
 |-----------|------|:-----:|:-------:|------|
-| **races** | 133,327 | 100% | ✅ 使用中 | 全クエリの起点 |
-| **entries** | 799,824 | 98% | ✅ 使用中 | 選手・モーター情報 |
-| **results** | 779,318 | 97% | ✅ 使用中 | 着順・決まり手 |
-| **race_predictions** | 196,692 | 25% | ✅ 使用中 | 予測データ（2020-2025年の25%） |
-| **trifecta_odds** | 1,424,376 | 60% | ✅ 使用中 | 3連単オッズ（2021/2023年が低い） |
-| **payouts** | 1,027,127 | 89% | ✅ 使用中 | 払戻金 |
+| **races** | 386,072 | 100% | ✅ 使用中 | 全クエリの起点（2020-2026年） |
+| **entries** | 2,294,136 | 97-100% | ✅ 使用中 | 選手・モーター情報 |
+| **results** | 2,233,764 | 97-100% | ✅ 使用中 | 着順・決まり手 |
+| **race_predictions** | 3,339,304 | 100% | ✅ 使用中 | 予測データ（2020-2025年・advance/before） |
+| **trifecta_odds** | 33,499,007 | 97-99% | ✅ 使用中 | 3連単オッズ |
+| **payouts** | 3,531,829 | 97-99% | ✅ 使用中 | 払戻金 |
 
 ### 中重要テーブル（★★）
 
 | テーブル名 | 件数 | 充足率 | 活用状況 | 備考 |
 |-----------|------|:-----:|:-------:|------|
-| **race_details** | 790,680 | 98% | ✅ 使用中 | 展示タイム、チルト |
-| **race_conditions** | 130,792 | 98% | ✅ 使用中 | 天候・風・波（⚠️ weatherカラムは0.79%、**weatherテーブルを使う**） |
-| **weather** | 11,528 | - | ✅ 使用中 | **天候データ（会場×日付、27.8%カバレッジ）** |
-| **player_escape_stats** | 104,757 | 100% | ✅ 使用中 | 選手別逃げ率（指標データ） |
-| **stadium_attack_stats** | 168 | 100% | ✅ 使用中 | 会場別まくり率・差し率（指標データ） |
+| **race_details** | 2,286,080 | 100% | ✅ 使用中 | 展示タイム・ST・進入コース・チルト |
+| **race_conditions** | 377,808 | 98-100% | ✅ 使用中 | 天候・風・波（⚠️ weatherカラムは少量、**weatherテーブルを使う**） |
+| **weather** | 11,528 | - | ✅ 使用中 | **天候データ（会場×日付）** |
+| **player_escape_stats** | 291,657 | 100% | ✅ 使用中 | 選手別逃げ率（指標データ） |
+| **stadium_attack_stats** | 264 | 100% | ✅ 使用中 | 会場別まくり率・差し率（指標データ） |
+| **racer_features** | 177,770 | - | ✅ 使用中 | 選手特徴量（直近成績） |
+| **racer_venue_features** | 182,360 | - | ✅ 使用中 | 選手会場別特徴量 |
 | **racers** | 1,602 | 100% | ✅ 使用中 | 選手マスタ |
 | **venues** | 24 | 100% | ✅ 使用中 | 会場マスタ |
+| **ml_analysis_features** | 569,780 | - | ✅ 使用中 | 機械学習分析特徴量 |
 | **rdmdb_tide** | 6,475,040 | 100% | 🟡 未活用 | 潮位データ（活用検討中） |
 
 ### 低重要・未使用テーブル（★）
 
 | テーブル名 | 件数 | 充足率 | 活用状況 | 備考 |
 |-----------|------|:-----:|:-------:|------|
-| **exhibition_data** | 861 | 1% | 🔄 収集中 | オリジナル展示（前日のみ取得可能） |
-| **win_odds** | 0 | 0% | ❌ 未収集 | 単勝オッズ（未実装） |
-| **exacta_odds** | 0 | 0% | ❌ 未収集 | 2連単オッズ（未実装） |
-| **venue_attack_patterns** | 0 | 0% | ❌ 未使用 | 会場攻撃パターン（空テーブル） |
+| **exhibition_data** | 31,263 | 少量 | 🔄 収集中 | オリジナル展示（当日のみ取得可能） |
+| **win_odds** | 954 | 少量 | ⚠️ ほぼ未収集 | 単勝オッズ |
+| **exacta_odds** | 75 | 少量 | ⚠️ ほぼ未収集 | 2連単オッズ |
+| **actual_courses** | 55,578 | - | 🟡 補助的 | 進入コース別テーブル（race_detailsに同データあり） |
 | **motor_features** | 0 | 0% | ❌ 未使用 | モーター特徴量（空テーブル） |
-| **racer_attack_patterns** | 0 | 0% | ❌ 未使用 | 選手攻撃パターン（空テーブル） |
-| **venue_racer_patterns** | 0 | 0% | ❌ 未使用 | 会場別選手パターン（空テーブル） |
 | **recommendations** | 0 | 0% | ❌ 未使用 | 推奨レース（空テーブル） |
-
-### データ充足率の詳細
-
-**2021年・2023年の充足率が低い理由**:
-- 2021年: オッズ17.0%、結果25.9% → データ補完作業予定（P1.5）
-- 2023年: オッズ16.2%、結果26.9% → データ補完作業予定（P1.5）
-- データ補完後: サンプル数が5倍に増加、バックテストの信頼性が大幅向上
-
-**その他の充足率**:
-- 2020年: オッズ99.7%、結果100%（ほぼ完全）
-- 2022年: オッズ99.9%、結果100%（ほぼ完全）
-- 2024年: オッズ99.8%、結果100%（ほぼ完全）
-- 2025年: オッズ95.1%、結果100%（収集中）
+| **confidence_b_filter_results** | 0 | 0% | ❌ 未使用 | 空テーブル |
+| **pattern_counter_conditions** | 0 | 0% | ❌ 未使用 | 空テーブル |
 
 ---
 
 ## データベース概要
 
-- **総テーブル数**: 35
-- **総レコード数**: 11,831,452
+- **総テーブル数**: 46
+- **総レコード数**: 約60,000,000件
 
 ### 主要データ統計
 
-- **総レース数**: 133,327
-- **2025年レース数**: 16,979
-- **予想データ数**: 196,692
-- **オッズ取得済レース数**: 14,505
+- **総レース数**: 386,072（2020-2026年）
+- **出走データ数**: 2,294,136
+- **結果データ数**: 2,233,764
+- **予測データ数**: 3,339,304（advance + before）
+- **3連単オッズ数**: 33,499,007
+- **払戻金データ数**: 3,531,829
 
 ---
 
@@ -308,7 +320,7 @@ GROUP BY format;
 
 ### racer_venue_features
 
-**レコード数**: 8,952 件
+**レコード数**: 182,360 件
 
 #### カラム一覧
 
@@ -354,7 +366,7 @@ GROUP BY format;
 
 ### venue_attack_patterns
 
-**レコード数**: 0 件
+**レコード数**: 24 件
 
 #### カラム一覧
 
@@ -488,7 +500,7 @@ GROUP BY format;
 
 ### venue_racer_patterns
 
-**レコード数**: 0 件
+**レコード数**: 27,838 件
 
 #### カラム一覧
 
@@ -667,7 +679,7 @@ GROUP BY format;
 
 ### race_conditions
 
-**レコード数**: 130,792 件
+**レコード数**: 377,808 件
 
 #### カラム一覧
 
@@ -725,7 +737,7 @@ GROUP BY format;
 
 ### race_details
 
-**レコード数**: 790,680 件
+**レコード数**: 2,286,080 件
 
 #### カラム一覧
 
@@ -847,7 +859,7 @@ GROUP BY format;
 
 ### racer_attack_patterns
 
-**レコード数**: 0 件
+**レコード数**: 2,023 件
 
 #### カラム一覧
 
@@ -873,7 +885,7 @@ GROUP BY format;
 
 ### racer_features
 
-**レコード数**: 8,939 件
+**レコード数**: 177,770 件
 
 #### カラム一覧
 
@@ -1072,7 +1084,7 @@ GROUP BY format;
 
 ### races
 
-**レコード数**: 133,327 件
+**レコード数**: 386,072 件
 
 #### カラム一覧
 
@@ -1087,7 +1099,6 @@ GROUP BY format;
 | race_grade | TEXT | ○ |  |  |  |
 | race_distance | INTEGER | ○ |  |  |  |
 | race_status | TEXT | ○ | 'unknown' |  |  |
-| grade | TEXT | ○ | '' |  |  |
 | is_nighter | INTEGER | ○ | 0 |  |  |
 | is_ladies | INTEGER | ○ | 0 |  |  |
 | is_rookie | INTEGER | ○ | 0 |  |  |
@@ -1117,7 +1128,6 @@ GROUP BY format;
   race_grade: 一般
   race_distance: 1800
   race_status: completed
-  grade: 
   is_nighter: 0
   is_ladies: 0
   is_rookie: 0
@@ -1133,7 +1143,6 @@ GROUP BY format;
   race_grade: 一般
   race_distance: 1800
   race_status: completed
-  grade: 
   is_nighter: 0
   is_ladies: 0
   is_rookie: 0
@@ -1147,7 +1156,7 @@ GROUP BY format;
 
 ### trifecta_odds
 
-**レコード数**: 1,429,326 件
+**レコード数**: 33,499,007 件
 
 #### カラム一覧
 
@@ -1191,7 +1200,7 @@ GROUP BY format;
 
 ### win_odds
 
-**レコード数**: 0 件
+**レコード数**: 954 件
 
 #### カラム一覧
 
@@ -1290,7 +1299,7 @@ GROUP BY format;
 
 ### race_predictions
 
-**レコード数**: 196,692 件
+**レコード数**: 3,339,304 件
 
 #### カラム一覧
 
@@ -1371,7 +1380,7 @@ GROUP BY format;
 
 ### payouts
 
-**レコード数**: 1,027,127 件
+**レコード数**: 3,531,829 件
 
 #### カラム一覧
 
@@ -1422,7 +1431,7 @@ GROUP BY format;
 
 ### results
 
-**レコード数**: 779,318 件
+**レコード数**: 2,233,764 件
 
 #### カラム一覧
 
@@ -1436,7 +1445,6 @@ GROUP BY format;
 | trifecta_odds | REAL | ○ |  |  |  |
 | created_at | TIMESTAMP | ○ | CURRENT_TIMESTAMP |  | 作成日時 |
 | kimarite | TEXT | ○ |  |  |  |
-| winning_technique | INTEGER | ○ |  |  |  |
 
 #### インデックス
 
@@ -1463,7 +1471,6 @@ GROUP BY format;
   trifecta_odds: None
   created_at: 2025-10-29 08:17:15
   kimarite: まくり
-  winning_technique: None
 
 サンプル 2:
   id: 332
@@ -1474,7 +1481,6 @@ GROUP BY format;
   trifecta_odds: None
   created_at: 2025-10-29 08:17:15
   kimarite: None
-  winning_technique: None
 
 ```
 
@@ -1525,7 +1531,7 @@ GROUP BY format;
 
 ### entries
 
-**レコード数**: 799,824 件
+**レコード数**: 2,294,136 件
 
 #### カラム一覧
 
@@ -1655,7 +1661,9 @@ GROUP BY format;
 
 ### actual_courses
 
-**レコード数**: 6 件
+**レコード数**: 55,578 件
+
+**目的**: 進入コース情報の別テーブル。race_details.actual_courseにも同データがあり、race_detailsの方が充足率が高い。
 
 #### カラム一覧
 
@@ -1775,16 +1783,16 @@ GROUP BY format;
 
 ### exhibition_data
 
-**レコード数**: 861 件
+**レコード数**: 31,263 件
 
-**目的**: 2025年11月以降のリアルタイム展示情報収集専用テーブル
+**目的**: 競艇場独自（Boaters等）のリアルタイム展示情報収集テーブル
 
-**重要**: 過去の展示データは `race_details` テーブルに格納されています（80%以上のカバー率）。
-exhibition_dataは新規収集用であり、過去データ分析には `race_details.exhibition_time` を使用してください。
+**重要**: 過去の展示データは `race_details` テーブルに格納されています（充足率100%）。
+exhibition_dataは競艇場独自の追加情報用であり、過去データ分析には `race_details.exhibition_time` を使用してください。
 
 **使い分け**:
-- **過去データ分析** → `race_details` テーブル（2020-2025年、63万件以上）
-- **リアルタイム収集** → `exhibition_data` テーブル（2025年11月～、約860件）
+- **過去データ分析** → `race_details` テーブル（2020-2025年、228万件）
+- **競艇場独自データ** → `exhibition_data` テーブル（当日のみ取得可能）
 
 #### カラム一覧
 
@@ -2069,7 +2077,7 @@ exhibition_dataは新規収集用であり、過去データ分析には `race_d
 
 ### weather
 
-**レコード数**: 9,018 件
+**レコード数**: 11,528 件
 
 #### カラム一覧
 
@@ -2134,23 +2142,148 @@ exhibition_dataは新規収集用であり、過去データ分析には `race_d
 
 ---
 
+## 指標データ
+
+### player_escape_stats
+
+**レコード数**: 291,657 件
+
+**目的**: 選手別の逃げ率（1コースからの勝率）統計。`build_indicator_stats.py` で生成。
+
+#### カラム一覧
+
+| カラム名 | 型 | NULL許可 | デフォルト値 | PK | 説明 |
+|----------|-----|----------|--------------|-----|------|
+| id | INTEGER | ○ |  | ★ | プライマリキー（自動採番） |
+| player_id | TEXT | × |  |  | 選手番号 |
+| stadium_id | TEXT | × |  |  | 競艇場コード |
+| races_1course | INTEGER | ○ |  |  | 1コース出走回数 |
+| wins_1course | INTEGER | ○ |  |  | 1コース勝利回数 |
+| escape_rate | REAL | ○ |  |  | 逃げ率 |
+| period_start | TEXT | ○ |  |  | 集計期間開始 |
+| period_end | TEXT | ○ |  |  | 集計期間終了 |
+| updated_at | TIMESTAMP | ○ |  |  | 更新日時 |
+
+---
+
+### player_bias_stats
+
+**レコード数**: 1,830 件
+
+**目的**: 選手バイアス統計（選手ごとの傾向分析データ）
+
+---
+
+### player_meta_stats
+
+**レコード数**: 2,055 件
+
+**目的**: 選手メタ統計（選手の横断的な統計情報）
+
+---
+
+### stadium_attack_stats
+
+**レコード数**: 264 件
+
+**目的**: 会場別のまくり率・差し率統計。`build_indicator_stats.py` で生成。
+
+---
+
+## 予測データ（追加）
+
+### race_predictions_before_hybrid
+
+**レコード数**: 94,836 件
+
+**目的**: 旧ハイブリッド予測のバックアップテーブル。race_predictionsと同じカラム構成。
+
+---
+
+## 分析・ML
+
+### ml_analysis_features
+
+**レコード数**: 569,780 件
+
+**目的**: 機械学習分析用の特徴量テーブル。
+
+---
+
+### compound_rules
+
+**レコード数**: 113 件
+
+**目的**: 複合ルール定義テーブル。
+
+---
+
+### discovered_patterns
+
+**レコード数**: 40 件
+
+**目的**: 発見されたパターンの保存テーブル。
+
+---
+
+## 潮位データ（追加）
+
+### race_tide_data
+
+**レコード数**: 7,844 件
+
+**目的**: レース時の潮位データ。rdmdb_tideから推定した各レース時点の潮位。
+
+#### カラム一覧
+
+| カラム名 | 型 | NULL許可 | デフォルト値 | PK | 説明 |
+|----------|-----|----------|--------------|-----|------|
+| id | INTEGER | ○ |  | ★ | プライマリキー（自動採番） |
+| race_id | INTEGER | × |  |  | レースID |
+| sea_level_cm | INTEGER | ○ |  |  | 潮位（cm） |
+| data_source | TEXT | ○ |  |  | データソース（inferred等） |
+| created_at | TIMESTAMP | ○ |  |  | 作成日時 |
+| updated_at | TIMESTAMP | ○ |  |  | 更新日時 |
+
+---
+
+## オッズデータ（追加）
+
+### exacta_odds
+
+**レコード数**: 75 件
+
+**目的**: 二連単オッズ。ほぼ未収集。
+
+#### カラム一覧
+
+| カラム名 | 型 | NULL許可 | デフォルト値 | PK | 説明 |
+|----------|-----|----------|--------------|-----|------|
+| id | INTEGER | ○ |  | ★ | プライマリキー（自動採番） |
+| race_id | INTEGER | × |  |  | レースID |
+| combination | TEXT | × |  |  | 組み合わせ |
+| odds | REAL | × |  |  | オッズ倍率 |
+| fetched_at | TIMESTAMP | ○ | CURRENT_TIMESTAMP |  |  |
+
+---
+
 ## よくある検索パターン
 
 ### データ名の対応表
 
 | 探しているデータ | 実際のテーブル名 | カラム名 | 備考 |
 |-----------------|------------------|----------|------|
-| 3連単オッズ | `trifecta_odds` | `odds` | ✅ 存在 |
-| 2連単オッズ | ❌ `exacta_odds` | - | **テーブル自体が存在しません** |
-| 単勝オッズ | `win_odds` | `odds` | ✅ 存在（データ0件） |
+| 3連単オッズ | `trifecta_odds` | `odds` | ✅ 33,499,007件 |
+| 2連単オッズ | `exacta_odds` | `odds` | ⚠️ 存在するが75件のみ |
+| 単勝オッズ | `win_odds` | `odds` | ⚠️ 存在するが954件のみ |
 | レース結果（着順） | `results` | `rank` | ✅ 正: `rank` (誤: position) |
 | 払戻金 | `payouts` | `amount` | ✅ 正: `amount` (誤: payout_amount) |
-| 予想データ | `race_predictions` | `rank_prediction` | ✅ 正: `rank_prediction` (誤: predicted_position) |
+| 予想データ | `race_predictions` | `rank_prediction` | ✅ 正: `rank_prediction`（3,339,304件） |
 | 出走表 | `entries` | `racer_number`, `motor_number` | ✅ 正: `racer_number` (誤: racer_id) |
 | 選手情報（名前） | `entries` | `racer_name` | ✅ 出走表に含まれる |
 | 選手情報（級別） | `entries` | `racer_rank` | ✅ 出走表に含まれる |
-| ST時間 | ❌ `entries` | - | **カラム自体が存在しません** |
-| 展示タイム | ❌ `entries` | - | **カラム自体が存在しません** |
+| ST時間 | `race_details` | `st_time` | ✅ race_detailsテーブル（充足率100%） |
+| 展示タイム | `race_details` | `exhibition_time` | ✅ race_detailsテーブル（充足率100%） |
 | F/L回数 | `entries` | `f_count`, `l_count` | ✅ 存在 |
 | 平均ST | `entries` | `avg_st` | ✅ 存在 |
 
@@ -2228,36 +2361,41 @@ ORDER BY p.rank_prediction;
 
 ### 重要な注意事項
 
-#### ⚠️ 存在しないデータ
+#### ⚠️ entriesテーブルに存在しないデータ
 
-以下のデータは**データベースに存在しません**：
+以下のデータは`entries`テーブルには存在しません。別テーブルを参照してください：
 
-1. **2連単オッズ（exacta_odds）**
-   - テーブル自体が存在しません
-   - スクリプト `scripts/fetch_exacta_odds.py` は存在しますが、データは未取得です
-
-2. **ST時間（個別レース）**
+1. **ST時間（個別レース）**
    - `entries` テーブルに `start_timing` カラムは存在しません
-   - **代替**: `avg_st`（平均ST時間）が存在します
+   - **正しい場所**: `race_details.st_time`（充足率100%）
+   - **代替**: `entries.avg_st`（平均ST時間）も存在
 
-3. **展示タイム（個別レース）**
+2. **展示タイム（個別レース）**
    - `entries` テーブルに `exhibition_time` カラムは存在しません
-   - 別テーブル `exhibition_data` (6件のみ) に少量データあり
+   - **正しい場所**: `race_details.exhibition_time`（充足率100%）
+
+3. **2連単オッズ・単勝オッズ**
+   - `exacta_odds`（75件）、`win_odds`（954件）は存在するがデータ極少
 
 #### ✅ 実際に使用可能なデータ
 
-- **3連単オッズ**: `trifecta_odds.odds`
+- **3連単オッズ**: `trifecta_odds.odds`（33,499,007件）
 - **着順**: `results.rank`
+- **決まり手**: `results.kimarite`
 - **払戻金**: `payouts.amount`
 - **予想順位**: `race_predictions.rank_prediction`
+- **展示タイム**: `race_details.exhibition_time`
+- **STタイム**: `race_details.st_time`
+- **進入コース**: `race_details.actual_course`
 - **平均ST**: `entries.avg_st`
 - **F/L回数**: `entries.f_count`, `entries.l_count`
+- **選手別逃げ率**: `player_escape_stats.escape_rate`
 
 ---
 
 ## ⚠️ よくある計算ミスと対策
 
-**最終更新**: 2026-01-30
+**最終更新**: 2026-03-09
 
 このセクションでは、過去に発生した計算ミスのパターンと対策を記載します。分析スクリプト作成時に必ず参照してください。
 
@@ -2377,9 +2515,9 @@ JOIN actual_combos ac ON pc.race_id = ac.race_id;
 - **クイックリファレンス**: [docs/QUICK_REFERENCE.md](../QUICK_REFERENCE.md) - テーブル早見表・よく使うクエリ
 - **SQLクエリサンプル集**: [docs/guides/SQL_QUERY_SAMPLES.md](../guides/SQL_QUERY_SAMPLES.md) - 詳細なクエリ例
 - **予測ロジック**: [docs/architecture/PREDICTION_LOGIC.md](PREDICTION_LOGIC.md) - 予測アルゴリズム
-- **購入条件**: [docs/presets/BET_CONDITIONS.md](../presets/BET_CONDITIONS.md) - 10条件の詳細
+- **購入条件**: [docs/presets/BET_CONDITIONS.md](../presets/BET_CONDITIONS.md) - 購入条件の詳細
 
 ---
 
-**最終更新**: 2026-01-30
-**更新者**: Claude Sonnet 4.5（上位AI: Claude Opus 4.5）
+**最終更新**: 2026-03-09
+**更新者**: Claude Opus 4.6
