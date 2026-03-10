@@ -752,9 +752,7 @@ class RacePredictor:
                     'l_count': e.get('l_count'),
                     'motor_number': e.get('motor_number'),
                     'win_rate': e.get('win_rate'),
-                    'avg_st': e.get('avg_st'),
-                    'motor_second_rate': e.get('motor_second_rate'),
-                    'local_win_rate': e.get('local_win_rate'),
+                    'avg_st': e.get('avg_st')
                 }
                 entry_data[e['pit_number']] = entry_dict
                 race_entries_for_matchup.append(entry_dict)
@@ -764,8 +762,7 @@ class RacePredictor:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT pit_number, racer_number, racer_name, racer_rank,
-                       f_count, l_count, motor_number, win_rate, avg_st,
-                       motor_second_rate, local_win_rate
+                       f_count, l_count, motor_number, win_rate, avg_st
                 FROM entries
                 WHERE race_id = ?
                 ORDER BY pit_number
@@ -781,9 +778,7 @@ class RacePredictor:
                     'l_count': row['l_count'],
                     'motor_number': row['motor_number'],
                     'win_rate': row['win_rate'],
-                    'avg_st': row['avg_st'],
-                    'motor_second_rate': row['motor_second_rate'],
-                    'local_win_rate': row['local_win_rate'],
+                    'avg_st': row['avg_st']
                 }
                 entry_data[row['pit_number']] = entry_dict
                 race_entries_for_matchup.append(entry_dict)
@@ -999,7 +994,7 @@ class RacePredictor:
                 wind_direction=wind_direction,
                 wave_height=wave_height,
                 kimarite_result=kimarite_result,
-                max_total_buff=12.0,  # 最大12点のバフ/デバフ（15→12: 2026-03-09 compound_buff整理）
+                max_total_buff=15.0,  # 最大15点のバフ/デバフ
                 race_id=race_id,
                 pit_number=pit_number
             )
@@ -1038,15 +1033,6 @@ class RacePredictor:
                 'kimarite_detail': kimarite_result,
                 'grade_detail': grade_result,
                 'compound_buff_detail': compound_buff_result,
-                # === raw スコア（generate_features.py / fast_backtest.py が使用） ===
-                '_racer_score_raw': racer_score_raw,
-                '_motor_score_raw': motor_score_raw,
-                '_extended_score_raw': extended_score_detail['total_extended_score'] if extended_score_detail else 0.0,
-                '_kimarite_score_raw': kimarite_score,
-                '_grade_score_raw': grade_score,
-                '_course_score_raw': course_score,
-                '_racer_overall_races': racer_analysis.get('overall_stats', {}).get('total_races', 0),
-                '_motor_total_races': motor_analysis.get('motor_stats', {}).get('total_races', 0),
             }
 
             # 拡張スコア詳細を追加（存在する場合）
@@ -1067,8 +1053,7 @@ class RacePredictor:
                     'chikusen_time': extended_score_detail.get('chikusen_time', {}),  # 直線タイム（新規）
                     'recent_form': extended_score_detail.get('recent_form', {}),  # 直近成績（新規）
                     'venue_affinity': extended_score_detail.get('venue_affinity', {}),  # 会場別勝率（新規）
-                    'place_rate': extended_score_detail.get('place_rate', {}),  # 連対率（新規）
-                    'motor_second_rate': extended_score_detail.get('motor_second_rate', {}),  # モーター2連対率
+                    'place_rate': extended_score_detail.get('place_rate', {})  # 連対率（新規）
                 }
 
             predictions.append(prediction_entry)

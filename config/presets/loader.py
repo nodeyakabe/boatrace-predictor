@@ -164,7 +164,7 @@ def get_default_scoring_weights() -> Dict[str, Any]:
 def get_default_extended_scorer_weights() -> Dict[str, float]:
     """デフォルトのExtendedScorer重み"""
     return {
-        'class_score': 0,  # course_rank_scoreと重複するため無効化（2026-03-09）
+        'class_score': 10,
         'fl_penalty_max': -10,
         'session': 5,
         'prev_race': 5,
