@@ -23,7 +23,11 @@ from scripts.automation.notify import (
 )
 from src.betting.bet_target_evaluator import BetTargetEvaluator, BetStatus
 from src.betting.multi_bet_generator import MultiBetPattern
+from src.betting.evaluator_helpers import create_standard_evaluator
 from src.scraper.beforeinfo_scraper import BeforeInfoScraper
+
+# 信頼度グレード→float変換マップ（notify.py の {confidence:.1%} フォーマット用）
+_CONFIDENCE_FLOAT_MAP = {'A': 0.85, 'B': 0.70, 'C': 0.60, 'D': 0.50}
 
 
 class RaceMonitor:
@@ -41,14 +45,8 @@ class RaceMonitor:
         self._bet_target_cache = {}       # {race_id: race_dict} - 購入判定キャッシュ
         self._cache_date = None           # キャッシュの日付
 
-        # BetTargetEvaluatorを初期化（実際の購入判定ロジックを使用）
-        self.bet_evaluator = BetTargetEvaluator(
-            use_multi_bet=True,
-            multi_bet_pattern=MultiBetPattern.PATTERN_H,
-            enable_venue_wind_filter=True,
-            enable_venue_course_adjustment=True,
-            db_path=db_path
-        )
+        # BetTargetEvaluatorを初期化（標準設定を使用 - generate_daily_predictions.py と同じ設定）
+        self.bet_evaluator = create_standard_evaluator(db_path=db_path)
 
     def get_connection(self) -> sqlite3.Connection:
         """DB接続を取得"""
@@ -94,9 +92,12 @@ class RaceMonitor:
                 race_id = row['race_id']
 
                 # キャッシュがあれば再評価をスキップ
+                # ただし TARGET_ADVANCE はオッズがDBに保存されており変化する可能性があるため除外
                 if race_id in self._bet_target_cache:
-                    races.append(self._bet_target_cache[race_id])
-                    continue
+                    cached = self._bet_target_cache[race_id]
+                    if cached['bet_target'].status != BetStatus.TARGET_ADVANCE:
+                        races.append(cached)
+                        continue
 
                 # レースデータを取得
                 race_data = self._get_race_data(cursor, race_id)
@@ -661,7 +662,7 @@ class RaceMonitor:
 
             prediction = {
                 'pit_numbers': pit_numbers,
-                'confidence': float(bet_target.confidence) if isinstance(bet_target.confidence, str) and bet_target.confidence in ['A', 'B', 'C', 'D'] else 0.7
+                'confidence': _CONFIDENCE_FLOAT_MAP.get(bet_target.confidence, 0.70) if isinstance(bet_target.confidence, str) else (float(bet_target.confidence) if bet_target.confidence is not None else 0.70)
             }
 
             # オッズ情報整形（2026-01-28修正: パターンH対応）

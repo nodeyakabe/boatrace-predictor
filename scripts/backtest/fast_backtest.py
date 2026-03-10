@@ -110,7 +110,9 @@ def load_features(start_date: str, end_date: str) -> pd.DataFrame:
             pf.ext_exhibition_score, pf.ext_tilt_score, pf.ext_chikusen_time_score,
             pf.ext_recent_form_score, pf.ext_venue_affinity_score,
             pf.ext_place_rate_score, pf.ext_motor_second_rate_score,
-            pf.total_score_final
+            pf.total_score_final,
+            pf.original_confidence,
+            pf.original_rank_prediction
         FROM prediction_features pf
         WHERE pf.race_date >= ? AND pf.race_date <= ?
     """, conn, params=(start_date, end_date))
@@ -122,7 +124,8 @@ def recalculate_scores(
     df: pd.DataFrame,
     weights: dict,
     thresholds: dict,
-    mode: str = 'confidence_only'
+    mode: str = 'confidence_only',
+    use_original_confidence: bool = False
 ) -> pd.DataFrame:
     """
     raw スコアから total_score + rank_prediction + confidence を再計算
@@ -134,6 +137,8 @@ def recalculate_scores(
         mode:
             'confidence_only' - total_score_final をそのまま使用、confidence のみ再計算（最速）
             'full'            - raw スコアから total_score も再計算
+        use_original_confidence: True の場合、prediction_features.original_confidence をそのまま使用
+            （compound_buff 込みスコアからの再計算は不正確なため、デフォルト設定時に使用）
 
     Returns:
         total_score, rank_prediction, confidence カラムが追加された DataFrame
@@ -152,8 +157,20 @@ def recalculate_scores(
         ascending=False, method='first'
     ).astype(int)
 
-    # confidence を再計算（_recalculate_race_confidence と同じロジック）
-    df = _recalculate_confidence(df, thresholds)
+    if use_original_confidence and 'original_rank_prediction' in df.columns:
+        # original_rank_prediction をそのまま使用（compound_buff の影響を受けない正確な順位）
+        # NULL の場合は total_score_final からの再計算値で補完
+        mask_null = df['original_rank_prediction'].isna()
+        if mask_null.any():
+            df.loc[~mask_null, 'rank_prediction'] = df.loc[~mask_null, 'original_rank_prediction']
+        else:
+            df['rank_prediction'] = df['original_rank_prediction']
+        # original_confidence をそのまま使用
+        df['confidence'] = df['original_confidence']
+    else:
+        # confidence を再計算（閾値変更テスト時）
+        # NOTE: total_score_final には compound_buff が含まれるため近似値になる
+        df = _recalculate_confidence(df, thresholds)
 
     return df
 
@@ -729,9 +746,9 @@ def main():
         changes.append(f"A-gap={args.conf_a_gap}")
     if args.conf_b_gap != 10:
         changes.append(f"B-gap={args.conf_b_gap}")
-    if args.racer_weight:
+    if args.racer_weight is not None:
         changes.append(f"racer_w={args.racer_weight}")
-    if args.motor_weight:
+    if args.motor_weight is not None:
         changes.append(f"motor_w={args.motor_weight}")
     param_desc = ', '.join(changes) if changes else 'デフォルト設定'
 
@@ -755,9 +772,27 @@ def main():
         sys.exit(1)
 
     # スコア・信頼度を再計算
+    # use_original_confidence: 閾値変更なし（confidence_only）の場合は original_confidence をそのまま使用
+    # → compound_buff 込み total_score_final からの再計算は信頼度が高くなりすぎるため
+    has_threshold_change = (
+        args.conf_a_gap != 15 or args.conf_a_min != 70
+        or args.conf_b_gap != 10 or args.conf_b_min != 60
+        or args.conf_c_gap != 5  or args.conf_c_p1 != 55
+        or args.conf_d_gap != 2
+    )
+    use_original_confidence = (mode == 'confidence_only') and not has_threshold_change
+
+    if use_original_confidence:
+        print(f"信頼度: original_confidence を使用（標準バックテストと同一）")
+    elif mode == 'confidence_only':
+        print(f"信頼度: 閾値変更あり → total_score_final から再計算（近似）")
+
     print(f"スコア・信頼度を再計算中...", end='', flush=True)
     t0 = datetime.now()
-    df_features = recalculate_scores(df_features, weights, thresholds, mode=mode)
+    df_features = recalculate_scores(
+        df_features, weights, thresholds, mode=mode,
+        use_original_confidence=use_original_confidence
+    )
     print(f" ({(datetime.now()-t0).total_seconds():.1f}s)")
 
     # 年度別バックテスト

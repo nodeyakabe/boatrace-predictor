@@ -102,6 +102,11 @@ CREATE TABLE IF NOT EXISTS prediction_features (
     racer_overall_races INTEGER DEFAULT 0,
     motor_total_races INTEGER DEFAULT 0,
 
+    -- 元の信頼度・予測順位（compound_buff 適用前スコアで計算された正確な値）
+    -- fast_backtest の confidence_only モードで使用（total_score_final からの再計算は不正確）
+    original_confidence TEXT,
+    original_rank_prediction INTEGER,
+
     -- 管理
     feature_version TEXT DEFAULT '1.0',
     created_at TEXT DEFAULT (datetime('now')),
@@ -129,13 +134,14 @@ INSERT INTO prediction_features (
     ext_place_rate_score, ext_motor_second_rate_score,
     total_score_final,
     racer_overall_races, motor_total_races,
-    feature_version, updated_at
+    feature_version, updated_at,
+    original_confidence, original_rank_prediction
 )
 VALUES (
     ?,?,  ?,?,?,?,  ?,?,?,?,  ?,?,
     ?,?,?,  ?,?,?,?,
     ?,?,?,  ?,?,?,  ?,?,?,  ?,?,?,  ?,?,  ?,?,
-    ?,  ?,?,  ?,?
+    ?,  ?,?,  ?,?,  ?,?
 )
 ON CONFLICT(race_id, pit_number) DO UPDATE SET
     racer_number=excluded.racer_number, racer_name=excluded.racer_name,
@@ -163,7 +169,9 @@ ON CONFLICT(race_id, pit_number) DO UPDATE SET
     racer_overall_races=excluded.racer_overall_races,
     motor_total_races=excluded.motor_total_races,
     feature_version=excluded.feature_version,
-    updated_at=excluded.updated_at;
+    updated_at=excluded.updated_at,
+    original_confidence=excluded.original_confidence,
+    original_rank_prediction=excluded.original_rank_prediction;
 """
 
 
@@ -258,6 +266,9 @@ def predictions_to_feature_rows(race_id, predictions, race_meta):
             pred.get('_motor_total_races', 0),
             '1.0',
             now,
+            # 元の信頼度・予測順位（compound_buff 適用前の正確な値）
+            pred.get('confidence') if pred.get('rank_prediction') == 1 else None,
+            pred.get('rank_prediction'),
         ))
     return rows
 

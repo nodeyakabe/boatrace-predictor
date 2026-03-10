@@ -64,12 +64,13 @@ INSERT INTO prediction_features (
     ext_place_rate_score, ext_motor_second_rate_score,
     total_score_final,
     racer_overall_races, motor_total_races,
+    original_confidence, original_rank_prediction,
     feature_version, updated_at
 ) VALUES (
     ?,?,  ?,?,?,?,  ?,?,?,?,  ?,?,
     ?,?,?,  ?,?,?,?,
     ?,?,?,  ?,?,?,  ?,?,?,  ?,?,?,  ?,?,  ?,?,
-    ?,  ?,?,  ?,?
+    ?,  ?,?,  ?,?,  ?,?
 )
 ON CONFLICT(race_id, pit_number) DO UPDATE SET
     racer_number=excluded.racer_number, racer_name=excluded.racer_name,
@@ -96,6 +97,8 @@ ON CONFLICT(race_id, pit_number) DO UPDATE SET
     total_score_final=excluded.total_score_final,
     racer_overall_races=excluded.racer_overall_races,
     motor_total_races=excluded.motor_total_races,
+    original_confidence=excluded.original_confidence,
+    original_rank_prediction=excluded.original_rank_prediction,
     feature_version=excluded.feature_version,
     updated_at=excluded.updated_at
 """
@@ -142,7 +145,9 @@ def import_features(start_date: str, end_date: str, force: bool = False):
             COALESCE(rp.motor_score, 0.0) AS motor_score_raw,
             COALESCE(rp.kimarite_score, 0.0) AS kimarite_score_raw,
             COALESCE(rp.grade_score, 0.0) AS grade_score_raw,
-            rp.total_score AS total_score_final
+            rp.total_score AS total_score_final,
+            CASE WHEN rp.rank_prediction = 1 THEN rp.confidence ELSE NULL END AS original_confidence,
+            rp.rank_prediction AS original_rank_prediction
         FROM race_predictions rp
         JOIN races r ON rp.race_id = r.id
         JOIN entries e ON rp.race_id = e.race_id AND rp.pit_number = e.pit_number
@@ -168,7 +173,8 @@ def import_features(start_date: str, end_date: str, force: bool = False):
          venue_code, race_grade, race_date,
          exhibition_time, st_time,
          course_score_raw, racer_score_raw, motor_score_raw,
-         kimarite_score_raw, grade_score_raw, total_score_final) = row
+         kimarite_score_raw, grade_score_raw, total_score_final,
+         original_confidence, original_rank_prediction) = row
 
         rows.append((
             race_id, pit_number,
@@ -188,6 +194,8 @@ def import_features(start_date: str, end_date: str, force: bool = False):
             0.0, 0.0,        # place_rate, motor_second_rate
             total_score_final,
             0, 0,            # racer_overall_races, motor_total_races
+            original_confidence,        # 元の信頼度（rank1のみ、他はNULL）
+            original_rank_prediction,   # 元の予測順位（全pit）
             '1.0-fast',      # feature_version（生成方法を明記）
             now,
         ))

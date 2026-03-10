@@ -113,7 +113,7 @@ def get_todays_target_and_candidates(db_path: str) -> tuple:
                         'race_num': race_number,
                         'race_time': race_time,
                         'combination': combination_str,
-                        'odds': bet_target.odds if bet_target.odds else 0.0
+                        'odds': bet_target.odds if (bet_target.odds is not None and bet_target.odds != 0) else 0.0
                     })
                 # 候補レース（オッズが条件の80%以上ある場合のみ）
                 elif bet_target.status == BetStatus.CANDIDATE:
