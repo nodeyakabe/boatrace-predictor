@@ -119,14 +119,35 @@
 
 ### 現在実行中のタスク（2026-03-11）
 
-| タスク | 状態 | ETA |
+| タスク | 状態 | 備考 |
 |--------|:----:|-----|
-| 2025年 before予測 Jan-Apr, May-Aug（2並列） | **実行中** | 〜6〜7時間 |
-| 2025年 before予測 Sep-Dec（完了後に1プロセスで実行） | **待機中** | 上記完了後さらに5〜6時間 |
+| 2025年 before CSV Jan-Apr（PID 2996） | **実行中** | `--csv-only`。完了後 Phase 2 手動実行必要 |
+| 2025年 before CSV May-Aug（PID 12700） | **実行中** | `--csv-only`。完了後 Phase 2 手動実行必要 |
 
-> **補足**: 当初6並列で起動したが、PC負荷軽減のため2並列に削減（2026-03-11）。
-> Sep-Dec 担当プロセスが停止済み（Sep 22 まで完了）。Jan-Apr / May-Aug 完了後に再開すること。
-> 再開コマンド: `python scripts/prediction/generate_before_fast.py --year 2025 --start-date 2025-09-23 --end-date 2025-12-31`
+### 完了後の必須手順（順番通りに実行）
+
+```bash
+# Step 1: Sep-Dec 再起動（Jan-Apr/May-Aug の両方が完了したら）
+python scripts/prediction/generate_before_fast.py --year 2025 --start-date 2025-09-23 --end-date 2025-12-31
+
+# Step 2: 2025年 Phase 2（全CSV→DB投入）
+python scripts/prediction/import_predictions_csv.py --dir data/predictions_csv/before/2025
+
+# Step 3: 2023年 旧コード修正（⚠️ 重要：P4未完了部分）
+# 13,981レース（Jan-Mar・Oct）が st_time 修正前のコードのまま残存
+python scripts/prediction/generate_before_fast.py --year 2023 --force
+
+# Step 4: prediction_features 更新
+python scripts/prediction/import_features_from_predictions.py --full --force
+
+# Step 5: 標準バックテスト
+python scripts/backtest/standard_backtest_unique.py --full
+```
+
+> **⚠️ 2023年旧コード問題（2026-03-11 Opus発見）**:
+> 2026-03-06 の再生成が `--force` なしで実行されたため、2023年 Jan-Mar・Oct の 13,981レース（25.2%）が
+> st_time 修正前の旧コードのまま残存。Step 3 で修正が必要。
+> 確認SQL: `SELECT COUNT(*) FROM race_predictions p JOIN races r ON p.race_id=r.id WHERE p.prediction_type='before' AND p.pit_number=1 AND r.race_date LIKE '2023%' AND p.generated_at < '2026-03-06'`
 
 ---
 
