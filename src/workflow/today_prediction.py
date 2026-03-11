@@ -544,12 +544,19 @@ class TodayPredictionWorkflow:
                 if result.returncode == 0:
                     self._update_progress("Step 5/6", "予測生成完了", 85)
                 else:
-                    logger.warning(f"予測生成エラー: {result.stderr}")
+                    error_msg = (
+                        f"予測生成エラー(exit={result.returncode}): "
+                        f"{result.stderr[:300]}"
+                    )
+                    logger.warning(error_msg)
+                    print(f"[ERROR] {error_msg}", flush=True)
             except subprocess.TimeoutExpired:
-                logger.warning(
+                msg = (
                     f"予測生成タイムアウト（{timeout_seconds}秒超過, "
                     f"対象{race_count}レース）"
                 )
+                logger.warning(msg)
+                print(f"[ERROR] {msg}", flush=True)
         else:
             logger.warning(f"スクリプトが見つかりません: {script_path}")
 

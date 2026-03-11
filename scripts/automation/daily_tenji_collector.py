@@ -135,7 +135,16 @@ def collect_previous_day_tenji(headless=True, update_existing=True):
                     pass
 
     if not all_results:
-        logger.warning("収集データがありません")
+        logger.warning("収集データがありません（全会場でデータなし or スクレイピング失敗）")
+        try:
+            from scripts.automation.notify import send_error_notification
+            send_error_notification(
+                "展示データ収集0件",
+                f"前日({yesterday})のオリジナル展示データが収集できませんでした。\n"
+                f"エラー会場: {', '.join(failed_venues[:10])}"
+            )
+        except Exception:
+            pass
         return 0
 
     # 一時JSONファイルに保存
@@ -158,11 +167,21 @@ def collect_previous_day_tenji(headless=True, update_existing=True):
     db_path = project_root / 'data' / 'boatrace.db'
 
     try:
-        save_tenji_data(str(temp_json), str(db_path), update_existing=update_existing)
+        saved = save_tenji_data(str(temp_json), str(db_path), update_existing=update_existing)
+        if saved == 0:
+            logger.warning(
+                f"DB保存結果が0件（JSONには{len(all_results)}レースあり）"
+                f" → 既存データのスキップか保存失敗の可能性"
+            )
+            print(
+                f"[WARNING] 展示データDB保存0件 (JSON:{len(all_results)}レース)",
+                flush=True
+            )
     except Exception as e:
         logger.error(f"DB保存エラー: {e}")
         import traceback
         logger.error(traceback.format_exc())
+        print(f"[ERROR] 展示データDB保存エラー: {e}", flush=True)
         return 0
 
     # 永久保存用にコピー
