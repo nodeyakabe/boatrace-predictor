@@ -58,7 +58,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 sys.path.insert(0, PROJECT_ROOT)
 
 from config.settings import DATABASE_PATH
-from config.bet_conditions import STANDARD_BET_CONDITIONS, GLOBAL_VENUE_MONTH_EXCLUDES
+from config.bet_conditions import STANDARD_BET_CONDITIONS, GLOBAL_VENUE_MONTH_EXCLUDES, GLOBAL_MONTH_EXCLUDES
 
 try:
     import pandas as pd
@@ -379,9 +379,10 @@ def filter_by_condition(df_top1: pd.DataFrame, df_all: pd.DataFrame, cond: dict)
         venues_ex = [f"{v:02d}" if isinstance(v, int) else str(v) for v in cond['venue_exclude']]
         d = d[~d['venue_code'].isin(venues_ex)]
 
-    # 月除外
-    if cond.get('month_exclude'):
-        d = d[~d['month'].isin(cond['month_exclude'])]
+    # 月除外（条件個別 + グローバル月除外）
+    combined_month_exclude = list(cond.get('month_exclude') or []) + list(GLOBAL_MONTH_EXCLUDES or [])
+    if combined_month_exclude:
+        d = d[~d['month'].isin(combined_month_exclude)]
 
     # グローバル会場×月除外
     # GLOBAL_VENUE_MONTH_EXCLUDES は (venue_int, month_int) のタプルリスト

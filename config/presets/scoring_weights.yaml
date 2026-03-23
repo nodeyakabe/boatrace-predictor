@@ -15,7 +15,7 @@ meta:
 # ExtendedScorerの重み設定
 # ============================================================
 extended_scorer:
-  # 各要素の最大スコア（合計62点）
+  # 各要素の最大スコア（合計76点: place_rate=5はsettings.pyで追加）
   class_score: 10        # 級別スコア (A1=10, A2=7, B1=4, B2=1)
   fl_penalty_max: -10    # F/Lペナルティ最大（負の値）
   session: 5             # 節間成績スコア
@@ -31,7 +31,7 @@ extended_scorer:
 
   # 正規化設定
   total_weight: 20.0     # ExtendedScoreの最終的な重み
-  max_possible: 62       # 合計最大スコア
+  max_possible: 76       # 合計最大スコア（YAML=67 + chikusen_time=4 + place_rate=5をsettings.pyで追加）
   min_possible: -10      # 合計最小スコア
 
 # ============================================================

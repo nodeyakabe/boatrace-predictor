@@ -249,7 +249,7 @@ class RacePredictor:
                     self.pairwise_model.load('pairwise_rank')
                     self.pairwise_integrator = PairwiseScoreIntegrator(
                         pairwise_model=self.pairwise_model,
-                        integration_weight=0.5  # ペアワイズモデルの重み
+                        integration_weight=0.15  # ペアワイズモデルの重み（AUC=0.735相当、過大混合を防ぐため0.5→0.15）
                     )
             except Exception as e:
                 print(f"ペアワイズモデル初期化エラー: {e}")
@@ -947,16 +947,16 @@ class RacePredictor:
                 # - 進入傾向: 0-5点（新規）
                 # - 選手間相性: 0-5点
                 # - モーター特性: 0-5点
-                # - 平均ST: 0-8点
+                # - 平均ST: 0-10点
                 # - 展示タイム: 0-8点（新規）
                 # - チルト角度: 0-3点（新規）
                 # - 直近成績: 0-8点（新規）
-                # 最大合計: 62点、最小: -10点
+                # 最大合計: 76点（place_rate=5含む）、最小: -10点
                 # これを EXTENDED_WEIGHT (20点) に正規化
 
                 raw_extended = extended_result['total_extended_score']
-                max_possible = extended_result.get('max_possible_score', 62)
-                # -10～62 を 0～20 に正規化
+                max_possible = extended_result.get('max_possible_score', 76)
+                # -10～76 を 0～20 に正規化
                 normalized_extended = ((raw_extended + 10) / (max_possible + 10)) * EXTENDED_WEIGHT
                 extended_score = max(0, min(EXTENDED_WEIGHT, normalized_extended))
 
@@ -1174,20 +1174,6 @@ class RacePredictor:
                 logger.debug(f"Race {race_id}: 信頼度ベース戦略切り替えエラー: {e}")
 
         # ========================================
-        # ペアワイズ相対スコアリング適用（機能フラグで制御）
-        # アプローチ3: 艇間の直接対決スコアで順位予測
-        # 期待効果: 2着・3着的中率の向上
-        # ========================================
-        if (is_feature_enabled('pairwise_scoring') and
-            self.pairwise_integrator is not None):
-            try:
-                predictions = self._apply_pairwise_scoring(
-                    predictions, race_id
-                )
-            except Exception as e:
-                logger.debug(f"Race {race_id}: ペアワイズスコアリングエラー: {e}")
-
-        # ========================================
         # モンテカルロシミュレーション適用（機能フラグで制御）
         # アプローチ5: 確率的レース展開シミュレーションで順位分布を予測
         # 期待効果: 2着・3着的中率の向上（最高ポテンシャル）
@@ -1238,8 +1224,24 @@ class RacePredictor:
         if top_confidence == 'B':
             predictions = self._add_top3_scores(predictions, venue_code, race_date)
 
-        # 再ソート（ハイブリッドスコア適用後）
-        predictions.sort(key=lambda x: x['total_score'], reverse=True)
+        # ========================================
+        # ペアワイズ相対スコアリング適用（kimarite/makuri/top3処理の後）
+        # アプローチ3: 艇間の直接対決スコアで順位予測
+        # 期待効果: 2着・3着的中率の向上
+        # ※ total_scoreが確定した後に適用することでintegrated_scoreが有効になる
+        # ========================================
+        if (is_feature_enabled('pairwise_scoring') and
+            self.pairwise_integrator is not None):
+            try:
+                predictions = self._apply_pairwise_scoring(
+                    predictions, race_id
+                )
+            except Exception as e:
+                logger.debug(f"Race {race_id}: ペアワイズスコアリングエラー: {e}")
+
+        # 再ソート（pairwise適用済みの場合は順序を維持、それ以外はtotal_score順）
+        if not (is_feature_enabled('pairwise_scoring') and self.pairwise_integrator is not None):
+            predictions.sort(key=lambda x: x['total_score'], reverse=True)
 
         # ========================================
         # 予測コース強制化（2025-12-16追加）
@@ -3459,27 +3461,18 @@ class RacePredictor:
         race_id: int
     ) -> List[Dict]:
         """
-        ペアワイズ相対スコアリングを適用
+        ペアワイズ相対スコアリングを適用（案C: 1着固定・2-3着のみ最適化）
 
-        アプローチ3: 艇間の直接対決確率を使用して順位予測を強化
-
-        理論的根拠:
-        - 現在のモデルは各艇の絶対スコアを計算しているが、
-          実際のレースは相対的な強さで決まる
-        - 艇1が艇2に勝つ確率 P(1 > 2) を直接モデル化することで、
-          より精度の高い順位予測が可能
-
-        実装:
-        - 各艇ペア(i, j)に対してペアワイズ特徴量を計算
-        - LightGBM二値分類で艇iが艇jより上位かを予測
-        - 全ペアの勝率から順位スコアを計算し、既存スコアと統合
+        1着はtotal_scoreで確定し信頼度判定に影響を与えない。
+        2着・3着のみpairwiseの条件付き確率で最適化する。
+        これにより件数変動なし・副作用最小で2-3着的中率の向上を狙う。
 
         Args:
             predictions: 予測結果リスト（スコア順）
             race_id: レースID
 
         Returns:
-            ペアワイズスコア適用後の予測結果
+            ペアワイズスコア適用後の予測結果（1着固定・2-3着最適化済み）
         """
         logger = logging.getLogger(__name__)
 
@@ -3530,15 +3523,40 @@ class RacePredictor:
                 if len(idx) > 0:
                     race_features.loc[idx[0], 'total_score'] = pred['total_score']
 
-            # ペアワイズスコアを統合
-            predictions = self.pairwise_integrator.integrate_predictions(
-                predictions, race_features
+            # 1着はtotal_scoreで確定（kimarite/makuri調整後の順序を維持）
+            predictions_sorted = sorted(predictions, key=lambda x: x['total_score'], reverse=True)
+            first_pit = predictions_sorted[0]['pit_number']
+
+            # 2着をpairwiseで決定（1着固定条件下）
+            second_probs = self.pairwise_integrator.get_second_place_probs(
+                predictions_sorted, race_features
             )
+            if not second_probs:
+                return predictions
+
+            predicted_second = max(second_probs, key=second_probs.get)
+
+            # 3着をpairwiseで決定（1着・2着固定条件下）
+            third_probs = self.pairwise_integrator.get_third_place_probs(
+                predictions_sorted, race_features, predicted_second
+            )
+            if not third_probs:
+                return predictions
+
+            predicted_third = max(third_probs, key=third_probs.get)
+
+            # 順位を再構築（1-3着はpairwise決定、4-6着はtotal_score順）
+            top3 = [first_pit, predicted_second, predicted_third]
+            rest = [p['pit_number'] for p in predictions_sorted if p['pit_number'] not in top3]
+            pred_dict = {p['pit_number']: p for p in predictions_sorted}
+            reordered = [pred_dict[pit] for pit in top3 + rest]
 
             logger.debug(
-                f"Race {race_id}: ペアワイズスコア適用 - "
-                f"予測1着: {predictions[0]['pit_number']}号艇"
+                f"Race {race_id}: pairwise 2-3着最適化 - "
+                f"1着: {first_pit}号艇, 2着: {predicted_second}号艇, 3着: {predicted_third}号艇"
             )
+
+            return reordered
 
         except Exception as e:
             logger.debug(f"Race {race_id}: ペアワイズスコア計算エラー: {e}")

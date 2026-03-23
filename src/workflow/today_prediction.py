@@ -527,9 +527,11 @@ class TodayPredictionWorkflow:
             # レース数に応じた動的タイムアウト
             # 通常: 180レース × 2-3秒 = 360-540秒
             # 遅延時: 180レース × 9秒 = 1620秒（2/25実績）
-            # 安全マージン込みで レース数 × 10秒、最低1200秒（20分）
+            # 安全マージン込みで レース数 × 20秒、最低2400秒（40分）
+            # 注: Cブロックでadvance予測が事前生成済みの場合、fast_prediction_generator.py は
+            #     既存予測をスキップするためほぼ即時完了する
             race_count = self._count_today_races()
-            timeout_seconds = max(1200, race_count * 10)
+            timeout_seconds = max(2400, race_count * 20)
             logger.info(f"予測生成開始: {race_count}レース, タイムアウト={timeout_seconds}秒")
 
             try:

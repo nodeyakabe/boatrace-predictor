@@ -1,14 +1,18 @@
 """
 Cブロック: 本日データ収集
 
-実行時刻: 毎朝7:00
+実行時刻: 毎朝6:00
 タスク:
 1. 本日のレースデータ収集
-2. 本日のオッズ収集
+2. 当日advance予測生成（Dブロックでのタイムアウト回避のため）
+
+※ オッズ収集は08:00のEブロックに移動（6:00時点では公式サイト未公開のため）
 """
 
 import os
 import sys
+import sqlite3
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -17,7 +21,6 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from scripts.automation.fetch_today_races import fetch_todays_races
-from scripts.automation.fetch_today_odds import fetch_todays_odds
 from scripts.automation.notify import send_discord_notification, send_error_notification
 
 
@@ -87,22 +90,22 @@ class BlockCRunner:
             self._finalize()
             return False
 
-        # タスク2: オッズ収集（レースがある場合のみ）
-        print(f"[タスク 2/2] 本日のオッズ収集...")
+        # タスク2: 当日advance予測生成
+        # Dブロック（07:30）でのタイムアウトを回避するため、Cブロックで事前生成
+        print(f"[タスク 2/2] 当日advance予測生成...")
         task2_start = datetime.now()
 
         try:
-            # OddsScraperはrequestsベースなのでheadlessパラメータは不要
-            odds_count = fetch_todays_odds()
+            pred_count = self._task_advance_predictions(race_count)
             elapsed = (datetime.now() - task2_start).total_seconds()
 
-            self.results["オッズ収集"] = {
+            self.results["advance予測生成"] = {
                 "status": "OK",
-                "count": odds_count,
+                "count": pred_count,
                 "elapsed": elapsed
             }
 
-            print(f"  取得: {odds_count}レース")
+            print(f"  生成: {pred_count}レース")
             print(f"  所要時間: {int(elapsed // 60)}分{int(elapsed % 60)}秒")
             print(f"  [OK]\n")
 
@@ -110,18 +113,63 @@ class BlockCRunner:
             elapsed = (datetime.now() - task2_start).total_seconds()
             error_msg = str(e)
 
-            self.results["オッズ収集"] = {
+            self.results["advance予測生成"] = {
                 "status": "ERROR",
                 "error": error_msg,
                 "elapsed": elapsed
             }
-            self.errors.append(f"オッズ収集: {error_msg}")
+            self.errors.append(f"advance予測生成: {error_msg}")
 
             print(f"  [ERROR] {error_msg[:100]}")
             print(f"  所要時間: {int(elapsed // 60)}分{int(elapsed % 60)}秒\n")
 
         self.end_time = datetime.now()
         return self._finalize()
+
+    def _task_advance_predictions(self, race_count: int) -> int:
+        """当日advance予測生成（fast_prediction_generator.py使用）"""
+        if race_count == 0:
+            print("  [SKIP] レース0件のためスキップ")
+            return 0
+
+        script_path = project_root / 'scripts' / 'prediction' / 'fast_prediction_generator.py'
+        today = datetime.now().strftime('%Y-%m-%d')
+
+        # タイムアウト: レース数×15秒、最低2400秒（40分）
+        timeout = max(2400, race_count * 15)
+        print(f"  対象日: {today}, タイムアウト: {timeout}秒")
+
+        result = subprocess.run(
+            [sys.executable, str(script_path), '--date', today, '--type', 'advance'],
+            cwd=str(project_root),
+            timeout=timeout,
+            capture_output=True,
+            encoding='utf-8',
+            errors='replace'
+        )
+
+        if result.stdout:
+            for line in result.stdout.splitlines()[-10:]:  # 最後10行のみ表示
+                if line.strip():
+                    print(f"  {line}", flush=True)
+
+        if result.returncode != 0:
+            stderr_short = result.stderr[:200] if result.stderr else '(なし)'
+            raise Exception(f"exit={result.returncode}: {stderr_short}")
+
+        # 生成件数をDBから取得
+        db_path = project_root / 'data' / 'boatrace.db'
+        conn = sqlite3.connect(str(db_path), timeout=30.0)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT COUNT(DISTINCT rp.race_id)
+            FROM race_predictions rp
+            JOIN races r ON rp.race_id = r.id
+            WHERE r.race_date = ? AND rp.prediction_type = 'advance'
+        """, (today,))
+        count = cursor.fetchone()[0]
+        conn.close()
+        return count
 
     def _finalize(self, is_rest_day: bool = False, data_fetch_failed: bool = False) -> bool:
         """最終結果をサマリー表示・通知"""

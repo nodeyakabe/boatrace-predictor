@@ -83,7 +83,7 @@
 | **翌日 advance 予測**（前日夜・毎日） | `fast_prediction_generator.py` | `python scripts/prediction/fast_prediction_generator.py --date 2026-02-20 --type advance` |
 | **年度一括 advance**（再生成等） | `generate_advance_fast.py` | `python scripts/prediction/generate_advance_fast.py --year 2025` |
 | **年度一括 before**（再生成等） | `generate_before_fast.py` | `python scripts/prediction/generate_before_fast.py --year 2025` |
-| **全年度まとめて自動生成** | `watch_and_generate_advance.py` | `python scripts/automation/watch_and_generate_advance.py --run-once` |
+| **全年度まとめて自動生成** | `generate_advance_fast.py` を年度別に実行 | `python scripts/prediction/generate_advance_fast.py --year 2025` を各年度で繰り返す |
 | **CSV単独投入**（確認後に手動投入） | `import_predictions_csv.py` | `python scripts/prediction/import_predictions_csv.py --dir data/predictions_csv/advance/2025` |
 
 ### 詳細ルール
@@ -96,7 +96,7 @@
 【年度一括・再生成】（CSV方式、DB削除不要）
 通常:       generate_advance_fast.py --year XXXX   （Phase 1 CSV書き出し → Phase 2 DB投入）
             generate_before_fast.py  --year XXXX
-全年度まとめ: watch_and_generate_advance.py --run-once  （未生成分のみ）
+全年度まとめ: generate_advance_fast.py --year XXXX  を年度別に実行（--run-onceは存在しない）
 
 【再生成（既存上書き）が必要な場合の手順】
 ※ CSV方式なのでDB事前削除は不要。そのまま実行するだけで ON CONFLICT DO UPDATE により上書き。
@@ -628,9 +628,37 @@ st_time 2スケール混在 → スコア歪み → A率低下（19.8% vs 21.4%�
 
 ---
 
+### パターン4: 「A欠損 → Bに影響」の未検証断言（2026-03-12 確認）
+
+**誤った推論**:
+> advance予測が欠損 → バックテストのサンプル数に直接影響 → 🔴 重大
+
+**なぜ間違いか**:
+standard_backtest_unique.py のSQL全箇所が `prediction_type='before'` であり、advance予測はバックテストに一切使用されない。**「AはBに使われているはず」という推論をコード確認なしに事実として報告した**。
+
+**これは以下の一般パターンの具体例**:
+- 「データXが欠損 → 機能Yに影響する」と報告する前に、**Yのコードで実際にXを参照しているか**を確認する
+- 影響範囲の主張は「推論」ではなく「コード上の証拠」に基づくこと
+- 証拠なしに重要度を 🔴 にしない
+
+---
+
 ### 誤推論防止の原則
 
 1. **表面の数値だけで判断しない** → 「なぜその数値になったか」を2〜3段階掘り下げる
 2. **結論を出す前に反論を検討** → 「この結論が間違っている場合、何が理由か」を考える
 3. **因果チェーンを明示** → A→B→C の因果関係を省略せず確認する
 4. **複数指標で検証** → 1つの指標だけで判断しない（的中率 + A率 + ROI を組み合わせる）
+5. **影響範囲はコードで検証** → 「X欠損 → Y機能に影響」と主張するなら、Yのコードを開いてXへの依存を確認してから報告する。推論だけで影響範囲を断言しない
+
+### 報告時の重要度判定ルール
+
+調査・報告タスクで問題を報告する際、以下の基準で重要度を判定すること:
+
+| 重要度 | 条件 | 例 |
+|--------|------|-----|
+| 🔴 重大 | **コードまたはデータで影響を実証済み** | バックテストSQLを確認し、該当データが使われていることを確認 |
+| 🟡 要確認 | **事実は確認済みだが、影響範囲は未検証** | DB上の欠損は確認、影響先は未調査 |
+| ⚪ 情報 | **推論のみ、事実確認もこれから** | 「おそらく影響がある」レベル |
+
+**禁止**: 影響先のコードを確認せずに 🔴 を付けること。事実（欠損がある）と影響（何かに悪影響する）は別の主張であり、それぞれ個別に検証が必要。

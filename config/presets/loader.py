@@ -171,13 +171,13 @@ def get_default_extended_scorer_weights() -> Dict[str, float]:
         'course_entry': 5,
         'matchup': 5,
         'motor': 5,
-        'start_timing': 8,
-        'exhibition': 10,
+        'start_timing': 10,
+        'exhibition': 8,
         'tilt': 3,
         'recent_form': 8,
         'venue_affinity': 3,
         'total_weight': 20.0,
-        'max_possible': 62,
+        'max_possible': 76,
         'min_possible': -10,
     }
 

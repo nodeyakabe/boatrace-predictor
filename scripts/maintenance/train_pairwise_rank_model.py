@@ -59,8 +59,9 @@ def main():
         logger.error(f"データベースが見つかりません: {db_path}")
         return
 
-    # 学習期間と検証期間を設定
-    train_start = '2024-01-01'
+    # 学習期間と検証期間を設定（2026-03-18更新: 2021-2024の4年分）
+    # 2020年はrace_predictionsカバー率51.2%のためスケール混在→除外
+    train_start = '2021-01-01'
     train_end = '2024-10-31'
     valid_start = '2024-11-01'
     valid_end = '2024-12-31'

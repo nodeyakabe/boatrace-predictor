@@ -18,7 +18,7 @@ FEATURE_FLAGS = {
     'before_pattern_bonus': True,     # パターン方式（検証結果: 信頼度B +9.5pt, C +8.3pt）
     'negative_patterns': True,        # ネガティブパターン（+2.0%改善 2025-12-11）
     'entry_prediction_model': True,   # 進入予測モデル
-    'hierarchical_predictor': True,   # 階層的条件確率モデル
+    'hierarchical_predictor': False,  # 階層的条件確率モデル - 無効化（2026-03-19）: 三連単確率を計算するがDBに保存されず信頼度・スコアにも影響しないdead output。計算コスト削減のためOFF
     'lightgbm_ranking': True,         # LightGBMランキングモデル
     'interaction_features': True,     # 交互作用特徴量
     'st_course_interaction': True,    # ST×course交互作用
@@ -35,7 +35,7 @@ FEATURE_FLAGS = {
     'rank23_odds_calibration': False,        # 2着・3着オッズ校正（2024年+2.04pt, 2025年±0.00pt → 不採用）
     'second_place_specialized': True,        # 2着専用スコアリングモデル（アプローチ2）
     'confidence_based_switching': True,       # 信頼度ベース戦略切り替え（アプローチ1）
-    'pairwise_scoring': False,                # ペアワイズ相対スコアリング（アプローチ3）2着+7.3pt, 3着+3.9pt - 一時無効化（バグ修正中）
+    'pairwise_scoring': False,                # ペアワイズ相対スコアリング（アプローチ3）- 不採用（2026-03-19）: バックテストで-184,712円の大幅悪化確認、REJECTED_IDEAS.md記録済み
     'monte_carlo_simulation': False,          # モンテカルロシミュレーション（アプローチ5）不採用: 1着-8.5pt
     'motor_capsizing_penalty': True,           # モーター転覆履歴ペナルティ（2025-12-19追加）
     'kimarite_flow_prediction': True,          # 決まり手別展開予測 - 有効化（5%調整で+4.1pt効果、2025-12-20全件検証確認）
@@ -69,7 +69,11 @@ FEATURE_FLAGS = {
     'tide_adjustment': False,                  # 潮位補正（rdmdb_tide活用、7会場100%データあり）検証中 - OFF比較テスト実施
 
     # === 2026-02-16追加: TJ-9展示タイム信頼性マップ ===
-    'exhibition_reliability_adjustment': False,  # 会場別展示タイム信頼性係数 - 不採用（ROI±0.0pt～-1.2pt、効果なし）
+    # 【2026-03-19 Opus最終評価】常時ON相当。OFF切替機能は未実装（意図的）。
+    # DB実データ分析（20会場・B×A1×30-50）で信頼性scoreとROIの相関r=0.092（ほぼゼロ）。
+    # 展示タイム重みは全スコアの10.5%（8/76点）のみで構造的に影響が小さすぎる。
+    # 補正自体は害もないため現状維持。「微小効果・常時稼働」と再定義。
+    'exhibition_reliability_adjustment': False,  # フラグ参照コードなし（extended_scorer.pyで常時実行）
 
     # === デバッグ用 ===
     'verbose_logging': False,         # 詳細ログ出力

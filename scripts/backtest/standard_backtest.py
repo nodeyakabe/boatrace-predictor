@@ -51,7 +51,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 sys.path.insert(0, PROJECT_ROOT)
 
 from config.settings import DATABASE_PATH
-from config.bet_conditions import STANDARD_BET_CONDITIONS, GLOBAL_VENUE_MONTH_EXCLUDES
+from config.bet_conditions import STANDARD_BET_CONDITIONS, GLOBAL_VENUE_MONTH_EXCLUDES, GLOBAL_MONTH_EXCLUDES
 from src.betting.evaluator_helpers import create_standard_evaluator
 
 # ============================================================
@@ -203,8 +203,9 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
 
     # 月除外フィルター（2026-01-09追加：冬季除外用）
     month_exclude_clause = ""
-    if cond.get('month_exclude'):
-        months = ','.join(map(str, cond['month_exclude']))
+    combined_month_exclude = list(cond.get('month_exclude') or []) + list(GLOBAL_MONTH_EXCLUDES or [])
+    if combined_month_exclude:
+        months = ','.join(map(str, sorted(set(combined_month_exclude))))
         month_exclude_clause = f"AND CAST(strftime('%m', r.race_date) AS INTEGER) NOT IN ({months})"
 
     # 会場×月除外フィルター（2026-02-16追加：1-4月特有の弱会場除外用）

@@ -170,6 +170,45 @@ def _group_races_by_date(remaining_races):
     return grouped
 
 
+def _preload_env_data_for_dates(dates):
+    """
+    環境情報を日付リストに対して一括プリロード。
+    DataManager._get_race_environment() のN+1クエリを回避するため、
+    処理対象日付分を一括取得してdict化する。
+    """
+    import sqlite3 as _sqlite3
+    conn = _sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+
+    placeholders = ','.join('?' * len(dates))
+    cursor.execute(f"""
+        SELECT
+            r.id,
+            r.venue_code,
+            r.race_time,
+            rc.wind_direction,
+            rc.wind_speed,
+            rc.wave_height,
+            rc.weather
+        FROM races r
+        LEFT JOIN race_conditions rc ON r.id = rc.race_id
+        WHERE r.race_date IN ({placeholders})
+    """, list(dates))
+
+    env_cache = {}
+    for row in cursor.fetchall():
+        env_cache[row[0]] = {
+            'venue_code': row[1],
+            'race_time': row[2],
+            'wind_direction': row[3],
+            'wind_speed': row[4],
+            'wave_height': row[5],
+            'weather': row[6]
+        }
+    conn.close()
+    return env_cache
+
+
 def phase1_generate_to_csv(remaining_races, predictor) -> dict:
     """
     Phase 1: 予測計算 → CSVに書き出し（DBに触れない）
@@ -195,6 +234,12 @@ def phase1_generate_to_csv(remaining_races, predictor) -> dict:
 
     # Phase 1 前処理: 対象日付のCSVを削除（追記による重複防止）
     dates_to_process = set(r[1] for r in remaining_races)
+
+    # 環境情報を一括プリロード（_apply_environmental_penalty のN+1クエリを回避）
+    print(f"  [最適化] 環境情報を一括プリロード中（{len(dates_to_process)}日分）...", flush=True)
+    env_cache = _preload_env_data_for_dates(dates_to_process)
+    data_manager._env_cache = env_cache
+    print(f"  [最適化] 完了: {len(env_cache)}レース分をキャッシュ", flush=True)
     deleted_csv = 0
     for race_date in sorted(dates_to_process):
         csv_path = get_csv_path(race_date)

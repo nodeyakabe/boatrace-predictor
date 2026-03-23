@@ -14,7 +14,7 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from config.feature_flags import FEATURE_FLAGS
 
-# exhibition_buff_rules.py の期待値（f0d6d10 / 2e877e6 ベースライン）
+# exhibition_buff_rules.py の期待値（2026-03-19 展示タイム差ルール実装後）
 # ⚠️ この値を変更する場合は必ず 残タスク一覧.md に記録すること
 # ルール名は日本語のため、buff_value のソート済みリストで比較する
 _EXPECTED_EXHIBITION_BUFF_VALUES = sorted([
@@ -29,8 +29,11 @@ _EXPECTED_EXHIBITION_BUFF_VALUES = sorted([
      6.0,   # 展示TOP2×ST好調×インコース
      3.0,   # 展示TOP2×ST普通×インコース
     -5.0,   # 展示3位以下×ST普通×アウトコース
-     8.0,   # 展示1位×タイム差0.1-0.2秒
-])  # 合計12ルール
+    # 2026-03-19 展示タイム差ルール（3ルール追加・旧8.0ptルール削除）
+     5.0,   # 展示1位×タイム差large(>=0.07s)
+     2.0,   # 展示1位×タイム差medium(0.04-0.07s)
+    -2.0,   # 展示1位×タイム差small(<0.04s)
+])  # 合計14ルール
 
 
 def check_exhibition_buff_values():
@@ -63,7 +66,7 @@ def check_exhibition_buff_values():
 
     if errors:
         print("=" * 70)
-        print("🔴 WARNING: exhibition_buff_rules.py の値がベースラインと異なります")
+        print("[ERROR] exhibition_buff_rules.py の値がベースラインと異なります")
         print("=" * 70)
         for e in errors:
             print(e)
@@ -74,47 +77,32 @@ def check_exhibition_buff_values():
         print("=" * 70)
         return False
 
-    print("✅ Safety check passed: exhibition_buff_rules.py values OK")
+    print("[OK] Safety check passed: exhibition_buff_rules.py values OK")
     return True
 
 
 def check_hierarchical_predictor():
     """
-    hierarchical_predictor が有効かチェック
+    hierarchical_predictor の状態を表示（情報のみ、停止はしない）
 
-    無効な場合は処理を強制停止する（D/Eのみの信頼度になるのを防ぐ）
+    2026-03-19 更新: このフラグはOFFにしても信頼度・スコアに影響しない。
+    三連単確率（hierarchical_1st/2nd/3rd_prob）はDBに保存されず、
+    confidence計算もtotal_scoreのみに依存するため、dead outputと確認済み。
+    計算コスト削減のためFalseが推奨。
 
     Returns:
-        bool: True（有効）
-
-    Raises:
-        SystemExit: hierarchical_predictor が無効の場合
+        bool: 常にTrue（チェックのみ、停止しない）
     """
-    if not FEATURE_FLAGS.get('hierarchical_predictor', False):
-        print("=" * 70)
-        print("🔴 FATAL ERROR: hierarchical_predictor is OFF")
-        print("=" * 70)
-        print()
-        print("このまま続行すると、信頼度が D/E のみになります。")
-        print("A, B, C の信頼度が生成されません。")
-        print()
-        print("対処方法:")
-        print("  1. config/feature_flags.py を開く")
-        print("  2. 'hierarchical_predictor': True に設定")
-        print("  3. スクリプトを再実行")
-        print()
-        print("=" * 70)
-        sys.exit(1)
-
-    print("✅ Safety check passed: hierarchical_predictor is ON")
+    value = FEATURE_FLAGS.get('hierarchical_predictor', False)
+    status = "ON " if value else "OFF"
+    print(f"[INFO] hierarchical_predictor is {status} (dead output - no effect on score/confidence)")
     return True
 
 
 def display_feature_flags():
     """現在の重要なフィーチャーフラグを表示"""
-    print("\n現在のフィーチャーフラグ:")
+    print("\nFeature Flags:")
     important_flags = [
-        'hierarchical_predictor',
         'lightgbm_ranking',
         'pairwise_scoring',
         'confidence_based_switching',
@@ -125,7 +113,7 @@ def display_feature_flags():
 
     for flag in important_flags:
         value = FEATURE_FLAGS.get(flag, False)
-        status = "✓" if value else "✗"
+        status = "ON " if value else "OFF"
         print(f"  [{status}] {flag}: {value}")
     print()
 
@@ -146,7 +134,9 @@ def safety_check(display_flags: bool = True):
     if display_flags:
         display_feature_flags()
 
-    check_exhibition_buff_values()
+    if not check_exhibition_buff_values():
+        print("[FATAL] exhibition_buff_rules.py の値がベースラインと異なります。処理を停止します。")
+        sys.exit(1)
     check_hierarchical_predictor()
 
     return True

@@ -8,7 +8,7 @@ import sys
 import os
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, PROJECT_ROOT)
-from config.bet_conditions import GLOBAL_VENUE_MONTH_EXCLUDES
+from config.bet_conditions import GLOBAL_VENUE_MONTH_EXCLUDES, GLOBAL_MONTH_EXCLUDES
 
 def get_race_ids_for_condition(
     cursor: sqlite3.Cursor,
@@ -69,8 +69,9 @@ def get_race_ids_for_condition(
         c1_second_rate_clause += f"AND e1.second_rate < {cond['c1_second_rate_max']} "
 
     month_exclude_clause = ""
-    if cond.get('month_exclude'):
-        months = ','.join(map(str, cond['month_exclude']))
+    combined_month_exclude = list(cond.get('month_exclude') or []) + list(GLOBAL_MONTH_EXCLUDES or [])
+    if combined_month_exclude:
+        months = ','.join(map(str, sorted(set(combined_month_exclude))))
         month_exclude_clause = f"AND CAST(strftime('%m', r.race_date) AS INTEGER) NOT IN ({months})"
 
     # 会場×月除外フィルター（standard_backtest.pyと同じロジック）
@@ -148,6 +149,16 @@ def get_race_ids_for_condition(
     if cond.get('min_score_gap') is not None:
         score_gap_clause = f"AND (rp1.total_score - rp2.total_score) >= {cond['min_score_gap']}"
 
+    # 3位-4位スコア差フィルター（3着予測の確度フィルタ）
+    score_gap_3_4_join = ""
+    score_gap_3_4_clause = ""
+    if cond.get('min_score_gap_3_4') is not None:
+        score_gap_3_4_join = """
+        JOIN race_predictions rp4_gap ON r.id = rp4_gap.race_id
+            AND rp4_gap.prediction_type = 'before' AND rp4_gap.rank_prediction = 4
+        """
+        score_gap_3_4_clause = f"AND (rp3.total_score - rp4_gap.total_score) >= {cond['min_score_gap_3_4']}"
+
     # モーター連帯率フィルター
     motor_rate_join = ""
     motor_rate_clause = ""
@@ -206,7 +217,7 @@ def get_race_ids_for_condition(
         {predicted_rank_class_clause}
         """
     else:
-        # 1点買い: 3位までの予測でOK
+        # 1点買い: 3位までの予測でOK（min_score_gap_3_4 指定時は rp4_gap もJOIN）
         query = f"""
         SELECT DISTINCT r.id
         FROM races r
@@ -214,6 +225,7 @@ def get_race_ids_for_condition(
         JOIN race_predictions rp1 ON r.id = rp1.race_id AND rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
         JOIN race_predictions rp2 ON r.id = rp2.race_id AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
         JOIN race_predictions rp3 ON r.id = rp3.race_id AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+        {score_gap_3_4_join}
         JOIN entries e1 ON r.id = e1.race_id AND e1.pit_number = 1
         {escape_rate_join}
         {bias_join}
@@ -236,6 +248,7 @@ def get_race_ids_for_condition(
         {bias_clause}
         {motor_rate_clause}
         {score_gap_clause}
+        {score_gap_3_4_clause}
         {avg_st_clause}
         {predicted_rank_class_clause}
         """

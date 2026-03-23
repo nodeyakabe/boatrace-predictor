@@ -509,13 +509,14 @@ class BatchDataLoader:
                 JOIN entries e ON r.race_id = e.race_id AND r.pit_number = e.pit_number
                 WHERE e.racer_number IN ({placeholders})
                   AND ra.race_date < ?
+                  AND ra.race_date >= date(?, '-180 days')
                   AND r.is_invalid = 0
             ) sub
             WHERE rn <= ?
             ORDER BY racer_number, rn
         """
 
-        cursor.execute(query, racer_numbers + [target_date, recent_races])
+        cursor.execute(query, racer_numbers + [target_date, target_date, recent_races])
 
         # 選手ごとにグループ化
         racer_recent_form = defaultdict(list)
@@ -1167,7 +1168,7 @@ class BatchDataLoader:
 
         placeholders = ','.join('?' * len(racer_numbers))
 
-        # 選手の過去の進入傾向を集計
+        # 選手の過去の進入傾向を集計（直近2年に限定）
         query = f"""
             SELECT
                 e.racer_number,
@@ -1176,12 +1177,15 @@ class BatchDataLoader:
                 COUNT(*) as cnt
             FROM entries e
             JOIN race_details rd ON e.race_id = rd.race_id AND e.pit_number = rd.pit_number
+            JOIN races r ON e.race_id = r.id
             WHERE e.racer_number IN ({placeholders})
               AND rd.actual_course IS NOT NULL
+              AND r.race_date >= date(?, '-2 years')
+              AND r.race_date < ?
             GROUP BY e.racer_number, e.pit_number, rd.actual_course
         """
 
-        cursor.execute(query, racer_numbers)
+        cursor.execute(query, racer_numbers + [target_date, target_date])
 
         course_entry_tendency = defaultdict(lambda: defaultdict(dict))
         for row in cursor.fetchall():
@@ -1296,11 +1300,12 @@ class BatchDataLoader:
                 LEFT JOIN results res ON res.race_id = r.id AND res.pit_number = e.pit_number
                 WHERE e.racer_number IN ({placeholders})
                   AND r.race_date < ?
+                  AND r.race_date >= date(?, '-180 days')
             )
             WHERE rn = 1
         """
 
-        cursor.execute(query, racer_numbers + [target_date])
+        cursor.execute(query, racer_numbers + [target_date, target_date])
 
         previous_race = {}
         for row in cursor.fetchall():

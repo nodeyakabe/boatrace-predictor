@@ -1,22 +1,18 @@
 """
-メインスケジューラ（4ブロック構成 v2）
+メインスケジューラ（5ブロック構成）
 
 常駐して以下のタスクを自動実行:
-- 毎朝5:00 Aブロック（前日データ完全収集）
-- 毎朝7:00 Cブロック（本日データ収集）
-- 毎朝8:00 Dブロック（本日予想生成）
+- 毎朝3:00 Aブロック（前日データ完全収集）
+- 毎朝6:00 Cブロック（本日データ収集 + advance予測生成）
+- 毎朝7:30 Dブロック（本日予想生成）
+- 毎朝8:00 Eブロック（当日オッズ収集）
 - 動的     各レース締切10分前通知
-
-【4ブロック構成のメリット】
-- 依存タスクを1スクリプトで順次実行（待機時間ゼロ）
-- エラーハンドリングが容易
-- ログが追いやすい
-- 手動再実行が簡単
 
 【ブロック詳細】
 Aブロック: 結果→確定オッズ→直前情報→展示→直前予想（5タスク）
-Cブロック: レースデータ→オッズ（2タスク）
-Dブロック: 予想生成→通知スケジュール登録（2タスク）
+Cブロック: レースデータ→advance予測生成（2タスク）
+Dブロック: 予想生成（1タスク）
+Eブロック: 当日オッズ収集（1タスク、6:00は未公開のため8:00に分離）
 """
 
 import os
@@ -40,7 +36,17 @@ class _TeeStream:
         self._log_file = log_file
 
     def write(self, data):
-        self._original.write(data)
+        try:
+            self._original.write(data)
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            # cp932等のエンコード非対応文字はASCII変換して出力
+            try:
+                self._original.write(data.encode('ascii', errors='replace').decode('ascii'))
+            except Exception:
+                pass
+        except OSError:
+            # コンソールハンドル無効時（[Errno 22]等）はログファイルのみに出力
+            pass
         try:
             self._log_file.write(data)
             self._log_file.flush()
@@ -48,7 +54,10 @@ class _TeeStream:
             pass
 
     def flush(self):
-        self._original.flush()
+        try:
+            self._original.flush()
+        except OSError:
+            pass
         try:
             self._log_file.flush()
         except Exception:
@@ -74,6 +83,7 @@ from scripts.automation.notify import send_discord_notification, send_error_noti
 from scripts.automation.block_a_yesterday_data import BlockARunner
 from scripts.automation.block_c_today_data import BlockCRunner
 from scripts.automation.block_d_today_prediction import BlockDRunner
+from scripts.automation.fetch_today_odds import fetch_todays_odds
 
 
 # グローバル変数
@@ -214,6 +224,44 @@ def block_d_job():
         send_error_notification("Dブロックエラー", error_msg)
 
 
+def block_e_job():
+    """Eブロック: 当日オッズ収集（08:00）
+
+    6:00時点では公式サイトが当日オッズを未公開のため、
+    発走1時間前（08:00）に収集することで取得成功率を最大化する。
+    """
+    today = datetime.now().strftime('%Y-%m-%d')
+    start_time = datetime.now()
+
+    print("\n" + "=" * 80)
+    print(f"[{start_time.strftime('%Y-%m-%d %H:%M:%S')}] Eブロック開始: 当日オッズ収集")
+    print(f"対象日: {today}")
+    print("=" * 80 + "\n")
+
+    print("[タスク 1/1] 本日のオッズ収集...")
+    task_start = datetime.now()
+
+    try:
+        odds_count = fetch_todays_odds()
+        elapsed = (datetime.now() - task_start).total_seconds()
+
+        print(f"  取得: {odds_count}レース")
+        print(f"  所要時間: {int(elapsed // 60)}分{int(elapsed % 60)}秒")
+        print(f"  [OK]\n")
+
+        end_time = datetime.now()
+        total = (end_time - start_time).total_seconds()
+        print("=" * 80)
+        print(f"[{end_time.strftime('%Y-%m-%d %H:%M:%S')}] Eブロック完了")
+        print(f"  総所要時間: {int(total // 60)}分{int(total % 60)}秒")
+        print("=" * 80 + "\n")
+
+    except Exception as e:
+        error_msg = f"Eブロック（オッズ収集）でエラー: {str(e)}"
+        print(f"[ERROR] {error_msg}")
+        send_error_notification("Eブロックエラー", error_msg)
+
+
 # 古いジョブ関数は削除（4ブロック構成に統合）
 
 
@@ -256,14 +304,16 @@ def startup_notification():
 
 **スケジュール:**
 - 03:00 - Aブロック（前日データ完全収集 + 日次リセット）
-- 06:00 - Cブロック（本日データ収集）
-- 07:30 - Dブロック（予想生成）
+- 06:00 - Cブロック（本日データ収集 + advance予測生成）
+- 08:00 - Eブロック（当日オッズ収集）
+- 08:30 - Dブロック（予想生成・オッズあり状態で通知）
 - 1分ごと - レース監視（オッズ30-50分前再取得、直前情報20分前取得、通知10分前送信）
 
 **ブロック詳細:**
 Aブロック: 結果→確定オッズ→直前情報→展示→直前予想 + 日次リセット
-Cブロック: レースデータ→オッズ
+Cブロック: レースデータ→advance予測生成
 Dブロック: 予想生成
+Eブロック: 当日オッズ収集（発走1時間前に公式サイトが公開するタイミング）
 レース監視: CANDIDATE→オッズ再取得→TARGET昇格→直前情報取得→通知
 
 システムは正常稼働中です。
@@ -302,8 +352,9 @@ def print_status():
     print(f"起動時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("\nスケジュール:")
     print("  - 毎朝 3:00 - Aブロック（前日データ完全収集 + 日次リセット）")
-    print("  - 毎朝 6:00 - Cブロック（本日データ収集）")
-    print("  - 毎朝 7:30 - Dブロック（予想生成）")
+    print("  - 毎朝 6:00 - Cブロック（本日データ収集 + advance予測生成）")
+    print("  - 毎朝 8:00 - Eブロック（当日オッズ収集）")
+    print("  - 毎朝 8:30 - Dブロック（予想生成・オッズあり状態で通知）")
     print("  - 1分ごと - レース監視（オッズ再取得→直前情報→通知）")
     print("\n操作:")
     print("  - Ctrl+C で停止")
@@ -351,9 +402,13 @@ def main():
     schedule.every().day.at("06:00").do(block_c_job)
     print("[OK] 毎朝 6:00 - Cブロック（本日データ収集）[30分前倒し]")
 
-    # 毎朝7:30にDブロック（予想生成）
-    schedule.every().day.at("07:30").do(block_d_job)
-    print("[OK] 毎朝 7:30 - Dブロック（予想生成）")
+    # 毎朝8:00にEブロック（当日オッズ収集）- Dブロックより先に実行
+    schedule.every().day.at("08:00").do(block_e_job)
+    print("[OK] 毎朝 8:00 - Eブロック（当日オッズ収集）")
+
+    # 毎朝8:30にDブロック（予想生成）- Eブロック完了後（~08:28）にオッズあり状態で通知
+    schedule.every().day.at("08:30").do(block_d_job)
+    print("[OK] 毎朝 8:30 - Dブロック（予想生成）")
 
     # 1分ごとにレース監視（20分前取得、10分前通知）
     schedule.every(1).minutes.do(race_monitor_job)

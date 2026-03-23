@@ -86,29 +86,40 @@ def collect_previous_day_tenji(headless=True, update_existing=True):
 
         try:
             # 場ごとにスクレイパーを初期化
-            scraper = OriginalTenjiBrowserScraper(headless=headless, timeout=30)
+            scraper = OriginalTenjiBrowserScraper(headless=headless, timeout=60)
             venue_name = scraper.VENUE_CODE_TO_NAME.get(venue, '不明')
 
             logger.info(f"\n場コード {venue} ({venue_name}) の収集開始")
 
             for race_no in range(1, 13):
-                try:
-                    result = scraper.get_original_tenji(venue, yesterday, race_no)
+                result = None
+                last_error = None
+                for attempt in range(2):  # 最大2回試行（1回リトライ）
+                    try:
+                        result = scraper.get_original_tenji(venue, yesterday, race_no)
+                        last_error = None
+                        break  # 成功したらリトライ不要
+                    except Exception as e:
+                        last_error = e
+                        if attempt == 0:
+                            logger.warning(f"  [{venue}] {yesterday} {race_no}R - エラー(リトライ): {e}")
+                            time.sleep(2)
+                        else:
+                            logger.warning(f"  [{venue}] {yesterday} {race_no}R - エラー(最終): {e}")
 
-                    if result:
-                        logger.info(f"  [{venue}] {yesterday} {race_no}R - OK 取得成功: {len(result)}名")
-                        venue_results.append({
-                            'venue_code': int(venue),
-                            'date': yesterday,
-                            'race_no': race_no,
-                            'racers': result
-                        })
-                    else:
-                        # データなしは正常（開催なし or 未公開）
-                        logger.debug(f"  [{venue}] {yesterday} {race_no}R - データなし")
-
-                except Exception as e:
-                    logger.warning(f"  [{venue}] {yesterday} {race_no}R - エラー: {e}")
+                if last_error is not None:
+                    pass  # 全試行失敗、エラーはログ済み
+                elif result:
+                    logger.info(f"  [{venue}] {yesterday} {race_no}R - OK 取得成功: {len(result)}名")
+                    venue_results.append({
+                        'venue_code': int(venue),
+                        'date': yesterday,
+                        'race_no': race_no,
+                        'racers': result
+                    })
+                else:
+                    # データなしは正常（開催なし or 未公開）
+                    logger.debug(f"  [{venue}] {yesterday} {race_no}R - データなし")
 
                 # レート制限対策
                 time.sleep(0.5)

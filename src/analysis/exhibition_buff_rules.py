@@ -217,24 +217,66 @@ def get_exhibition_buff_rules() -> List[CompoundBuffRule]:
     ))
 
     # ========================================
-    # 4. 展示タイム差分ボーナス
+    # 4. 展示タイム差分ボーナス（2026-03-19 実装）
     # ========================================
+    # 分析根拠（2020-2025年 約38万レース）:
+    # タイム差別 展示1位の1着率:
+    #   <0.04s (small): 24.6%  ← 全体27.3%を下回る（僅差1位は不安定）
+    #   0.04-0.07s (medium): 28-31%
+    #   >=0.07s (large): 33.4%  → 6.1pt上昇
+    #   >=0.10s: 35.4%  → 8.1pt上昇
+    # コース別でも全枠で単調増加確認済み（コース独立効果）
 
-    # 1位と2位の差が0.1-0.2秒 (最適、36.5%的中)
-    # NOTE: 条件実装が未完成のため無効化（全艇に無条件適用されてノイズになっていた）
+    # 展示1位 × タイム差large（>=0.07s）: 機力差が明確
     rules.append(CompoundBuffRule(
-        rule_id="exhibition_gap_optimal",
-        name="展示1位×タイム差0.1-0.2秒",
-        description="展示1位で2位との差が0.1-0.2秒は最適（36.5%的中）",
+        rule_id="exhibition_gap_large",
+        name="展示1位×タイム差large(>=0.07s)",
+        description="展示1位で機力差が明確（>=0.07s）: 1着率33.4%（全体比+6.1pt）",
         conditions=[
-            # タイム差は新しいConditionTypeが必要
+            BuffCondition(ConditionType.EXHIBITION_RANK, 1),
+            BuffCondition(ConditionType.EXHIBITION_TIME_DIFF_CAT, "large"),
         ],
-        buff_value=8.0,
+        buff_value=5.0,
         confidence=1.0,
-        sample_count=2000,
-        hit_rate=36.5,
-        is_active=False  # 条件未実装のため無効化
+        sample_count=44847,
+        hit_rate=33.4,
+        is_active=True
     ))
+
+    # 展示1位 × タイム差medium（0.04-0.07s）: 中程度の機力差
+    rules.append(CompoundBuffRule(
+        rule_id="exhibition_gap_medium",
+        name="展示1位×タイム差medium(0.04-0.07s)",
+        description="展示1位で中程度の機力差（0.04-0.07s）: 1着率28-31%",
+        conditions=[
+            BuffCondition(ConditionType.EXHIBITION_RANK, 1),
+            BuffCondition(ConditionType.EXHIBITION_TIME_DIFF_CAT, "medium"),
+        ],
+        buff_value=2.0,
+        confidence=1.0,
+        sample_count=96793,
+        hit_rate=29.5,
+        is_active=True
+    ))
+
+    # 展示1位 × タイム差small（<0.04s）: 僅差1位は信頼性低い
+    rules.append(CompoundBuffRule(
+        rule_id="exhibition_gap_small",
+        name="展示1位×タイム差small(<0.04s)",
+        description="展示1位だが僅差（<0.04s）: 1着率24.6%（全体比-2.7pt）",
+        conditions=[
+            BuffCondition(ConditionType.EXHIBITION_RANK, 1),
+            BuffCondition(ConditionType.EXHIBITION_TIME_DIFF_CAT, "small"),
+        ],
+        buff_value=-2.0,
+        confidence=1.0,
+        sample_count=177884,
+        hit_rate=24.6,
+        is_active=True
+    ))
+
+    # (旧ルール: 条件未実装のため削除済み)
+    # exhibition_gap_optimal は上記3ルールに置き換え
 
     return rules
 

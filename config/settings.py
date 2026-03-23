@@ -315,7 +315,7 @@ def _load_extended_score_weights():
             'course_entry': es.get('course_entry', 5),
             'matchup': es.get('matchup', 5),
             'motor': es.get('motor', 5),
-            'start_timing': es.get('start_timing', 8),
+            'start_timing': es.get('start_timing', 10),
             'exhibition': es.get('exhibition', 10),
             'tilt': es.get('tilt', 3),
             'chikusen_time': es.get('chikusen_time', 4),  # 直線タイムスコア追加

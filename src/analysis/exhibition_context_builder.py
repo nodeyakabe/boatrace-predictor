@@ -151,6 +151,16 @@ def build_exhibition_context(race_id: int, pit_number: int, db_path: str = "data
     time_diff = calculate_exhibition_time_diff(race_id, db_path)
     if time_diff is not None:
         context['exh_time_diff'] = time_diff
+        # タイム差カテゴリ（展示タイム差 = 機力差の大きさ）
+        # small: <0.04s（僅差・機力差ほぼなし）
+        # medium: 0.04-0.07s（中程度の差）
+        # large: >=0.07s（明確な機力差あり）
+        if time_diff >= 0.07:
+            context['exh_time_diff_cat'] = 'large'
+        elif time_diff >= 0.04:
+            context['exh_time_diff_cat'] = 'medium'
+        else:
+            context['exh_time_diff_cat'] = 'small'
 
     return context
 

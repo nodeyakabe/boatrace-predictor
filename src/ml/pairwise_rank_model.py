@@ -871,13 +871,29 @@ def prepare_training_dataset(
     """
 
     df = pd.read_sql_query(query, conn, params=(start_date, end_date))
+
+    # race_predictionsから実際のtotal_scoreを取得（推論時と同スケールにする）
+    score_query = """
+    SELECT race_id, pit_number, total_score
+    FROM race_predictions
+    WHERE prediction_type = 'before'
+    """
+    try:
+        score_df = pd.read_sql_query(score_query, conn)
+        df = df.merge(score_df, on=['race_id', 'pit_number'], how='left')
+        # 取得できなかった行のみ簡易計算でフォールバック
+        missing = df['total_score'].isna()
+        df.loc[missing, 'total_score'] = (
+            df.loc[missing, 'win_rate'] * 10 + df.loc[missing, 'motor_second_rate'] * 0.5
+        )
+    except Exception:
+        # race_predictionsが使えない場合は簡易計算
+        df['total_score'] = df['win_rate'] * 10 + df['motor_second_rate'] * 0.5
+
     conn.close()
 
     # rankを整数に変換
     df['rank'] = df['rank'].astype(int)
-
-    # 総合スコアを簡易計算
-    df['total_score'] = df['win_rate'] * 10 + df['motor_second_rate'] * 0.5
 
     return df
 

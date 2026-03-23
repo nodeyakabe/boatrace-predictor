@@ -13,7 +13,7 @@ from .multi_bet_generator import MultiBetGenerator, MultiBetPattern, MultiBetRes
 from .venue_evaluator import VenueEvaluator
 from .venue_course_adjuster import VenueCourseAdjuster, AdjustmentResult
 from config.venue_wind_adjustments import should_exclude_race
-from config.bet_conditions import STANDARD_BET_CONDITIONS, GLOBAL_VENUE_MONTH_EXCLUDES
+from config.bet_conditions import STANDARD_BET_CONDITIONS, GLOBAL_VENUE_MONTH_EXCLUDES, GLOBAL_MONTH_EXCLUDES
 
 
 class BetStatus(Enum):
@@ -459,10 +459,10 @@ class BetTargetEvaluator:
                 if makuri_rate < cond['makuri_rate_min']:
                     continue
 
-            # 月除外チェック（month_exclude が指定されている場合）- 2026-01-09追加
-            # 冬季（12,1,2月）はROI 47.4%で大幅赤字のため、B×50-100条件で除外
-            if 'month_exclude' in cond:
-                if race_month is not None and race_month in cond['month_exclude']:
+            # 月除外チェック（条件個別 + グローバル月除外）- 2026-01-09追加、2026-03-18グローバル拡張
+            if race_month is not None:
+                month_excludes = list(cond.get('month_exclude') or []) + list(GLOBAL_MONTH_EXCLUDES or [])
+                if race_month in month_excludes:
                     continue
 
             # グローバル会場×月除外チェック（2026-02-17追加）

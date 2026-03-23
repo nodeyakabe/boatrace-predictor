@@ -29,9 +29,10 @@ class ConditionType(Enum):
     START_TIMING = "start_timing"      # スタートタイミング（早い/普通/遅い）
     RECENT_FORM = "recent_form"        # 直近調子（好調/不調）
     VENUE_EXPERIENCE = "venue_exp"     # 当地経験（得意/普通/苦手）
-    EXHIBITION_RANK = "exhibition_rank"      # 展示順位（1, 2, [1,2], [4,5,6]など）
-    EXHIBITION_GAP = "exhibition_gap"        # 1位との展示タイム差（秒）
-    EXHIBITION_TIME_DIFF = "exh_time_diff"   # 1位と2位のタイム差（秒）
+    EXHIBITION_RANK = "exhibition_rank"          # 展示順位（1, 2, [1,2], [4,5,6]など）
+    EXHIBITION_GAP = "exhibition_gap"            # 1位との展示タイム差（秒）
+    EXHIBITION_TIME_DIFF = "exh_time_diff"       # 1位と2位のタイム差（秒）
+    EXHIBITION_TIME_DIFF_CAT = "exh_time_diff_cat"  # タイム差カテゴリ（small/medium/large）
 
 
 @dataclass

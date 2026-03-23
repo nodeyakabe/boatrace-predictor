@@ -61,9 +61,9 @@ def ensure_tenji_columns(conn):
 
     if added:
         conn.commit()
-        print(f"  ✓ カラム追加: {', '.join(added)}")
+        print(f"  [OK] カラム追加: {', '.join(added)}")
     else:
-        print(f"  ✓ カラムは既に存在します")
+        print(f"  [OK] カラムは既に存在します")
 
 
 def get_race_id(conn, venue_code, race_date, race_no):
@@ -150,7 +150,7 @@ def save_tenji_data(json_file_path, db_path, update_existing=False):
             try:
                 race_id = get_race_id(conn, venue_code, race_date, race_no)
             except Exception as e:
-                print(f"  ✗ race_id取得エラー: {e}")
+                print(f"  [NG] race_id取得エラー: {e}")
                 continue
 
             # 各艇のデータを保存
@@ -199,7 +199,7 @@ def save_tenji_data(json_file_path, db_path, update_existing=False):
                     saved_count += 1
 
             conn.commit()
-            print(f"  ✓ 保存完了: {len(racers)}艇")
+            print(f"  [OK] 保存完了: {len(racers)}艇")
 
         print()
         print(separator)

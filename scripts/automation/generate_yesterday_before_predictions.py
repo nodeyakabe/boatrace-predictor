@@ -42,8 +42,9 @@ def generate_yesterday_before_predictions(force: bool = False, target_date: str 
     print(f"直前予想生成開始: {date_str}")
 
     try:
-        predictor = create_standard_predictor(use_cache=True)
-        data_manager = DataManager()
+        db_path_abs = str(project_root / 'data' / 'boatrace.db')
+        predictor = create_standard_predictor(use_cache=True, db_path=db_path_abs)
+        data_manager = DataManager(db_path_abs)
 
         # BatchDataLoaderにデータをロード
         if predictor.batch_loader:
