@@ -9,6 +9,100 @@ import json
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+# 16方位を角度（度）にマッピング（北=0度、時計回り）
+DIRECTION_ANGLES: Dict[str, float] = {
+    '北': 0.0, '北北東': 22.5, '北東': 45.0, '東北東': 67.5,
+    '東': 90.0, '東南東': 112.5, '南東': 135.0, '南南東': 157.5,
+    '南': 180.0, '南南西': 202.5, '南西': 225.0, '西南西': 247.5,
+    '西': 270.0, '西北西': 292.5, '北西': 315.0, '北北西': 337.5,
+}
+
+# 会場別の追い風方向（DBの実データで1コース勝率が最も高い風向）
+# 2026-03-23 DB実データ分析（Opusによる検証）に基づく
+VENUE_TAILWIND_DIRECTIONS: Dict[str, str] = {
+    '01': '南東',    # 桐生
+    '02': '北東',    # 戸田（現実装と逆）
+    '03': '西北西',  # 江戸川（現実装と逆）
+    '04': '東南東',  # 平和島（現実装と逆）
+    '05': '南南西',  # 多摩川（概ね正しい）
+    '06': '西南西',  # 浜名湖（現実装と逆）
+    '07': '南南西',  # 蒲郡
+    '08': '南東',    # 常滑
+    '09': '北西',    # 津（現実装と逆）
+    '10': '北',      # 三国（現実装と逆）
+    '11': '西南西',  # 琵琶湖（現実装と逆）
+    '12': '東',      # 住之江（現実装と逆）
+    '13': '南西',    # 尼崎（現実装と逆）
+    '14': '北北西',  # 鳴門（現実装と逆）
+    '15': '南南西',  # 丸亀
+    '16': '西南西',  # 今治
+    '17': '西北西',  # 宮島（現実装と逆）
+    '18': '東',      # 徳山（現実装と逆）
+    '19': '北北東',  # 下関（現実装と逆）
+    '20': '東北東',  # 若松（現実装と逆）
+    '21': '南',      # 芦屋（現実装と一致）
+    '22': '北',      # 福岡（現実装と逆）
+    '23': '西',      # 唐津（現実装と逆）
+    '24': '西南西',  # 大村（現実装と逆）
+}
+
+
+def classify_wind_direction(wind_direction: Optional[str], venue_code: Optional[str] = None) -> str:
+    """
+    風向を会場別に追い風/向かい風/横風/無風/不明に分類する
+
+    Args:
+        wind_direction: 16方位の風向文字列（例: '北北東'）
+        venue_code: 会場コード（'01'～'24'）。Noneの場合は旧来の全会場共通分類を使用
+
+    Returns:
+        'tailwind' / 'headwind' / 'crosswind' / 'calm' / 'unknown'
+    """
+    if wind_direction is None:
+        return 'unknown'
+    if wind_direction in ('無風', 'calm'):
+        return 'calm'
+    # 旧フォーマット（手動入力）
+    if wind_direction == '向い風':
+        return 'headwind'
+    if wind_direction == '追い風':
+        return 'tailwind'
+    if wind_direction == '横風':
+        return 'crosswind'
+
+    wind_angle = DIRECTION_ANGLES.get(wind_direction)
+    if wind_angle is None:
+        return 'unknown'
+
+    if venue_code and venue_code in VENUE_TAILWIND_DIRECTIONS:
+        tailwind_dir = VENUE_TAILWIND_DIRECTIONS[venue_code]
+        tailwind_angle = DIRECTION_ANGLES.get(tailwind_dir)
+        if tailwind_angle is not None:
+            diff = abs((wind_angle - tailwind_angle + 360) % 360)
+            if diff > 180:
+                diff = 360 - diff
+            if diff <= 45:
+                return 'tailwind'
+            elif diff >= 135:
+                return 'headwind'
+            else:
+                return 'crosswind'
+
+    # venue_code未指定または不明会場: 旧来の全会場共通分類（後方互換）
+    legacy_tailwind = {'南', '南南東', '南南西', '南東', '南西'}
+    legacy_headwind = {'北', '北北東', '北北西', '北東', '北西'}
+    legacy_crosswind_left = {'西', '西北西', '西南西'}
+    legacy_crosswind_right = {'東', '東北東', '東南東'}
+    if wind_direction in legacy_tailwind:
+        return 'tailwind'
+    if wind_direction in legacy_headwind:
+        return 'headwind'
+    if wind_direction in legacy_crosswind_left:
+        return 'crosswind'
+    if wind_direction in legacy_crosswind_right:
+        return 'crosswind'
+    return 'unknown'
+
 
 class WeatherAdjuster:
     """天候に基づくスコア補正クラス"""
@@ -99,20 +193,18 @@ class WeatherAdjuster:
         else:
             return 'rough'
 
-    def get_wind_direction_category(self, wind_direction: Optional[str]) -> str:
+    def get_wind_direction_category(self, wind_direction: Optional[str], venue_code: Optional[str] = None) -> str:
         """
-        風向からカテゴリを判定
+        風向からカテゴリを判定（会場別対応版）
 
         Args:
             wind_direction: 風向（16方位または旧フォーマット）
+            venue_code: 会場コード（省略時は後方互換の全会場共通分類）
 
         Returns:
-            'headwind' / 'tailwind' / 'crosswind_left' / 'crosswind_right' / 'diagonal' / 'calm' / 'unknown'
+            'headwind' / 'tailwind' / 'crosswind' / 'calm' / 'unknown'
         """
-        if wind_direction is None:
-            return 'unknown'
-
-        return self.WIND_DIRECTION_MAP.get(wind_direction, 'unknown')
+        return classify_wind_direction(wind_direction, venue_code)
 
     def calculate_adjustment(
         self,
@@ -159,7 +251,7 @@ class WeatherAdjuster:
 
         wind_cat = self.get_wind_category(wind_speed)
         wave_cat = self.get_wave_category(wave_height)
-        wind_dir_cat = self.get_wind_direction_category(wind_direction)
+        wind_dir_cat = self.get_wind_direction_category(wind_direction, venue_code)
         result['wind_category'] = wind_cat
         result['wave_category'] = wave_cat
         result['wind_direction_category'] = wind_dir_cat

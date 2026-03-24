@@ -14,13 +14,15 @@ import sqlite3
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 from enum import Enum
+from src.analysis.weather_adjuster import classify_wind_direction
 
 
 class ConditionType(Enum):
     """条件タイプ"""
     VENUE = "venue"                    # 会場
     TIDE = "tide"                      # 潮位（満潮/干潮/上げ潮/下げ潮）
-    WIND = "wind"                      # 風（強風/微風/追い風/向かい風）
+    WIND = "wind"                      # 風速（強風/中風/微風）
+    WIND_DIR = "wind_dir"              # 風向（向かい風/追い風）
     WAVE = "wave"                      # 波高（高い/低い）
     COURSE = "course"                  # 進入コース
     RACER_RANK = "racer_rank"          # 選手ランク
@@ -451,14 +453,13 @@ class CompoundBuffSystem:
             else:
                 context["wind"] = "微風"
 
-            # 風向（向かい風/追い風）
-            if wind_direction:
-                headwind_directions = ["北", "北北東", "北東", "東北東", "北北西", "北西", "西北西"]
-                tailwind_directions = ["南", "南南東", "南東", "東南東", "南南西", "南西", "西南西"]
-                if wind_direction in headwind_directions:
-                    context["wind"] = "向かい風"
-                elif wind_direction in tailwind_directions:
-                    context["wind"] = "追い風"
+        # 風向（wind_dir キーに別保存して風速カテゴリを上書きしない）
+        if wind_direction:
+            wind_cat = classify_wind_direction(wind_direction, venue_code)
+            if wind_cat == 'headwind':
+                context["wind_dir"] = "向かい風"
+            elif wind_cat == 'tailwind':
+                context["wind_dir"] = "追い風"
 
         # 波カテゴリ
         if wave_height is not None:

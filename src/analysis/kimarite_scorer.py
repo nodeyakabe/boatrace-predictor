@@ -7,6 +7,7 @@ import sqlite3
 from typing import Dict, Optional
 from datetime import datetime, timedelta
 from src.utils.db_connection_pool import get_connection
+from src.analysis.weather_adjuster import classify_wind_direction
 
 
 class KimariteScorer:
@@ -297,18 +298,14 @@ class KimariteScorer:
                 if racer_kimarite in ['まくり', 'まくり差し'] and course >= 3:
                     adjustment *= 1.15
 
-        # === 3. 風向補正 ===
+        # === 3. 風向補正（会場別定義） ===
         if wind_direction:
-            # 向かい風（ホームストレッチに対して）
-            headwind_dirs = ['北', '北北東', '北東', '北北西']  # 会場によって異なるが簡易判定
-            # 追い風
-            tailwind_dirs = ['南', '南南東', '南東', '南南西', '南西']
-
-            if wind_direction in headwind_dirs:
+            wind_cat = classify_wind_direction(wind_direction, venue_code)
+            if wind_cat == 'headwind':
                 # 向かい風 → 逃げ有利（スタートしやすい）
                 if racer_kimarite == '逃げ' and course == 1:
                     adjustment *= 1.1
-            elif wind_direction in tailwind_dirs:
+            elif wind_cat == 'tailwind':
                 # 追い風 → まくり有利（スピードが乗る）
                 if racer_kimarite in ['まくり', 'まくり差し'] and course >= 3:
                     adjustment *= 1.1
