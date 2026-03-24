@@ -152,16 +152,12 @@ def build_exhibition_context(race_id: int, pit_number: int, db_path: str = "data
     if time_diff is not None:
         context['exh_time_diff'] = time_diff
         # タイム差カテゴリ（展示タイム差 = 機力差の大きさ）
-        # 2026-03-24 4段階に再設計（データ分析結果: N=375,817件）
-        # very_large: >=0.08s（1着率34.9%+、全体比+5pt）
-        # large:       0.05-0.08s（1着率32.5-34.1%、全体比+2.6-4.2pt）
-        # medium:      0.03-0.05s（1着率28.4-30.5%、ほぼ全体平均）
-        # small:       <0.03s（ペナルティなし: <0.01sが1着率30.6%で全体超えのため）
-        if time_diff >= 0.08:
-            context['exh_time_diff_cat'] = 'very_large'
-        elif time_diff >= 0.05:
+        # small: <0.04s（僅差・機力差ほぼなし）
+        # medium: 0.04-0.07s（中程度の差）
+        # large: >=0.07s（明確な機力差あり）
+        if time_diff >= 0.07:
             context['exh_time_diff_cat'] = 'large'
-        elif time_diff >= 0.03:
+        elif time_diff >= 0.04:
             context['exh_time_diff_cat'] = 'medium'
         else:
             context['exh_time_diff_cat'] = 'small'
