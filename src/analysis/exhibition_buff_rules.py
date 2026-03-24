@@ -217,66 +217,67 @@ def get_exhibition_buff_rules() -> List[CompoundBuffRule]:
     ))
 
     # ========================================
-    # 4. 展示タイム差分ボーナス（2026-03-19 実装）
+    # 4. 展示タイム差分ボーナス（2026-03-24 再設計）
     # ========================================
-    # 分析根拠（2020-2025年 約38万レース）:
-    # タイム差別 展示1位の1着率:
-    #   <0.04s (small): 24.6%  ← 全体27.3%を下回る（僅差1位は不安定）
-    #   0.04-0.07s (medium): 28-31%
-    #   >=0.07s (large): 33.4%  → 6.1pt上昇
-    #   >=0.10s: 35.4%  → 8.1pt上昇
-    # コース別でも全枠で単調増加確認済み（コース独立効果）
+    # 分析根拠（2020-2025年 N=375,817件）:
+    # タイム差別 展示1位の1着率（全体平均29.9%）:
+    #   <0.01s: 30.6%  ← 全体超え（実質同タイム）→ ペナルティ不適切
+    #   0.01-0.03s: 26-27%  ← 低いがペナルティ副作用大のため0pt
+    #   0.03-0.05s: 28.4-30.5%  → +1pt（微弱ボーナス）
+    #   0.05-0.08s: 32.5-34.1%  → +3pt（明確な優位）
+    #   >=0.08s: 34.9%+  → +5pt（高確信）
+    # ※ペナルティ完全排除: 前回(-2pt)は66.5%に適用→件数-10%・ROI大幅悪化
 
-    # 展示1位 × タイム差large（>=0.07s）: 機力差が明確
+    # 展示1位 × タイム差very_large（>=0.08s）: 高確信の機力差
+    rules.append(CompoundBuffRule(
+        rule_id="exhibition_gap_very_large",
+        name="展示1位×タイム差very_large(>=0.08s)",
+        description="展示1位で機力差が非常に大きい（>=0.08s）: 1着率34.9%（全体比+5pt）",
+        conditions=[
+            BuffCondition(ConditionType.EXHIBITION_RANK, 1),
+            BuffCondition(ConditionType.EXHIBITION_TIME_DIFF_CAT, "very_large"),
+        ],
+        buff_value=5.0,
+        confidence=1.0,
+        sample_count=27474,
+        hit_rate=34.9,
+        is_active=True
+    ))
+
+    # 展示1位 × タイム差large（0.05-0.08s）: 明確な機力差
     rules.append(CompoundBuffRule(
         rule_id="exhibition_gap_large",
-        name="展示1位×タイム差large(>=0.07s)",
-        description="展示1位で機力差が明確（>=0.07s）: 1着率33.4%（全体比+6.1pt）",
+        name="展示1位×タイム差large(0.05-0.08s)",
+        description="展示1位で機力差が明確（0.05-0.08s）: 1着率32.5-34.1%（全体比+2.6-4.2pt）",
         conditions=[
             BuffCondition(ConditionType.EXHIBITION_RANK, 1),
             BuffCondition(ConditionType.EXHIBITION_TIME_DIFF_CAT, "large"),
         ],
-        buff_value=5.0,
+        buff_value=3.0,
         confidence=1.0,
-        sample_count=44847,
-        hit_rate=33.4,
+        sample_count=38767,
+        hit_rate=33.1,
         is_active=True
     ))
 
-    # 展示1位 × タイム差medium（0.04-0.07s）: 中程度の機力差
+    # 展示1位 × タイム差medium（0.03-0.05s）: 若干の機力差
     rules.append(CompoundBuffRule(
         rule_id="exhibition_gap_medium",
-        name="展示1位×タイム差medium(0.04-0.07s)",
-        description="展示1位で中程度の機力差（0.04-0.07s）: 1着率28-31%",
+        name="展示1位×タイム差medium(0.03-0.05s)",
+        description="展示1位で若干の機力差（0.03-0.05s）: 1着率28.4-30.5%（ほぼ全体平均）",
         conditions=[
             BuffCondition(ConditionType.EXHIBITION_RANK, 1),
             BuffCondition(ConditionType.EXHIBITION_TIME_DIFF_CAT, "medium"),
         ],
-        buff_value=2.0,
+        buff_value=1.0,
         confidence=1.0,
-        sample_count=96793,
+        sample_count=96905,
         hit_rate=29.5,
         is_active=True
     ))
 
-    # 展示1位 × タイム差small（<0.04s）: 僅差1位は信頼性低い
-    rules.append(CompoundBuffRule(
-        rule_id="exhibition_gap_small",
-        name="展示1位×タイム差small(<0.04s)",
-        description="展示1位だが僅差（<0.04s）: 1着率24.6%（全体比-2.7pt）",
-        conditions=[
-            BuffCondition(ConditionType.EXHIBITION_RANK, 1),
-            BuffCondition(ConditionType.EXHIBITION_TIME_DIFF_CAT, "small"),
-        ],
-        buff_value=-2.0,
-        confidence=1.0,
-        sample_count=177884,
-        hit_rate=24.6,
-        is_active=True
-    ))
-
-    # (旧ルール: 条件未実装のため削除済み)
-    # exhibition_gap_optimal は上記3ルールに置き換え
+    # small(<0.03s): ペナルティなし（<0.01sが1着率30.6%で全体平均超えのため）
+    # ルールなし = 0pt（変化なし）
 
     return rules
 
