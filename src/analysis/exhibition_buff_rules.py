@@ -240,7 +240,7 @@ def get_exhibition_buff_rules() -> List[CompoundBuffRule]:
         confidence=1.0,
         sample_count=44847,
         hit_rate=33.4,
-        is_active=True
+        is_active=False  # 2026-03-25 無効化: ベースライン比較のため
     ))
 
     # 展示1位 × タイム差medium（0.04-0.07s）: 中程度の機力差
@@ -256,7 +256,7 @@ def get_exhibition_buff_rules() -> List[CompoundBuffRule]:
         confidence=1.0,
         sample_count=96793,
         hit_rate=29.5,
-        is_active=True
+        is_active=False  # 2026-03-25 無効化: ベースライン比較のため
     ))
 
     # 展示1位 × タイム差small（<0.04s）: 僅差1位は信頼性低い
@@ -272,7 +272,7 @@ def get_exhibition_buff_rules() -> List[CompoundBuffRule]:
         confidence=1.0,
         sample_count=177884,
         hit_rate=24.6,
-        is_active=True
+        is_active=False  # 2026-03-25 無効化: ベースライン比較のため
     ))
 
     # (旧ルール: 条件未実装のため削除済み)

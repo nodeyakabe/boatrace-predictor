@@ -138,8 +138,20 @@ class ParallelBeforeinfoCsvFetcher:
               )
             ORDER BY r.race_date, r.venue_code, r.race_number
         """
-        cursor.execute(query, (start_date, end_date))
-        races = cursor.fetchall()
+        try:
+            cursor.execute(query, (start_date, end_date))
+            races = cursor.fetchall()
+        except sqlite3.DatabaseError:
+            # race_detailsにDBページ破損がある場合のフォールバック: 全レースを対象とする
+            self.logger.warning("race_detailsアクセスでDBエラー。全レースを対象に収集します（フォールバック）")
+            fallback_query = """
+                SELECT r.id, r.venue_code, r.race_date, r.race_number
+                FROM races r
+                WHERE r.race_date BETWEEN ? AND ?
+                ORDER BY r.race_date, r.venue_code, r.race_number
+            """
+            cursor.execute(fallback_query, (start_date, end_date))
+            races = cursor.fetchall()
         conn.close()
         return races
 
