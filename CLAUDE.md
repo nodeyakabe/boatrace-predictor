@@ -18,6 +18,7 @@
 | カテゴリ | ドキュメント |
 |---------|------------|
 | **予測ロジック** | [docs/architecture/PREDICTION_LOGIC.md](docs/architecture/PREDICTION_LOGIC.md) |
+| **展示タイム活用マップ** | [docs/architecture/EXHIBITION_TIME_USAGE.md](docs/architecture/EXHIBITION_TIME_USAGE.md) ⭐新規施策検討前に必読 |
 | **年度別成績** | [docs/performance/YEARLY_PERFORMANCE.md](docs/performance/YEARLY_PERFORMANCE.md) |
 | **テスト構成** | [docs/performance/TEST_RESULTS.md](docs/performance/TEST_RESULTS.md) |
 | **不採用案** | [docs/improvement_attempts/REJECTED_IDEAS.md](docs/improvement_attempts/REJECTED_IDEAS.md) |
@@ -110,37 +111,6 @@
    ※ --dry-run で件数確認のみも可能
 ```
 
-### 年度一括スクリプトの内部フロー（CSV方式）
-
-```
-generate_advance_fast.py / generate_before_fast.py の処理:
-
-Phase 1: 予測計算 → CSV書き出し（DBに触れない）
-  - 対象日付の既存CSVを削除（重複追記防止）
-  - predictor.predict_race() で予測計算
-  - data/predictions_csv/{advance|before}/YYYY/YYYY-MM-DD.csv に書き出し
-
-Phase 2: CSV → DB UPSERT投入
-  - INSERT INTO ... ON CONFLICT(race_id, pit_number, prediction_type) DO UPDATE SET ...
-  - 既存行の id・created_at を保持したまま上書き（INSERT OR REPLACE と異なる点）
-  - 1ファイル=1日分を順次投入
-```
-
-### CSVファイルの場所
-
-```
-data/predictions_csv/
-  advance/
-    2025/
-      2025-01-01.csv   ← 1日1ファイル（6艇 × レース数 行）
-      2025-01-02.csv
-      ...
-  before/
-    2025/
-      2025-01-01.csv
-      ...
-```
-
 ### ⚠️ 使ってはいけないスクリプト（廃止済み・_deprecated / archive フォルダに移動済み）
 
 **2026-02-27更新**: 大規模整理実施済み。各ディレクトリのルートにあるファイルのみが現役。
@@ -152,15 +122,6 @@ data/predictions_csv/
 >
 > 将来的に block_a / block_d を `fast_prediction_generator.py` 等に書き換えた後に _deprecated 移動予定。
 
-#### 予測生成系
-
-| 格納先 | 理由 |
-|--------|------|
-| `scripts/automation/_deprecated/generate_year_predictions_fast.py` | 旧 before 生成（1日1サブプロセス方式）→ `generate_before_fast.py` に置き換え済み |
-| `scripts/prediction/_deprecated/regenerate_predictions_*.py` 系 | DataManager を使わない直接 INSERT → EnvironmentalPenaltySystem をバイパス |
-| `scripts/prediction/_deprecated/` 配下すべて（27ファイル） | 年度限定・旧世代スクリプト。現役4ファイルのみ使うこと |
-| `scripts/_deprecated/quick_generate_advance.py` | `generate_advance_fast.py` に統合済み |
-
 #### データ収集系（旧版）
 
 | 使ってはいけない | 正しい現役版 |
@@ -171,15 +132,6 @@ data/predictions_csv/
 | `scripts/data_collection/archive/deprecated/fetch_race_details_to_csv.py` | `fetch_to_csv_parallel_improved.py` |
 | `scripts/data_collection/archive/deprecated/fetch_race_conditions_to_csv.py` | `fetch_to_csv_parallel_improved.py` |
 | `scripts/data_collection/archive/one_time/` 配下（年度限定スクリプト群） | 汎用スクリプトで代替。年度をオプション指定 |
-
-#### 完了済み一時パイプライン（再実行不可）
-
-| 格納先 | 理由 |
-|--------|------|
-| `scripts/automation/_deprecated/overnight_pipeline.py` | 2026-02-19シェルレース問題対応用・完了済み |
-| `scripts/automation/_deprecated/phase2_pipeline.py` | 同上の後続処理・完了済み |
-| `scripts/automation/_deprecated/post_recovery_pipeline.py` | 特定PID・特定DB状態を前提とした一時スクリプト |
-| `scripts/automation/_deprecated/run_prediction_recovery.py` | 2026-02-24時点のDB状態を前提・完了済み |
 
 ## 標準テスト（重要）⭐
 
@@ -275,31 +227,6 @@ python scripts/backtest/standard_backtest_unique.py --full
 - **年度別パフォーマンス**（Line 70-80）
 
 ---
-
-### 標準テストの出力内容
-
-#### ユニーク版（standard_backtest_unique.py）⭐ 推奨
-
-- **重複除外レポート**: 各条件の候補数と割り当て数
-- **条件別パフォーマンス**: ユニークレースのみでの成績
-- **全体サマリー**: 実際の購入件数・ROI・収支
-
-**オプション:**
-- `--full`: 6年間（2020-2025）の全体テスト
-- `--year 2024`: 特定年度のテスト
-- `--save-json data/tier2_unique_results.json`: 結果をJSONで保存
-
-#### 従来版（standard_backtest.py）
-
-- 6年間（2020-2025年）の全体サマリー（ROI、収支、的中率）
-- 条件別パフォーマンス（パターンH/1点買い区分付き、重複カウント）
-- 年度別パフォーマンス（黒字年数判定）
-- 2025年月別パフォーマンス（黒字月数判定）
-
-**オプション:**
-- `--year 2024`: 特定年度の詳細テスト
-- `--save-baseline`: ベースライン保存
-- `--compare`: ベースラインと比較
 
 ## セッション開始時
 
@@ -520,18 +447,6 @@ WHERE t.race_id IN (
 |-----------|-------------|---------|
 | レース基本情報・結果・オッズ | 2020年～ | ✅ 可能（公式APIで常時公開） |
 | **直前情報（exhibition_time等）** | **2020年～** | **✅ 可能（過去日付でも `/beforeinfo?hd=YYYYMMDD` でアクセス可）** |
-
-**直前情報の過去補完方法**:
-```bash
-# Phase 1: CSV収集
-python scripts/data_collection/collect_beforeinfo_to_csv_parallel.py \
-    --start 2024-01-01 --end 2024-12-31 \
-    --output data/csv/beforeinfo/2024 --workers 12
-
-# Phase 2: DB投入
-python scripts/data_collection/import_beforeinfo_csv_to_db.py \
-    --input data/csv/beforeinfo/2024
-```
 
 **Claude Codeへの注意**:
 - 公式データ（レース・結果・オッズ・直前情報）は過去2020年分まで取得可能

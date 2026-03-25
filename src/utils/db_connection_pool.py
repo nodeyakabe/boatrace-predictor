@@ -47,14 +47,14 @@ class DBConnectionPool:
             # WALモード有効化（並行読み取り性能向上）
             cursor.execute("PRAGMA journal_mode=WAL")
 
-            # メモリキャッシュサイズ増加（64MB）
-            cursor.execute("PRAGMA cache_size=-64000")
+            # メモリキャッシュサイズ増加（128MB）
+            cursor.execute("PRAGMA cache_size=-131072")
 
             # 同期モード最適化（安全性は保ちつつ高速化）
             cursor.execute("PRAGMA synchronous=NORMAL")
 
-            # メモリマップI/O有効化（256MB）
-            cursor.execute("PRAGMA mmap_size=268435456")
+            # メモリマップI/O有効化（1GB）
+            cursor.execute("PRAGMA mmap_size=1073741824")
 
             # 一時ファイルをメモリに配置
             cursor.execute("PRAGMA temp_store=MEMORY")

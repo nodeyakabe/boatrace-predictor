@@ -20,6 +20,7 @@ sys.path.insert(0, PROJECT_ROOT)
 from src.features.feature_transforms import FeatureTransformer, RaceRelativeFeatureBuilder
 from src.prediction.trifecta_calculator import TrifectaCalculator, NaiveTrifectaCalculator
 from src.prediction.trifecta_calculator_optimized import TrifectaCalculatorOptimized
+from src.utils.db_connection_pool import get_connection
 
 
 class HierarchicalPredictor:
@@ -258,8 +259,8 @@ class HierarchicalPredictor:
         """
 
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                df = pd.read_sql_query(query, conn, params=(race_id,))
+            conn = get_connection(self.db_path)
+            df = pd.read_sql_query(query, conn, params=(race_id,))
 
             if len(df) == 0:
                 return None
@@ -285,10 +286,13 @@ class HierarchicalPredictor:
         """
 
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+            try:
                 cursor.execute(query, (race_id,))
                 rows = cursor.fetchall()
+            finally:
+                cursor.close()
 
             if rows:
                 return {row[0]: row[1] for row in rows}

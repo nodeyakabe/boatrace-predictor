@@ -16,6 +16,8 @@ from src.utils.db_connection_pool import get_connection
 class BatchDataLoader:
     """日単位データ一括取得・キャッシュクラス"""
 
+    FULL_RELOAD_INTERVAL = 30  # N日ごとにフルリロード（180日ウィンドウのドリフト防止）
+
     def __init__(self, db_path: str = "data/boatrace.db"):
         """
         初期化
@@ -27,6 +29,7 @@ class BatchDataLoader:
         self._cache = {}
         self._cache_date = None
         self._cache_loaded = False
+        self._incremental_counter = 0  # インクリメンタル更新の連続回数
 
     def _connect(self):
         """データベース接続（接続プールから取得）"""
@@ -39,10 +42,23 @@ class BatchDataLoader:
         self._cache = {}
         self._cache_date = None
         self._cache_loaded = False
+        self._incremental_counter = 0
+
+    def _is_next_day(self, prev_date: str, next_date: str) -> bool:
+        """prev_dateの翌日がnext_dateかどうかを確認"""
+        try:
+            prev = datetime.strptime(prev_date, '%Y-%m-%d')
+            nxt = datetime.strptime(next_date, '%Y-%m-%d')
+            return (nxt - prev).days == 1
+        except Exception:
+            return False
 
     def load_daily_data(self, target_date: str) -> None:
         """
         指定日の全データを一括取得
+
+        連続した日付の場合はインクリメンタル更新（キャッシュ済み選手・モーター・ボートをスキップ）。
+        FULL_RELOAD_INTERVAL日ごとにフルリロードして180日ウィンドウのドリフトをリセット。
 
         Args:
             target_date: 対象日（YYYY-MM-DD形式）
@@ -51,13 +67,29 @@ class BatchDataLoader:
         if self._cache_loaded and self._cache_date == target_date:
             return
 
-        # キャッシュクリア
-        self.clear_cache()
+        # インクリメンタル更新が可能か判定
+        use_incremental = (
+            self._cache_loaded and
+            self._cache_date is not None and
+            self._incremental_counter < self.FULL_RELOAD_INTERVAL and
+            self._is_next_day(self._cache_date, target_date)
+        )
+
+        if not use_incremental:
+            # フルリロード: キャッシュをクリア
+            self.clear_cache()
+        else:
+            # インクリメンタル: 日付固有データのみクリア（選手・モーター統計は保持）
+            for key in ['races', 'entries', 'race_details', 'race_conditions',
+                        'session_performance', 'previous_race']:
+                self._cache.pop(key, None)
+            self._incremental_counter += 1
+
         self._cache_date = target_date
+        mode = "差分" if use_incremental else "全件"
+        print(f"[BatchDataLoader] {target_date}のデータを{mode}取得中...")
 
-        print(f"[BatchDataLoader] {target_date}のデータを一括取得中...")
-
-        # 各種データを一括取得
+        # 各種データを一括取得（インクリメンタル時はキャッシュ済みエンティティをスキップ）
         self._load_races_and_entries_batch(target_date)
         self._load_racer_stats_batch(target_date)
         self._load_motor_stats_batch(target_date)
@@ -185,7 +217,11 @@ class BatchDataLoader:
             WHERE r.race_date = ?
         """, [target_date])
 
-        racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
+        all_racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
+
+        # キャッシュ済み選手をスキップ（インクリメンタル更新）
+        cached_racers = set(self._cache.get('racer_overall', {}).keys())
+        racer_numbers = [r for r in all_racer_numbers if r not in cached_racers]
 
         if not racer_numbers:
             cursor.close()
@@ -306,10 +342,14 @@ class BatchDataLoader:
                 'avg_rank': row['avg_rank']
             }
 
-        # キャッシュに保存
-        self._cache['racer_overall'] = racer_overall
-        self._cache['racer_course'] = dict(racer_course)
-        self._cache['racer_venue'] = dict(racer_venue)
+        # キャッシュに保存（既存エントリを上書きせず新規分のみ追加）
+        self._cache.setdefault('racer_overall', {}).update(racer_overall)
+        existing_course = self._cache.setdefault('racer_course', {})
+        for k, v in racer_course.items():
+            existing_course[k] = v
+        existing_venue = self._cache.setdefault('racer_venue', {})
+        for k, v in racer_venue.items():
+            existing_venue[k] = v
 
         cursor.close()
 
@@ -329,7 +369,11 @@ class BatchDataLoader:
               AND e.motor_number IS NOT NULL
         """, [target_date])
 
-        motors = [(row['venue_code'], row['motor_number']) for row in cursor.fetchall()]
+        all_motors = [(row['venue_code'], row['motor_number']) for row in cursor.fetchall()]
+
+        # キャッシュ済みモーターをスキップ（インクリメンタル更新）
+        cached_motors = set(self._cache.get('motor_stats', {}).keys())
+        motors = [(v, m) for v, m in all_motors if (v, m) not in cached_motors]
 
         if not motors:
             cursor.close()
@@ -381,7 +425,7 @@ class BatchDataLoader:
                     'avg_rank': row['avg_rank']
                 }
 
-        self._cache['motor_stats'] = motor_stats
+        self._cache.setdefault('motor_stats', {}).update(motor_stats)
         cursor.close()
 
     def _load_racer_st_stats_batch(self, target_date: str) -> None:
@@ -405,7 +449,11 @@ class BatchDataLoader:
             WHERE r.race_date = ?
         """, [target_date])
 
-        racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
+        all_racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
+
+        # キャッシュ済み選手をスキップ（インクリメンタル更新）
+        cached_racers = set(self._cache.get('racer_st_stats', {}).keys())
+        racer_numbers = [r for r in all_racer_numbers if r not in cached_racers]
 
         if not racer_numbers:
             cursor.close()
@@ -456,7 +504,7 @@ class BatchDataLoader:
                     'total_st_records': 0
                 }
 
-        self._cache['racer_st_stats'] = racer_st_stats
+        self._cache.setdefault('racer_st_stats', {}).update(racer_st_stats)
         cursor.close()
 
     def _load_racer_recent_form_batch(self, target_date: str, recent_races: int = 10) -> None:
@@ -480,7 +528,11 @@ class BatchDataLoader:
             WHERE r.race_date = ?
         """, [target_date])
 
-        racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
+        all_racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
+
+        # キャッシュ済み選手をスキップ（インクリメンタル更新）
+        cached_racers = set(self._cache.get('racer_recent_form', {}).keys())
+        racer_numbers = [r for r in all_racer_numbers if r not in cached_racers]
 
         if not racer_numbers:
             cursor.close()
@@ -559,7 +611,7 @@ class BatchDataLoader:
                     'form_trend': 'unknown'
                 }
 
-        self._cache['racer_recent_form'] = racer_form_stats
+        self._cache.setdefault('racer_recent_form', {}).update(racer_form_stats)
         cursor.close()
 
     def _load_boat_stats_batch(self, target_date: str) -> None:
@@ -585,7 +637,11 @@ class BatchDataLoader:
               AND e.boat_number IS NOT NULL
         """, [target_date])
 
-        boats = [(row['venue_code'], row['boat_number']) for row in cursor.fetchall()]
+        all_boats = [(row['venue_code'], row['boat_number']) for row in cursor.fetchall()]
+
+        # キャッシュ済みボートをスキップ（インクリメンタル更新）
+        cached_boats = set(self._cache.get('boat_stats', {}).keys())
+        boats = [(v, b) for v, b in all_boats if (v, b) not in cached_boats]
 
         if not boats:
             cursor.close()
@@ -647,7 +703,7 @@ class BatchDataLoader:
                         'avg_rank': 0.0
                     }
 
-        self._cache['boat_stats'] = boat_stats
+        self._cache.setdefault('boat_stats', {}).update(boat_stats)
         cursor.close()
 
     def _load_motor_recent_form_batch(self, target_date: str, recent_races: int = 10) -> None:
@@ -671,7 +727,11 @@ class BatchDataLoader:
               AND e.motor_number IS NOT NULL
         """, [target_date])
 
-        motors = [(row['venue_code'], row['motor_number']) for row in cursor.fetchall()]
+        all_motors = [(row['venue_code'], row['motor_number']) for row in cursor.fetchall()]
+
+        # キャッシュ済みモーターをスキップ（インクリメンタル更新）
+        cached_motors = set(self._cache.get('motor_recent_form', {}).keys())
+        motors = [(v, m) for v, m in all_motors if (v, m) not in cached_motors]
 
         if not motors:
             cursor.close()
@@ -741,7 +801,7 @@ class BatchDataLoader:
                         'recent_place_rate_3': 0.0
                     }
 
-        self._cache['motor_recent_form'] = motor_recent_form
+        self._cache.setdefault('motor_recent_form', {}).update(motor_recent_form)
         cursor.close()
 
     def _load_kimarite_stats_batch(self, target_date: str) -> None:
@@ -764,7 +824,11 @@ class BatchDataLoader:
             WHERE r.race_date = ?
         """, [target_date])
 
-        racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
+        all_racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
+
+        # キャッシュ済み選手をスキップ（インクリメンタル更新）
+        cached_racers = set(self._cache.get('racer_kimarite', {}).keys())
+        racer_numbers = [r for r in all_racer_numbers if r not in cached_racers]
 
         if racer_numbers:
             placeholders = ','.join('?' * len(racer_numbers))
@@ -797,7 +861,9 @@ class BatchDataLoader:
                 count = row['count']
                 racer_kimarite[racer_num][course][technique] = count
 
-            self._cache['racer_kimarite'] = dict(racer_kimarite)
+            existing_kimarite = self._cache.setdefault('racer_kimarite', {})
+            for k, v in racer_kimarite.items():
+                existing_kimarite[k] = v
 
         # 会場×コース別の決まり手統計
         cursor.execute("""
@@ -807,7 +873,11 @@ class BatchDataLoader:
             WHERE ra.race_date = ?
         """, [target_date])
 
-        venue_codes = [row['venue_code'] for row in cursor.fetchall()]
+        all_venue_codes = [row['venue_code'] for row in cursor.fetchall()]
+
+        # キャッシュ済み会場をスキップ（インクリメンタル更新）
+        cached_venues = set(self._cache.get('venue_kimarite', {}).keys())
+        venue_codes = [v for v in all_venue_codes if v not in cached_venues]
 
         if venue_codes:
             placeholders = ','.join('?' * len(venue_codes))
@@ -838,7 +908,9 @@ class BatchDataLoader:
                 count = row['count']
                 venue_kimarite[venue][course][technique] = count
 
-            self._cache['venue_kimarite'] = dict(venue_kimarite)
+            existing_venue_kimarite = self._cache.setdefault('venue_kimarite', {})
+            for k, v in venue_kimarite.items():
+                existing_venue_kimarite[k] = v
 
         cursor.close()
 
@@ -859,7 +931,11 @@ class BatchDataLoader:
             WHERE r.race_date = ?
         """, [target_date])
 
-        racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
+        all_racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
+
+        # キャッシュ済み選手をスキップ（インクリメンタル更新）
+        cached_racers = set(self._cache.get('grade_stats', {}).keys())
+        racer_numbers = [r for r in all_racer_numbers if r not in cached_racers]
 
         if not racer_numbers:
             cursor.close()
@@ -902,7 +978,9 @@ class BatchDataLoader:
                 'avg_rank': row['avg_rank']
             }
 
-        self._cache['grade_stats'] = dict(grade_stats)
+        existing_grade = self._cache.setdefault('grade_stats', {})
+        for k, v in grade_stats.items():
+            existing_grade[k] = v
         cursor.close()
 
     # ========================================
@@ -1034,7 +1112,11 @@ class BatchDataLoader:
             WHERE r.race_date = ?
         """, [target_date])
 
-        racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
+        all_racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
+
+        # キャッシュ済み選手をスキップ（インクリメンタル更新）
+        cached_racers = set(self._cache.get('racer_features', {}).keys())
+        racer_numbers = [r for r in all_racer_numbers if r not in cached_racers]
 
         if not racer_numbers:
             cursor.close()
@@ -1082,7 +1164,7 @@ class BatchDataLoader:
                 'feature_date': row['race_date']
             }
 
-        self._cache['racer_features'] = racer_features
+        self._cache.setdefault('racer_features', {}).update(racer_features)
         cursor.close()
 
     def _load_racer_venue_features_batch(self, target_date: str) -> None:
@@ -1102,7 +1184,14 @@ class BatchDataLoader:
             WHERE r.race_date = ?
         """, [target_date])
 
-        racer_venue_pairs = [(row['racer_number'], row['venue_code']) for row in cursor.fetchall()]
+        all_racer_venue_pairs = [(row['racer_number'], row['venue_code']) for row in cursor.fetchall()]
+
+        # キャッシュ済みの選手×会場ペアをスキップ（インクリメンタル更新）
+        cached_rv = self._cache.get('racer_venue_features', {})
+        racer_venue_pairs = [
+            (r, v) for r, v in all_racer_venue_pairs
+            if v not in cached_rv.get(r, {})
+        ]
 
         if not racer_venue_pairs:
             cursor.close()
@@ -1140,7 +1229,9 @@ class BatchDataLoader:
                     'venue_races': row['venue_races']
                 }
 
-        self._cache['racer_venue_features'] = dict(racer_venue_features)
+        existing_rv = self._cache.setdefault('racer_venue_features', {})
+        for racer, venues in racer_venue_features.items():
+            existing_rv.setdefault(racer, {}).update(venues)
         cursor.close()
 
     def _load_course_entry_tendency_batch(self, target_date: str) -> None:
@@ -1160,7 +1251,11 @@ class BatchDataLoader:
             WHERE r.race_date = ?
         """, [target_date])
 
-        racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
+        all_racer_numbers = [row['racer_number'] for row in cursor.fetchall()]
+
+        # キャッシュ済み選手をスキップ（インクリメンタル更新）
+        cached_racers = set(self._cache.get('course_entry_tendency', {}).keys())
+        racer_numbers = [r for r in all_racer_numbers if r not in cached_racers]
 
         if not racer_numbers:
             cursor.close()
@@ -1195,7 +1290,9 @@ class BatchDataLoader:
             cnt = row['cnt']
             course_entry_tendency[racer_num][pit][course] = cnt
 
-        self._cache['course_entry_tendency'] = dict(course_entry_tendency)
+        existing_cet = self._cache.setdefault('course_entry_tendency', {})
+        for k, v in course_entry_tendency.items():
+            existing_cet[k] = v
         cursor.close()
 
     def _load_session_performance_batch(self, target_date: str) -> None:

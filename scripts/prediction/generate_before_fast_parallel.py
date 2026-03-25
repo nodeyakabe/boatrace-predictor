@@ -419,10 +419,10 @@ def main():
     print(f"日付数: {len(all_dates)}日 -> {n_workers}ワーカーに分配")
     print(f"  ※ 各ワーカーが独立した Predictor + DataManager を初期化（メモリ: 約{n_workers}×500MB~1GB）")
 
-    # 日付をラウンドロビンでワーカーに分配（負荷均等化）
-    chunks = [[] for _ in range(n_workers)]
-    for i, d in enumerate(all_dates):
-        chunks[i % n_workers].append(d)
+    # 日付を連続チャンクでワーカーに分配（インクリメンタルキャッシュを有効化）
+    # ラウンドロビンだと各ワーカーが飛び飛び日付を担当→_is_next_day()がFalseになりキャッシュ無効
+    chunk_size = (len(all_dates) + n_workers - 1) // n_workers
+    chunks = [all_dates[i * chunk_size:(i + 1) * chunk_size] for i in range(n_workers)]
 
     worker_args = [(i, chunk, dict(races_by_date)) for i, chunk in enumerate(chunks) if chunk]
 
