@@ -125,7 +125,7 @@ class CompoundBuffSystem:
             description="福岡で向かい風時は1コース不利",
             conditions=[
                 BuffCondition(ConditionType.VENUE, "22"),
-                BuffCondition(ConditionType.WIND, "向かい風"),
+                BuffCondition(ConditionType.WIND_DIR, "向かい風"),
                 BuffCondition(ConditionType.COURSE, 1),
             ],
             buff_value=-5.0,
