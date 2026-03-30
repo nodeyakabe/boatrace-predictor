@@ -301,12 +301,12 @@ class KimariteScorer:
         # === 3. 風向補正（会場別定義） ===
         if wind_direction:
             wind_cat = classify_wind_direction(wind_direction, venue_code)
-            if wind_cat == 'headwind':
-                # 向かい風 → 逃げ有利（スタートしやすい）
+            if wind_cat == 'tailwind':
+                # 追い風 → 逃げ有利（インコースのスタートが決まりやすい）
                 if racer_kimarite == '逃げ' and course == 1:
                     adjustment *= 1.1
-            elif wind_cat == 'tailwind':
-                # 追い風 → まくり有利（スピードが乗る）
+            elif wind_cat == 'headwind':
+                # 向かい風 → まくり有利（スピードが乗る）
                 if racer_kimarite in ['まくり', 'まくり差し'] and course >= 3:
                     adjustment *= 1.1
 

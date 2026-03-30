@@ -268,6 +268,24 @@ class MotorAnalyzer:
         if not motor_numbers:
             return {}
 
+        # batch_loaderキャッシュが利用可能な場合はDBクエリをスキップ
+        if self.batch_loader and self.batch_loader.is_loaded():
+            result = {}
+            for motor_num in motor_numbers:
+                stats = self.batch_loader.get_motor_stats(venue_code, motor_num)
+                recent = self.batch_loader.get_motor_recent_form(venue_code, motor_num)
+                result[motor_num] = {
+                    'stats': stats if stats else {
+                        'total_races': 0, 'win_count': 0, 'win_rate': 0.0,
+                        'place_rate_2': 0.0, 'place_rate_3': 0.0, 'avg_rank': 0.0
+                    },
+                    'recent': recent if recent else {
+                        'recent_races': [], 'recent_win_rate': 0.0,
+                        'recent_place_rate_3': 0.0
+                    }
+                }
+            return result
+
         placeholders = ','.join('?' * len(motor_numbers))
 
         # モーター統計を一括取得
@@ -375,6 +393,17 @@ class MotorAnalyzer:
         """
         if not boat_numbers:
             return {}
+
+        # batch_loaderキャッシュが利用可能な場合はDBクエリをスキップ
+        if self.batch_loader and self.batch_loader.is_loaded():
+            result = {}
+            for boat_num in boat_numbers:
+                stats = self.batch_loader.get_boat_stats(venue_code, boat_num)
+                result[boat_num] = stats if stats else {
+                    'total_races': 0, 'win_count': 0, 'win_rate': 0.0,
+                    'place_rate_2': 0.0, 'place_rate_3': 0.0, 'avg_rank': 0.0
+                }
+            return result
 
         placeholders = ','.join('?' * len(boat_numbers))
 

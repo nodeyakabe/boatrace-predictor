@@ -48,7 +48,8 @@ class EntryPredictionModel:
     def predict_race_entries(
         self,
         race_id: int,
-        entries: List[Dict]
+        entries: List[Dict],
+        race_date: str = None
     ) -> Dict[int, EntryPrediction]:
         """
         レースの進入隊形を予測
@@ -68,7 +69,7 @@ class EntryPredictionModel:
             pit = entry['pit_number']
             racer_number = entry['racer_number']
 
-            pattern = self._get_racer_entry_pattern(racer_number)
+            pattern = self._get_racer_entry_pattern(racer_number, race_date)
             racer_patterns[pit] = pattern
 
             # 個別予測を計算
@@ -80,7 +81,7 @@ class EntryPredictionModel:
 
         return predictions
 
-    def _get_racer_entry_pattern(self, racer_number: str) -> Dict:
+    def _get_racer_entry_pattern(self, racer_number: str, race_date: str = None) -> Dict:
         """
         選手の進入パターンを取得
 
@@ -92,15 +93,17 @@ class EntryPredictionModel:
                 'entry_type': str
             }
         """
-        # キャッシュチェック
-        if racer_number in self._entry_cache:
-            return self._entry_cache[racer_number]
+        # キャッシュチェック（race_dateごとに別キャッシュ）
+        cache_key = f"{racer_number}_{race_date}"
+        if cache_key in self._entry_cache:
+            return self._entry_cache[cache_key]
 
         conn = get_connection(self.db_path)
         cursor = conn.cursor()
 
         try:
-            # 過去180日の進入パターンを集計
+            # 過去180日の進入パターンを集計（race_dateを基準日として使用）
+            ref_date = race_date if race_date else 'now'
             cursor.execute('''
                 SELECT
                     e.pit_number,
@@ -111,9 +114,10 @@ class EntryPredictionModel:
                 JOIN races r ON e.race_id = r.id
                 WHERE e.racer_number = ?
                   AND rd.actual_course IS NOT NULL
-                  AND r.race_date >= date('now', '-180 days')
+                  AND r.race_date >= date(?, '-180 days')
+                  AND r.race_date < ?
                 GROUP BY e.pit_number, rd.actual_course
-            ''', (racer_number,))
+            ''', (racer_number, ref_date, ref_date))
 
             rows = cursor.fetchall()
 
@@ -156,7 +160,7 @@ class EntryPredictionModel:
             }
 
             # キャッシュに保存
-            self._entry_cache[racer_number] = pattern
+            self._entry_cache[cache_key] = pattern
 
             return pattern
 

@@ -68,7 +68,7 @@ class Top3Scorer:
 
         # 2. コース別三連対率（全体統計）
         course_top3_rate = self._get_course_top3_rate(
-            cursor, venue_code, course
+            cursor, venue_code, course, race_date
         )
         result['course_top3_rate'] = course_top3_rate
 
@@ -127,9 +127,11 @@ class Top3Scorer:
         self,
         cursor,
         venue_code: str,
-        course: int
+        course: int,
+        race_date: str = None
     ) -> float:
         """コース別三連対率を取得（過去2年の統計）"""
+        ref_date = race_date if race_date else 'now'
         cursor.execute('''
             SELECT
                 COUNT(*) as total,
@@ -138,9 +140,10 @@ class Top3Scorer:
             JOIN races ra ON r.race_id = ra.id
             WHERE ra.venue_code = ?
               AND r.pit_number = ?
-              AND ra.race_date >= date('now', '-2 years')
+              AND ra.race_date >= date(?, '-2 years')
+              AND ra.race_date < ?
               AND r.is_invalid = 0
-        ''', (venue_code, course))
+        ''', (venue_code, course, ref_date, ref_date))
 
         row = cursor.fetchone()
         if row and row[0] >= 100:  # 最低100レース

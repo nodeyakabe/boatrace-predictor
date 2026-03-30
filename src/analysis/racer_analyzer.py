@@ -443,6 +443,55 @@ class RacerAnalyzer:
         if not racer_numbers:
             return {}
 
+        # batch_loaderキャッシュが利用可能な場合はDBクエリをスキップ
+        if self.batch_loader and self.batch_loader.is_loaded():
+            result = {}
+            for racer_num in racer_numbers:
+                overall = self.batch_loader.get_racer_overall_stats(racer_num)
+                courses = {}
+                for course in range(1, 7):
+                    cs = self.batch_loader.get_racer_course_stats(racer_num, course)
+                    if cs:
+                        courses[course] = cs
+                venue_stats = self.batch_loader.get_racer_venue_stats(racer_num, venue_code)
+                st_stats = self.batch_loader.get_racer_st_stats(racer_num)
+                recent_form = self.batch_loader.get_racer_recent_form(racer_num)
+                if overall is not None:
+                    result[racer_num] = {
+                        'overall': overall,
+                        'courses': courses,
+                        'venues': {venue_code: venue_stats} if venue_stats else {},
+                        'recent': recent_form if recent_form else {
+                            'recent_races': [], 'recent_win_rate': 0.0,
+                            'recent_place_rate_3': 0.0, 'form_trend': 'unknown'
+                        },
+                        'st': st_stats if st_stats else {
+                            'avg_st': 0.0, 'flying_rate': 0.0,
+                            'late_rate': 0.0, 'total_st_records': 0
+                        }
+                    }
+            # デフォルト値を設定（データがない選手用）
+            for racer_num in racer_numbers:
+                if racer_num not in result:
+                    result[racer_num] = {
+                        'overall': {
+                            'total_races': 0, 'win_count': 0, 'win_rate': 0.0,
+                            'place_rate_2': 0.0, 'place_rate_3': 0.0, 'avg_rank': 0.0
+                        },
+                        'courses': {},
+                        'venues': {},
+                        'recent': {
+                            'recent_races': [], 'recent_win_rate': 0.0,
+                            'recent_place_rate_3': 0.0, 'form_trend': 'unknown'
+                        },
+                        'st': {'avg_st': 0.0, 'flying_rate': 0.0, 'late_rate': 0.0, 'total_st_records': 0}
+                    }
+                if venue_code not in result[racer_num]['venues']:
+                    result[racer_num]['venues'][venue_code] = {
+                        'total_races': 0, 'win_count': 0, 'win_rate': 0.0, 'place_rate_3': 0.0
+                    }
+            return result
+
         placeholders = ','.join('?' * len(racer_numbers))
 
         # 全体成績を一括取得

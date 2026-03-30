@@ -1109,7 +1109,8 @@ class RacePredictor:
         # ========================================
         predictions = self._apply_entry_prediction(
             predictions,
-            race_id
+            race_id,
+            race_date
         )
 
         # ========================================
@@ -2820,7 +2821,8 @@ class RacePredictor:
     def _apply_entry_prediction(
         self,
         predictions: List[Dict],
-        race_id: int
+        race_id: int,
+        race_date: str = None
     ) -> List[Dict]:
         """
         進入予測モデルを適用してスコアを調整
@@ -2863,7 +2865,8 @@ class RacePredictor:
             # 進入予測を実行
             entry_predictions = self.entry_prediction_model.predict_race_entries(
                 race_id=race_id,
-                entries=entries
+                entries=entries,
+                race_date=race_date
             )
 
             # 各予測に進入影響スコアを適用

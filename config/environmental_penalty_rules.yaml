@@ -79,7 +79,7 @@ rules:
     description: "常滑×北北西×微風（n=5, 的中率0%）"
     sample_size: 5
     hit_rate: 0.0
-    enabled: true
+    enabled: false
 
   - category: "会場×風向×風速"
     venue: "03"
@@ -300,7 +300,7 @@ system:
   enabled: true
 
   # 最小サンプル数（この数以下のパターンは無視）
-  min_sample_size: 5
+  min_sample_size: 15
 
   # 減点計算の基準（%的中率低下あたりの減点）
   penalty_per_5percent: 1
