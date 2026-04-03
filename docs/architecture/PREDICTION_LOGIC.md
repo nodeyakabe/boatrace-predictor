@@ -1,6 +1,6 @@
 # 予測ロジック構成
 
-**最終更新**: 2025-12-25
+**最終更新**: 2026-04-01
 
 ---
 
@@ -9,7 +9,9 @@
 ```
 【第1層】戦略B - 順位予測
     ↓ ExtendedScorer（スコアリング）
-    ↓ HierarchicalPredictor（信頼度A-E判定）
+    ↓ _recalculate_race_confidence（スコア差ベース信頼度A-E判定）
+    ↓ compound_buff（CompoundBuffSystem: 30ルール = 会場別16 + 展示系14）
+    ↓ pairwise_scoring（OFF: 2026-03-23不採用）
 
 【第2層】フィルターC - 購入判定
     ↓ BetTargetEvaluator（信頼度×オッズ×級別で判断）
@@ -22,34 +24,63 @@
 
 ## 第1層：順位予測（戦略B）
 
-### 5層予測パイプライン
+### 予測パイプライン（predict_race メソッド実行順序）
 
 ```
 【Layer 1】基本スコア
-    ├─ GradeScorer: 級別スコア（A1/A2/B1/B2）
-    ├─ MotorAnalyzer: モーター2連率
+    ├─ GradeScorer: グレード適性スコア
+    ├─ MotorAnalyzer: モーター2連率（ラプラス平滑化）
     ├─ RacerAnalyzer: 選手成績・勝率
-    └─ StatisticsCalculator: コース別統計
+    ├─ StatisticsCalculator: コース別統計
+    └─ calculate_course_rank_score: コース×ランク実績勝率ベーススコア
            ↓
 【Layer 2】拡張スコア（ExtendedScorer）
-    ├─ 展示タイム順位
-    ├─ ST（スタートタイミング）順位
-    └─ 直近成績トレンド
+    ├─ 級別スコア（A1:10, A2:7, B1:4, B2:1）
+    ├─ F/Lペナルティ
+    ├─ 節間成績・前走レベル
+    ├─ 進入傾向・選手間相性
+    ├─ モーター特性・平均ST
+    ├─ 展示タイム・チルト角度・直線タイム
+    ├─ 直近成績トレンド
+    ├─ 会場別勝率・連対率
+    └─ 転覆ペナルティ（motor_capsizing_penalty）
            ↓
-【Layer 3】環境補正
-    ├─ WeatherAdjuster: 風向き×風速補正
-    ├─ TideAdjuster: 潮位補正
-    └─ VenueCourseAdjuster: 会場×コース調整（144パターン）
+【Layer 3】複合バフ + 決まり手
+    ├─ CompoundBuffSystem: 複合条件バフ（30ルール）
+    │    ├─ 会場別ルール: 16本（福岡/唐津/徳山/大村/戸田/江戸川/芦屋/汎用）
+    │    └─ 展示タイム条件ルール: 14本（exhibition_buff_rules.py）
+    └─ KimariteScorer: 決まり手適性 + 環境連動補正（風向/潮位/波高）
            ↓
-【Layer 4】直前情報パターン
-    ├─ BeforeInfoScorer: 展示×ST複合パターン
-    ├─ CompoundBuffSystem: 複合バフシステム
-    └─ KimariteFlowPredictor: 決まり手展開予測
+【Layer 4】環境補正
+    ├─ WeatherAdjuster: 風向き×風速×天候補正（会場別定義 2026-03-27更新）
+    ├─ TideAdjuster: 潮位補正（OFF: 効果ゼロ確認済み）
+    └─ VenueCourseAdjustments: 会場×コース調整（144パターン = 24会場×6コース）
            ↓
-【Layer 5】AI統合
-    ├─ HierarchicalPredictor: 階層的条件確率モデル
-    ├─ PairwiseScorer: ペアワイズ相対スコアリング
-    └─ LightGBMモデル（Stage1/2/3）
+【Layer 5】直前情報統合（before予測のみ）
+    ├─ BeforeInfoScorer: 115点満点のスコアリング
+    │    （展示25 + ST25 + 進入20 + 前走15 + チルト風10 + 部品5 + 気象5 + モーター5 + 選手コース5）
+    ├─ 統合式: FINAL_SCORE = PRE_SCORE × 0.6 + BEFORE_SCORE × 0.4
+    └─ PatternScorer: 展示×STパターンボーナス（28パターン）
+           ↓
+【Layer 6】進入予測・確率キャリブレーション
+    ├─ EntryPredictionModel: 進入コース予測
+    └─ ProbabilityCalibrator: 確率キャリブレーション
+           ↓
+【Layer 7】スコア確定 → 信頼度判定
+    ├─ ソート（total_score降順）
+    └─ _recalculate_race_confidence: スコア差ベース信頼度再計算
+           ↓
+【Layer 8】後段スコア調整（有効フラグのみ実行）
+    ├─ SecondPlaceSpecializedScorer: 2着専用モデル（ON）
+    ├─ ConfidenceBasedIntegrator: 信頼度ベース戦略切り替え（ON）
+    ├─ KimariteFlowPredictor: 決まり手展開予測（ON）
+    ├─ MakuriRiskEvaluator: まくりリスク評価（ON）
+    ├─ Top3Scorer: 三連対スコア（信頼度Bレースのみ適用）
+    └─ PairwiseScorer: ペアワイズスコア（OFF: 不採用）
+           ↓
+【Layer 9】最終処理
+    ├─ _apply_course_enforcement: 予測コース強制化
+    └─ HierarchicalPredictor: 三連単確率付与（OFF: dead output）
            ↓
 【出力】1着〜6着の順位予測 + 信頼度（A〜E）
 ```
@@ -58,21 +89,44 @@
 
 | ファイル | 役割 |
 |---------|------|
-| `src/analysis/race_predictor.py` | 予測エンジン統合ハブ |
-| `src/analysis/extended_scorer.py` | 拡張スコアリング |
-| `src/analysis/hierarchical_predictor.py` | 階層的確率モデル |
-| `src/analysis/beforeinfo_scorer.py` | 直前情報スコアリング |
+| `src/analysis/race_predictor.py` | 予測エンジン統合ハブ（predict_race メソッド） |
+| `src/analysis/extended_scorer.py` | 拡張スコアリング（級別/FL/節間/展示/ST等） |
+| `src/analysis/weather_adjuster.py` | 風向・風速・波高・天候補正 |
+| `src/analysis/kimarite_scorer.py` | 決まり手適性 + 環境連動補正 |
+| `src/analysis/beforeinfo_scorer.py` | 直前情報115点スコアリング |
+| `src/analysis/compound_buff_system.py` | 複合条件バフ（会場×環境×選手） |
+| `src/analysis/exhibition_buff_rules.py` | 展示タイム条件別バフルール（14本） |
+| `src/analysis/scorers/pattern_scorer.py` | 直前パターンボーナス定義（28パターン） |
 | `src/prediction/kimarite_flow_predictor.py` | 決まり手展開予測 |
-| `src/ml/pairwise_scorer.py` | ペアワイズスコアリング |
+| `config/venue_course_adjustments.py` | 会場×コース調整ポイント（24会場×6コース） |
+| `config/venue_course_win_rates.py` | 会場×コース勝率テーブル |
 
 ### 信頼度計算
 
-| 信頼度 | 条件 | 2025年1着精度 |
-|:------:|:-----|:-------------:|
-| **A** | スコア差大、パターン強適合 | 72.99% |
-| **B** | 中高信頼 | 65.60% |
-| **C** | 中信頼 | 46.01% |
-| **D** | スコア接近、低信頼 | 23.1% |
+**ファイル**: `src/analysis/race_predictor.py` `_recalculate_race_confidence()`
+
+上位2艇のスコア差（score_gap）と1位スコア（top1_score）で判定。
+元の信頼度より低い場合のみ更新（安全側に倒す）。
+
+| 信頼度 | 条件 |
+|:------:|:-----|
+| **A** | score_gap >= 15 かつ top1_score >= 70（明確な本命） |
+| **B** | score_gap >= 10 かつ top1_score >= 60（本命優位） |
+| **C** | score_gap >= 5、または 1コース予測 かつ top1_score >= 55（混戦だが予測可能） |
+| **D** | score_gap >= 2（超混戦） |
+| **E** | score_gap < 2（予測困難） |
+
+### 直前情報パターン（PatternScorer）
+
+**ファイル**: `src/analysis/scorers/pattern_scorer.py`
+
+| カテゴリ | パターン数 | 主な条件 |
+|:--------:|:---------:|---------|
+| 1着予測用 | 8 | PRE1位 × ST/展示の組み合わせ（+ネガティブ3パターン含む） |
+| 2着予測用 | 8 | PRE2位 × ST/展示の組み合わせ |
+| 3着予測用 | 4 | PRE3-4位 × 展示/ST/アウトコース |
+| Top3予測用 | 8 | ST×展示上位複合 + ネガティブ（両方下位） |
+| **合計** | **28** | |
 
 ---
 
@@ -82,7 +136,7 @@
 
 **ファイル**: `src/betting/bet_target_evaluator.py`
 
-購入条件は [BET_CONDITIONS.md](../presets/BET_CONDITIONS.md) 参照
+購入条件の詳細は [BET_CONDITIONS.md](../presets/BET_CONDITIONS.md) 参照
 
 ### 判定フロー
 
@@ -97,9 +151,7 @@
            ↓
 4. 会場フィルターチェック（条件により適用）
            ↓
-5. モーター条件チェック（40%+など）
-           ↓
-6. 風速・会場除外チェック
+5. モーター条件チェック
            ↓
 出力: TARGET / CANDIDATE / EXCLUDED
 ```
@@ -113,109 +165,226 @@
 **ファイル**: `src/betting/multi_bet_generator.py`
 
 ```python
-# パターンH: 収支最大化
+# パターンH: 収支最大化（1-2軸傾斜配分）
+# 1-2着は予測1位-2位で固定、3着候補は予測3位・4位・5位
 bet_structure = {
-    '1-2-3': 200円,  # 予測通り
-    '1-2-4': 100円,  # 3着を4位予測に変更
-    '1-2-5': 100円,  # 3着を5位予測に変更
+    '予測1位-予測2位-予測3位': 200円,  # 本線
+    '予測1位-予測2位-予測4位': 100円,  # 3着を4位予測に変更
+    '予測1位-予測2位-予測5位': 100円,  # 3着を5位予測に変更
 }
 # 合計: 400円/レース
 ```
 
 ---
 
-## 有効な機能フラグ一覧
+## 機能フラグ一覧（現状）
 
 **ファイル**: `config/feature_flags.py`
 
-### コア機能（常時有効）
+### 有効（True）
 
-| フラグ | 効果 | 有効化日 |
-|-------|------|---------|
-| `hierarchical_predictor` | 階層的条件確率モデル | - |
-| `lightgbm_ranking` | LightGBMランキング | - |
-| `before_pattern_bonus` | 直前パターンボーナス（B+9.5pt, C+8.3pt） | - |
-| `negative_patterns` | ネガティブパターン除外（+2.0%） | 2025-12-11 |
+| フラグ | 効果 |
+|-------|------|
+| `lightgbm_ranking` | LightGBMランキングモデル |
+| `before_pattern_bonus` | 直前パターンボーナス（28パターン） |
+| `negative_patterns` | ネガティブパターン（+2.0%改善） |
+| `second_place_specialized` | 2着専用スコアリングモデル（AUC=0.6819） |
+| `confidence_based_switching` | 信頼度ベース戦略切り替え（high=0.7, medium=0.5） |
+| `motor_capsizing_penalty` | モーター転覆履歴ペナルティ |
+| `kimarite_flow_prediction` | 決まり手別展開予測（+4.1pt） |
+| `makuri_risk_adjustment` | まくりリスク評価（+4.1pt） |
+| `negative_pattern_filter` | マイナスROIパターン除外（オッズ10-30倍×予測1着3/4コース等） |
+| `upset_pattern_filter` | 穴狙いパターン（オッズ30-100倍×5コース） |
+| `ab_rank_special_betting` | A・Bランク特別条件（+17.2pt） |
+| `b_rank_30_50_b1` | B×30-50倍×B1級 |
+| `score_gap_confidence` | スコア差ベース信頼度判定（C/D精度向上） |
+| `entry_prediction_model` | 進入予測モデル |
+| `interaction_features` | 交互作用特徴量 |
+| `st_course_interaction` | ST×course交互作用 |
 
-### 効果検証済み機能
+### 無効（False）・不採用理由
 
-| フラグ | 効果 | 有効化日 |
-|-------|------|---------|
-| `ab_rank_special_betting` | **+17.2pt（最大効果）** | 2025-12-19 |
-| `kimarite_flow_prediction` | **+4.1pt** | 2025-12-20 |
-| `makuri_risk_adjustment` | **+4.1pt** | 2025-12-20 |
-| `pairwise_scoring` | 2着+7.3pt, 3着+3.9pt | 2025-12-19 |
-| `second_place_specialized` | +6.8pt | 2025-12-18 |
-| `motor_capsizing_penalty` | モーター転覆ペナルティ | 2025-12-19 |
-| `negative_pattern_filter` | マイナスROIパターン除外 | 2025-12-21 |
-| `upset_pattern_filter` | 穴狙いパターン | 2025-12-21 |
-
-### 無効化済みフラグ（不採用）
-
-| フラグ | 理由 | 無効化日 |
-|-------|------|---------|
-| `monte_carlo_simulation` | 1着-8.5pt悪化 | 2025-12-19 |
-| `rank23_odds_calibration` | 2025年で効果消失 | 2025-12-18 |
-| `forward_mover_filter` | ab_rank ONで-7.6pt | 2025-12-20 |
-| `condition_factor` | -9.5pt悪化 | 2025-12-20 |
-| `third_place_specialized_scorer` | 未統合・効果なし | 2025-12-20 |
-
----
-
-## 階層的予測モデル（Stage1/2/3）
-
-### モデル構成
-
-| Stage | 役割 | AUC | 特徴量数 |
-|:-----:|:-----|:---:|:--------:|
-| **Stage1** | 1着予測 | 0.9010 | 17 |
-| **Stage2** | 2着予測（1着条件付き） | 0.7423 | 51 |
-| **Stage3** | 3着予測（1-2着条件付き） | 0.6675 | 85 |
-
-### 三連単確率計算
-
-```
-P(i-j-k) = P(i=1着) × P(j=2着|i=1着) × P(k=3着|i=1着,j=2着)
-```
+| フラグ | 理由 |
+|-------|------|
+| `hierarchical_predictor` | dead output（DBに保存されず信頼度にも無影響）計算コスト削減のためOFF（2026-03-19） |
+| `pairwise_scoring` | 全年度before再生成→-184,712円の大幅悪化。REJECTED_IDEAS.md記録済み（2026-03-23） |
+| `tide_adjustment` | ROI±0.0pt（効果ゼロ確認済み） |
+| `exhibition_reliability_adjustment` | ROI±0.0pt〜-1.2pt（効果なし）。常時実行相当、フラグ参照コードなし |
+| `escape_rate_scoring` | 500レース検証で効果なし（既存スコアと重複） |
+| `venue_attack_scoring` | 840レース検証で効果なし（Z=0.00） |
+| `monte_carlo_simulation` | 1着-8.5pt悪化 |
+| `condition_factor` | -9.5pt悪化 |
+| `forward_mover_filter` | ab_rank ONで-7.6pt悪化 |
+| `legacy_exhibition_adjustment` | ExtendedScorerと重複するため無効（2025-12-15バグ修正） |
+| `odds_calibration` | 1着オッズ校正（効果なし、保留中） |
+| `rank23_odds_calibration` | 2024年+2.04pt, 2025年±0.00pt（モデルドリフトで効果消失） |
+| `third_place_specialized_scorer` | RacePredictor未統合、効果なし |
+| `compound_pattern_bonus` | ROI+11%のみ（効果不十分） |
+| `apply_pattern_to_confidence_d` | 信頼度Dへのパターン適用（OFF） |
+| `venue_pattern_optimization` | 会場別パターン最適化（OFF） |
+| `c_rank_paper_trade` | C×30-50倍×A2級ペーパートレード中 |
+| `verbose_logging` | デバッグ用 |
 
 ---
 
-## 直前情報パターン
+## 風向ロジック仕様（2026-03-31更新）
 
-### 1着予測用パターン
+### 追い風の定義
 
-| パターン | 条件 | 倍率 |
-|---------|------|------|
-| `pre1_st1` | PRE1位 & ST1位 | 1.411 |
-| `pre1_ex1` | PRE1位 & 展示1位 | 1.286 |
-| `pre1_ex1_3_st1_3` | PRE1位 & 展示1-3位 & ST1-3位 | 1.328 |
+**競艇公式定義**: 追い風 = 1コース（インコース）が有利になる風向
+→ DBの6年分実データで「C1勝率が最も高い風向」= 追い風 として定義
 
-### 2着予測用パターン
+### 会場別追い風方向（VENUE_TAILWIND_DIRECTIONS）
 
-| パターン | 条件 | 倍率 |
-|---------|------|------|
-| `pre2_3_ex1_2` | PRE2-3位 & 展示1-2位 | 1.084 |
-| `pre2_ex1_3_st1_3` | PRE2位 & 展示1-3位 & ST1-3位 | 1.081 |
+**ファイル**: `src/analysis/weather_adjuster.py` L23-48
+
+**更新日**: 2026-03-27（DB実データ再検証・6年分・n>=200）
+
+| 会場コード | 会場名 | 追い風方向 | n | C1勝率 | 備考 |
+|:---------:|-------|:--------:|:---:|:-----:|------|
+| 01 | 桐生   | 南東    | 871  | 57.2% | 変更なし |
+| 02 | 戸田   | 北東    | 494  | 46.4% | 変更なし |
+| 03 | 江戸川  | **未定義** | - | - | n<300で根拠不足 → legacyフォールバック |
+| 04 | 平和島  | 東南東  | 4540 | 46.8% | 変更なし |
+| 05 | 多摩川  | 南南西  | 2434 | 55.5% | 変更なし |
+| 06 | 浜名湖  | 西南西  | 981  | 58.3% | 変更なし |
+| 07 | 蒲郡   | 東北東  | 576  | 60.9% | **修正** |
+| 08 | 常滑   | 南南西  | 2529 | 61.5% | **修正** |
+| 09 | 津    | 北北東  | 1089 | 64.6% | **修正** |
+| 10 | 三国   | 北北東  | 412  | 61.7% | **修正** ※nやや少 |
+| 11 | 琵琶湖  | 北北東  | 1800 | 57.2% | **修正** |
+| 12 | 住之江  | 北北東  | 5080 | 60.9% | **修正** |
+| 13 | 尼崎   | 南西    | 1156 | 63.6% | 変更なし |
+| 14 | 鳴門   | 南南東  | 986  | 54.6% | **修正**（旧定義と逆） |
+| 15 | 丸亀   | 東南東  | 1334 | 62.5% | **修正** |
+| 16 | 児島   | 西南西  | 4024 | 57.9% | 変更なし |
+| 17 | 宮島   | 北北東  | 1672 | 61.0% | **修正** |
+| 18 | 徳山   | 南南東  | 2551 | 65.4% | **修正** |
+| 19 | 下関   | 南南西  | 1375 | 65.0% | **修正**（旧定義と逆） |
+| 20 | 若松   | 北北東  | 983  | 65.3% | **修正** |
+| 21 | 芦屋   | 西南西  | 945  | 65.8% | **修正** |
+| 22 | 福岡   | 南西    | 5820 | 57.0% | **修正**（旧定義と逆） |
+| 23 | 唐津   | 北北東  | 364  | 63.5% | **修正** ※nやや少 |
+| 24 | 大村   | 西南西  | 2570 | 67.9% | 変更なし |
+
+**なぜ旧定義が誤っていたか**: 旧定義はn>=100（少サンプル）で定義されており、16/24会場が実際のデータと不一致だった。今回6年分のDB実データ（n>=200）で全24会場を網羅的に再検証。
+
+**03江戸川をundefinedにした理由**: 風向によるC1勝率差が小さく（46〜50%の範囲）、かつ全データでもn<300と根拠不足。無理に定義すると誤補正になるためlegacyフォールバックに委ねる。
+
+### classify_wind_direction()の動作
+
+**ファイル**: `src/analysis/weather_adjuster.py` L51-105
+
+```
+入力: wind_direction（16方位）, venue_code（会場コード）
+  ↓
+1. VENUE_TAILWIND_DIRECTIONSに会場コードが存在する場合:
+   - 追い風方向との角度差を計算
+   - 差 <= 45度  → 'tailwind'
+   - 差 >= 135度 → 'headwind'
+   - その他     → 'crosswind'
+
+2. 会場コードが存在しない場合（03江戸川等）:
+   legacyフォールバック（南系=追い風、北系=向かい風）
+
+出力: 'tailwind' / 'headwind' / 'crosswind' / 'calm' / 'unknown'
+```
+
+### kimarite_scorer.py の風向補正（Bug-2修正済み）
+
+**ファイル**: `src/analysis/kimarite_scorer.py` L301-311
+**修正日**: 2026-03-30（コミット 2d4d4a0）
+
+```python
+# 修正後（正しいコード）
+if wind_cat == 'tailwind':
+    # 追い風 → 逃げ有利（インコースのスタートが決まりやすい）
+    if racer_kimarite == '逃げ' and course == 1:
+        adjustment *= 1.1
+elif wind_cat == 'headwind':
+    # 向かい風 → まくり有利（スピードが乗る）
+    if racer_kimarite in ['まくり', 'まくり差し'] and course >= 3:
+        adjustment *= 1.1
+```
+
+**Bug-2の経緯（重要な教訓）**:
+
+旧コードはheadwind→逃げ有利、tailwind→まくり有利と**逆**に実装されていた。
+コメントと実装が不一致の典型的なバグ。
+
+なぜ長期間気づかれなかったか:
+- 旧コード: VENUE_TAILWIND_DIRECTIONSが存在しない → legacyフォールバックで大半がcrosswind判定 → Bug-2の発動が限定的
+- 2026-03-27に23会場の定義を追加 → tailwind/headwind判定が26%→38%に増加 → Bug-2が大量発動 → ROI -44pt悪化で発覚
+
+発覚時の影響:
+| 状態 | crosswind判定 | tailwind判定 | ROI |
+|:---:|:---:|:---:|:---:|
+| 旧（定義なし） | 45.1% | 26.0% | 174.1% |
+| 新（23会場定義追加・Bug-2あり） | 34.8% | 38.0% | 129.7% |
+| 新（23会場定義追加・Bug-2修正後） | 34.8% | 38.0% | 検証待ち |
+
+---
+
+## WeatherAdjuster の補正ロジック
+
+**ファイル**: `src/analysis/weather_adjuster.py` L210-400
+
+### 風向×風速補正（風速2m以上で発動）
+
+| 条件 | コース | 補正 |
+|:---|:---:|:---:|
+| 追い風 | 1 | +3% × 風速係数 |
+| 追い風 | 5, 6 | -2% × 風速係数 |
+| 向かい風 | 1 | -3% × 風速係数 |
+| 向かい風 | 4, 5, 6 | +2% × 風速係数 |
+
+風速係数 = min(wind_speed / 5.0, 1.5)（5m/sで1.0、7.5m/s以上で1.5上限）
+
+### 強風補正（風速6m以上）
+
+| コース | 補正 |
+|:---:|:---:|
+| 1 | 会場別ペナルティ（デフォルト-10%） |
+| 2 | +5% |
+| 3 | +6%（最大） |
+| 4 | +5% |
+| 5 | +3% |
+| 6 | +2% |
+
+### 天候補正
+
+| 天候 | 1コース | 外コース |
+|:---:|:---:|:---:|
+| 雨 | +2% | -3%（5,6コース） |
+| 雪 | +3% | -5%（4コース以降） |
+| 霧 | +3% | -4%（4コース以降） |
+| 台風 | +5% | -10%（全外コース） |
 
 ---
 
 ## 会場×コース調整
 
+**ファイル**: `config/venue_course_adjustments.py`
+
+2024-2025年データから算出。全国平均勝率との差分に基づくバフ/デバフポイント。
+
 ### イン強会場（1コース有利）
 
-| 会場 | 1コース勝率 | 調整 |
-|------|:-----------:|:----:|
-| 徳山(18) | 66.41% | +9pt |
-| 大村(24) | 65.80% | +8pt |
-| 下関(19) | 62.61% | +6pt |
+| 会場 | 調整 |
+|------|:----:|
+| 徳山(18) | +9pt |
+| 大村(24) | +8pt |
+| 下関(19) | +6pt |
+| 宮島(17) | +5pt |
 
 ### イン弱会場（1コース不利）
 
-| 会場 | 1コース勝率 | 調整 |
-|------|:-----------:|:----:|
-| 戸田(02) | 45.87% | -12pt |
-| 平和島(04) | 46.18% | -12pt |
-| 江戸川(03) | 48.22% | -9pt |
+| 会場 | 調整 |
+|------|:----:|
+| 戸田(02) | -12pt |
+| 平和島(04) | -12pt |
+| 江戸川(03) | -9pt |
+| 鳴門(14) | -8pt |
 
 ---
 
@@ -224,10 +393,1520 @@ P(i-j-k) = P(i=1着) × P(j=2着|i=1着) × P(k=3着|i=1着,j=2着)
 | ドキュメント | 内容 |
 |-------------|------|
 | [BET_CONDITIONS.md](../presets/BET_CONDITIONS.md) | 購入条件・プリセット一覧 |
+| [EXHIBITION_TIME_USAGE.md](EXHIBITION_TIME_USAGE.md) | 展示タイム活用マップ |
 | [YEARLY_PERFORMANCE.md](../performance/YEARLY_PERFORMANCE.md) | 年度別成績 |
 | [REJECTED_IDEAS.md](../improvement_attempts/REJECTED_IDEAS.md) | 不採用案一覧 |
-| [TEST_RESULTS.md](../performance/TEST_RESULTS.md) | テスト結果・構成 |
 
 ---
 
-*最終更新: 2025-12-25*
+## スコア計算詳細仕様
+
+### scoring_weights.json（基本重み一覧）
+
+**ファイル**: `config/scoring_weights.json`
+
+| 要素 | 重み | 説明 |
+|:-----|:---:|:-----|
+| course_weight | 55 | コース×ランク交互作用 |
+| racer_weight | 25 | 選手実績（勝率のみ、ランクはcourse_weightに含む） |
+| motor_weight | 10 | モーター性能 |
+| kimarite_weight | 5 | 決まり手適性 |
+| grade_weight | 5 | グレード適性 |
+| **合計** | **100** | |
+
+### config/settings.py SCORING_WEIGHTS（旧方式・レガシー参照）
+
+settings.py にも `SCORING_WEIGHTS` が定義されているが、これはレガシー設定:
+
+| 要素 | 重み |
+|:-----|:---:|
+| course | 20 |
+| racer | 31 |
+| motor | 14 |
+| rank | 10 |
+| exhibition_st | 15 |
+| exhibition_time | 10 |
+
+### config/presets/scoring_weights.yaml（ExtendedScorer重み）
+
+**ファイル**: `config/presets/scoring_weights.yaml`
+
+#### ExtendedScorer 各要素の最大スコア
+
+| 要素 | YAML値 | settings.pyデフォルト | 説明 |
+|:-----|:------:|:-------------------:|:-----|
+| class_score | 10 | 10 | 級別スコア（A1=10, A2=7, B1=4, B2=1） |
+| fl_penalty_max | -10 | -10 | F/Lペナルティ最大 |
+| session | 5 | 5 | 節間成績スコア |
+| prev_race | 5 | 5 | 前走レベルスコア |
+| course_entry | 5 | 5 | 進入傾向スコア |
+| matchup | 5 | 5 | 選手間相性スコア |
+| motor | 5 | 5 | モーター特性スコア |
+| start_timing | 10 | 10 | 平均STスコア（8→10に最適化済み） |
+| exhibition | 8 | 10 | 展示タイムスコア（10→8に最適化済み） |
+| tilt | 3 | 2 | チルト角度スコア |
+| chikusen_time | *(YAMLになし)* | 4 | 直線タイムスコア（settings.pyで追加） |
+| recent_form | 8 | 8 | 直近成績スコア |
+| venue_affinity | 3 | 8 | 会場別勝率スコア（YAMLで3に修正済み） |
+| place_rate | *(YAMLになし)* | 5 | 連対率スコア（settings.pyで追加） |
+
+**合計最大スコア**: EXTENDED_SCORE_MAX = 76（YAMLの67 + chikusen_time 4 + place_rate 5）
+**合計最小スコア**: EXTENDED_SCORE_MIN = -10（fl_penalty分）
+**最終的な重み**: total_weight = 20.0（正規化後の配分）
+
+#### 動的重み調整（会場・グレード別）
+
+基本重み（合計100）:
+
+| 要素 | 基本重み |
+|:-----|:-------:|
+| course_weight | 35 |
+| racer_weight | 35 |
+| motor_weight | 20 |
+| kimarite_weight | 5 |
+| grade_weight | 5 |
+
+**モーター重視会場**（唐津23, 福岡22, 徳山18, 芦屋21）:
+- motor_weight: +8, course_weight: -5, kimarite_weight: +2
+
+**イン強会場**: course_weight: +3, motor_weight: -2, racer_weight: -1
+
+**イン弱会場**: course_weight: -5, motor_weight: +4, racer_weight: +2
+
+**SG/G1**: grade_weight: +3, racer_weight: +2, kimarite_weight: -3, motor_weight: -2
+
+**G2/G3**: grade_weight: +2, kimarite_weight: -2
+
+#### コース×ランク勝率テーブル（全国平均）
+
+| ランク＼コース | 1コース | 2コース | 3コース | 4コース | 5コース | 6コース |
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| A1 | 71.5% | 19.5% | 18.2% | 13.8% | 10.0% | 6.6% |
+| A2 | 61.1% | 16.7% | 16.2% | 11.9% | 7.3% | 3.4% |
+| B1 | 42.4% | 9.6% | 9.1% | 7.6% | 4.4% | 1.7% |
+| B2 | 30.3% | 8.1% | 6.6% | 3.9% | 2.0% | 0.6% |
+
+#### BeforePatterns 倍率設定（scoring_weights.yaml）
+
+**1着予測パターン:**
+
+| パターンID | 条件 | 倍率 |
+|:-----------|:-----|:----:|
+| pre1_st1 | PRE1位 & ST1位 | 1.411 |
+| pre1_ex1 | PRE1位 & 展示1位 | 1.321 |
+| pre1_st1_ex1 | PRE1位 & ST1位 & 展示1位 | 1.289 |
+| pre1_2_ex_st_1_2 | PRE1-2位 & 展示1-2位 & ST1-2位 | 1.212 |
+| pre1_st1_2 | PRE1位 & ST1-2位 | 1.191 |
+| pre1_ex1_2 | PRE1位 & 展示1-2位 | 1.165 |
+| st_rank_1 | ST1位 | 1.147 |
+| ex_rank_1 | 展示1位 | 1.103 |
+
+**2着予測パターン:**
+
+| パターンID | 条件 | 倍率 |
+|:-----------|:-----|:----:|
+| pre2_st1_2 | PRE2位 & ST1-2位 | 1.176 |
+| pre2_3_st_ex_1_2 | PRE2-3位 & ST1-2位 & 展示1-2位 | 1.134 |
+| pre2_ex1_2 | PRE2位 & 展示1-2位 | 1.098 |
+
+**3着予測パターン:**
+
+| パターンID | 条件 | 倍率 |
+|:-----------|:-----|:----:|
+| pre3_st1_3 | PRE3位 & ST1-3位 | 1.122 |
+| pre3_4_ex1_3 | PRE3-4位 & 展示1-3位 | 1.087 |
+| outer_st1_2 | アウトコース(4-6) & ST1-2位 | 1.065 |
+
+**Top3予測パターン:**
+
+| パターンID | 条件 | 倍率 |
+|:-----------|:-----|:----:|
+| ex_st_1_3 | 展示1-3位 & ST1-3位 | 1.154 |
+| pre1_4_ex1_2 | PRE1-4位 & 展示1-2位 | 1.104 |
+| ex_rank_1_2 | 展示1-2位 | 1.051 |
+
+#### 補正の最大影響範囲
+
+| 補正タイプ | 上限 |
+|:----------|:----:|
+| 展示補正 | 10.0 |
+| 法則補正 | 10.0 |
+| 天候補正 | 8.0 |
+| 潮位補正 | 5.0 |
+| 複合バフ | 15.0 |
+
+---
+
+### Layer 1: 基本スコア計算
+
+#### GradeScorer（グレード適性スコア）
+
+**ファイル**: `src/analysis/grade_scorer.py`
+**最大スコア**: 10.0点
+
+**グレード階層定義:**
+- SG=6, G1=5, G2=4, G3=3, ルーキーシリーズ=2, 一般=1
+
+**データがない場合のデフォルトスコア（max_score=10として）:**
+- SG/G1（レベル>=5）: 3.0点（30%）, 信頼度=Very Low
+- G2（レベル4）: 4.0点（40%）, 信頼度=Low
+- G3（レベル3）: 5.0点（50%）, 信頼度=Low
+- 一般/ルーキー: 6.0点（60%）, 信頼度=Medium
+
+**データがある場合の計算式（ラプラス平滑化適用）:**
+
+```
+smoothed_win_rate = (wins + 1.5) / (trials + 1.5 * 6) * 100
+smoothed_top3_rate = (top3 + 1.5) / (trials + 1.5 * 2) * 100
+
+score = win_score + top3_score + rank_score
+
+win_score  = min(smoothed_win_rate / 20 * 10 * 0.6, 6.0)     # 勝率ベース: 0〜6点（60%配分）
+top3_score = min(smoothed_top3_rate / 50 * 10 * 0.3, 3.0)     # 複勝率ベース: 0〜3点（30%配分）
+rank_score = max(0, (6 - avg_rank) / 5 * 10 * 0.1)            # 平均着順ベース: 0〜1点（10%配分）
+```
+
+**信頼度判定:**
+- total_races>=20: 勝率15%+ → High, 8%+ → Medium, それ以外 → Low
+- total_races>=10: Medium
+- それ以外: Low
+
+#### MotorAnalyzer（モータースコア）
+
+**ファイル**: `src/analysis/motor_analyzer.py`
+**スコア範囲**: 12〜20点（基礎点12点 + 最大8点加算）
+
+**計算式（ラプラス平滑化使用）:**
+
+```
+BASE_SCORE = 12.0（60%保証 - モーターの影響を縮小）
+
+1. モーター2連対率 (0〜4点):
+   smoothed_rate = (place_2_count + 2.0) / (total_races + 2.0 * 2)
+   relative_score = (smoothed_rate - 0.50) / 0.15 * 2.0 + 2.0
+   score += clamp(relative_score, 0, 4.0)
+   → 50%で2点（中央値）、65%で4点満点
+
+2. モーター直近成績 (0〜2点):
+   smoothed_recent = (place_3_count + 1.5) / (recent_count + 1.5 * 2)
+   relative_score = (smoothed_recent - 0.50) / 0.20 * 1.0 + 1.0
+   score += clamp(relative_score, 0, 2.0)
+   → データなしの場合: +1.0（平均値）
+
+3. ボート2連対率 (0〜2点):
+   smoothed_boat = (boat_place_2 + 1.5) / (boat_races + 1.5 * 2)
+   relative_score = (smoothed_boat - 0.50) / 0.15 * 1.0 + 1.0
+   score += clamp(relative_score, 0, 2.0)
+
+最終score = min(score, 20.0)
+```
+
+#### RacerAnalyzer（選手成績スコア）
+
+**ファイル**: `src/analysis/racer_analyzer.py`
+**スコア範囲**: 8〜40点（基礎点8点 + 最大32点加算）
+
+**注意**: 選手ランク（A1/A2/B1/B2）はコース×ランクスコアで反映済み。ここでは純粋に実績のみ評価。
+
+**計算式（全てラプラス平滑化使用）:**
+
+```
+BASE_SCORE = 8.0
+
+1. 全国勝率 (0〜8点):
+   smoothed = (win_count + 2.0) / (total_races + 2.0 * 6)
+   score += min(smoothed * 26.7, 8.0)
+   → 勝率30%で8点満点、全国平均16.7%で約4.5点
+
+2. コース別勝率 (0〜8点):
+   smoothed = (course_wins + 1.5) / (course_races + 1.5 * 6)
+   score += min(smoothed * 32, 8.0)
+   → 25%で8点満点
+
+3. 当地成績 (0〜6点):
+   smoothed = (venue_wins + 1.0) / (venue_races + 1.0 * 6)
+   score += min(smoothed * 24, 6.0)
+   → 25%で6点満点
+
+4. 直近調子 (0〜8点):
+   直近5走:
+     recent_5_win_rate → min(rate * 20, 4.0)   # 勝率20%で4点
+     recent_5_place3_rate → min(rate * 5, 3.0)  # 3着内率60%で3点
+     form_trend == 'up' → +1.0, 'down' → -1.0   # トレンドボーナス
+   データなし: +1.0（ラプラス平滑化のデフォルト）
+
+5. ST評価 (0〜2点):
+   avg_st <= 0.15 → +2.0
+   avg_st <= 0.18 → +1.0
+   avg_st <= 0.20 → +0.5
+   avg_st > 0.20  → 0
+```
+
+---
+
+### Layer 2: 拡張スコア（ExtendedScorer）
+
+**ファイル**: `src/analysis/extended_scorer.py`
+
+#### 級別スコア（class_score）
+
+max_score=10.0（YAML設定値）
+
+| 級別 | 基準スコア | 正規化後（max_score=10） |
+|:----:|:---------:|:----------------------:|
+| A1 | 10.0 | 10.0 |
+| A2 | 7.0 | 7.0 |
+| B1 | 4.0 | 4.0 |
+| B2 | 1.0 | 1.0 |
+| 不明 | - | 4.0（40%） |
+
+#### F/Lペナルティ（fl_penalty）
+
+| 種別 | 1回あたりペナルティ |
+|:----:|:-----------------:|
+| フライング (F) | -3.0点 |
+| 出遅れ (L) | -1.5点 |
+
+**合計ペナルティ下限**: -10.0点（max_penalty）
+
+**リスクレベル判定:**
+- F>=2 → critical（即帰郷の危険）
+- F==1 → high（慎重スタート必須）
+- L>=2 → medium
+- それ以外 → low
+
+#### 調子係数（condition_factor）※OFF
+
+**注意**: feature_flags.pyで `condition_factor=False`（-9.5pt悪化のため不採用）
+
+計算式（参考）: `factor = 1.0 + (3.5 - avg_rank) * 0.1`、範囲: 0.8〜1.2
+
+#### 平均STスコア（start_timing）
+
+max_score=10.0（YAML設定: start_timing=10）
+
+**ST範囲別スコア係数:**
+
+| ST範囲（秒） | 係数 | 備考 |
+|:-------------|:---:|:-----|
+| 0.00 - 0.10 | 0.7 | Fリスク（的中率62.8%だが維持） |
+| 0.10 - 0.15 | 1.0 | 最適（最高勝率） |
+| 0.15 - 0.18 | 0.9 | 良好（旧0.8→0.9に緩和） |
+| 0.18 - 0.20 | 0.8 | やや遅い（旧0.6→0.8に緩和） |
+| 0.20 - 1.00 | 0.7 | 遅い（旧0.4→0.7に緩和） |
+
+**1コース補正**: 1コースはSTが特に重要 → score_factor = min(1.0, score_factor * 1.2)
+**最終スコア**: max_score * score_factor
+
+#### 展示タイムスコア（exhibition）
+
+max_score=8.0（YAML設定: exhibition=8）
+
+レース内6艇の展示タイムを昇順ソートし、相対順位でスコアを付与:
+
+```
+score = max_score * (total_boats - target_rank) / (total_boats - 1)
+```
+
+- 1位: 8.0点, 2位: 6.4点, 3位: 4.8点, 4位: 3.2点, 5位: 1.6点, 6位: 0点
+- データなし: 4.0点（50%）
+
+**展示タイム信頼性補正（TJ-9）**:
+会場別の展示タイム信頼性スコア（1-100）に基づく重み付け:
+```
+multiplier = 0.30 + 0.70 * (score / 100.0)
+```
+- 丸亀/徳山（score=91）→ 0.94
+- 平均的会場（score=50）→ 0.65
+- 江戸川/児島（score=1）→ 0.307
+
+#### チルト角度スコア（tilt）
+
+max_score=3.0（YAML設定: tilt=3）
+
+**設定タイプ判定:**
+- tilt <= -0.5 → 'dash'（出足重視）
+- tilt >= 0.5 → 'stretch'（伸び重視）
+- その他 → 'balanced'（バランス）
+
+**コース×設定タイプ別スコア:**
+
+| 設定タイプ | 1コース | 2-3コース | 4-6コース |
+|:----------|:------:|:--------:|:--------:|
+| stretch（伸び） | 80% | 70% | 40% |
+| balanced | 60% | 70% | 60% |
+| dash（出足） | 40% | 50% | 80% |
+
+#### 直線タイムスコア（chikusen_time）
+
+max_score=4.0（settings.pyで追加: chikusen_time=4）
+
+**注意**: 現在scoring_weights.yamlにはchikusen_time未定義。settings.pyのデフォルト値=4を使用。
+
+**順位ベーススコアリング:**
+
+| 順位 | スコア | レベル |
+|:---:|:-----:|:------:|
+| 1位 | 4.0 | excellent |
+| 2-3位 | 2.4（60%） | good |
+| 4-5位 | 1.2（30%） | average |
+| 6位 | 0.0 | poor |
+| データなし | 2.0（50%） | unknown |
+
+#### 直近成績スコア（recent_form）
+
+max_score=8.0（YAML設定: recent_form=8）
+
+racer_featuresテーブルから直近3/5/10走の成績を取得。
+
+```
+recent_win_rate = win_rate_5（優先）or win_rate_3 or win_rate_10 or 0
+recent_avg_rank = avg_rank_5（優先）or avg_rank_3 or avg_rank_10 or 3.5
+
+win_rate_score = min(recent_win_rate / 30.0, 1.0) * max_score * 0.6  # 60%配分
+rank_score = max(0, (4.5 - recent_avg_rank) / 3.5) * max_score * 0.4  # 40%配分
+score = win_rate_score + rank_score
+
+トレンド補正:
+  win_rate_3 > win_rate_10 + 10 → improving → score *= 1.1
+  win_rate_3 < win_rate_10 - 10 → declining → score *= 0.9
+```
+
+#### 会場相性スコア（venue_affinity）
+
+max_score=6.0（calculate_venue_affinity_scoreのデフォルト引数）
+**注意**: YAML設定では venue_affinity=3 だが、関数のデフォルト引数は6.0。呼び出し元でmax_score=3が渡される。
+
+```
+affinity_diff = local_win_rate - national_win_rate
+```
+
+| 相性差 | 補正 | レベル |
+|:------|:---:|:------:|
+| +5.0pt以上 | +3.0点 | excellent（得意水面） |
+| +2.0〜+5.0pt | +1.0点 | good |
+| -2.0〜+2.0pt | ±0点（中立点） | average |
+| -5.0〜-2.0pt | -1.0点 | poor |
+| -5.0pt以下 | -3.0点 | very_poor（苦手水面） |
+
+スコア範囲: 0 〜 max_score * 1.5
+
+#### 連対率スコア（place_rate）
+
+max_score=5.0（settings.pyで追加: place_rate=5）
+
+```
+avg_second_rate = 0.333  # 全国平均2連対率
+avg_third_rate = 0.500   # 全国平均3連対率
+
+second_score = (second_rate / avg_second_rate) * (max_score * 0.6)  # 60%配分
+third_score = (third_rate / avg_third_rate) * (max_score * 0.4)    # 40%配分
+score = clamp(second_score + third_score, 0, max_score)
+```
+
+データ不足（10走未満）: max_score * 0.5 = 2.5点
+
+#### 節間成績スコア（session）
+
+max_score=5.0（YAML設定: session=5）
+
+同一会場での直近7日間（最大12走）の成績を評価:
+
+```
+score = max(0, (6 - avg_rank) / 5 * max_score)
+```
+
+トレンド判定（4走以上で判定）:
+- 前半平均 > 後半平均 + 0.5 → improving
+- 前半平均 < 後半平均 - 0.5 → declining
+- それ以外 → stable
+
+データなし: max_score * 0.5 = 2.5点
+
+#### 前走レベル評価（prev_race）
+
+max_score=5.0（YAML設定: prev_race=5）
+
+```
+grade_scores = {'SG': 1.0, 'G1': 0.9, 'G2': 0.8, 'G3': 0.7, '一般': 0.5, 'ルーキーシリーズ': 0.4}
+result_factor: 1着→1.0, 2着→0.8, 3着→0.6, 4着以下→0.4, F/L等→0.3
+
+score = max_score * (grade_factor * 0.4 + result_factor * 0.6)
+```
+
+データなし: max_score * 0.5 = 2.5点
+
+#### 進入傾向スコア（course_entry）
+
+max_score=5.0（YAML設定: course_entry=5）
+
+選手の過去の進入コース傾向（前付け率）を分析。DB（race_details.actual_course）から全枠番×進入コースの分布を取得し、該当枠番での最頻進入コースと前付け率を算出。
+
+データなし: max_score * 0.5 = 2.5点、予測コース=枠番
+
+#### 選手間相性スコア（matchup）
+
+max_score=5.0（YAML設定: matchup=5）
+
+```
+sorted by: (CLASS_SCORES[rank], win_rate) DESC
+relative_factor = current_win_rate / top_win_rate
+score = max_score * relative_factor
+```
+
+#### モーター転覆ペナルティ（motor_capsizing_penalty）
+
+**feature_flag**: `motor_capsizing_penalty=True`
+
+| 条件 | ペナルティ |
+|:-----|:--------:|
+| 直近30日以内に転覆 | -1.0点 |
+| 31日以降 | 0.0点（影響なし） |
+| 複数回転覆（追加/回、最大2回分） | -0.5点/回 |
+
+最大ペナルティ: -5.0点
+
+#### 逃げ率スコア（escape_rate_scoring）※OFF
+
+**feature_flag**: `escape_rate_scoring=False`（500レース検証で効果なし）
+
+1コース艇のみに適用。逃げ率の段階別スコア（参考）:
+
+| 逃げ率 | スコア | レベル |
+|:------|:-----:|:------:|
+| 70%+ | +3.0 | excellent |
+| 60-70% | +1.5 | good |
+| 50-60% | ±0.0 | average |
+| 45-50% | -1.0 | poor |
+| 45%未満 | -2.0 | low |
+
+#### 会場攻撃率スコア（venue_attack_scoring）※OFF
+
+**feature_flag**: `venue_attack_scoring=False`（840レース検証で効果なし、Z=0.00）
+
+3-4コース: まくり率で評価、2,5コース: 差し率で評価（参考）:
+
+| 条件 | スコア |
+|:-----|:-----:|
+| まくり率>=25%（3-4C） | +2.0 |
+| まくり率>=20%（3-4C） | ±0.0 |
+| まくり率<20%（3-4C） | -1.0 |
+| 差し率>=22%（2,5C） | +2.0 |
+| 差し率>=17%（2,5C） | ±0.0 |
+| 差し率<17%（2,5C） | -1.0 |
+
+---
+
+### CompoundBuffSystem ルール一覧（30ルール = 会場別16 + 展示系14）
+
+**ファイル**: `src/analysis/compound_buff_system.py`（16ルール）+ `src/analysis/exhibition_buff_rules.py`（14ルール）
+
+**バフ適用方式**: 全条件がAND一致した場合に `buff_value * min(1.0, confidence)` を加算。合計上限=15.0、下限=-15.0。
+
+#### コンテキスト構築ルール（build_race_context）
+
+| コンテキストキー | 分類基準 |
+|:---------------|:--------|
+| venue | 会場コード（そのまま） |
+| course | 進入コース（1-6） |
+| wind | 風速6m+→"強風", 3m+→"中風", 3m未満→"微風" |
+| wind_dir | classify_wind_direction()→"向かい風"/"追い風" |
+| wave | 10cm+→"高い", 5cm+→"中程度", 5cm未満→"低い" |
+| racer_rank | 級別（A1/A2/B1/B2そのまま） |
+| motor_rank | 2連対率40%+→"上位", 30%+→"中位", 30%未満→"下位" |
+| recent_form | 直近勝率25%+→"好調", 10%以下→"不調", その他→"普通" |
+| kimarite_skill | 最頻決まり手（まくり/差し/逃げ/まくり差し等） |
+| venue_exp | 当地20走+&勝率20%+→"得意", 10走+&勝率5%以下→"苦手", その他→"普通" |
+| start_timing | 平均ST<=0.12→"早い", >=0.18→"遅い", その他→"普通" |
+| exhibition_rank | 展示タイム順位（1-6、展示コンテキストビルダーから） |
+| exh_time_diff_cat | タイム差カテゴリ（small/medium/large） |
+
+#### 会場別ルール（16ルール）
+
+| # | rule_id | 会場 | 条件 | バフ値 | conf | active |
+|:--|:--------|:-----|:-----|:------:|:----:|:------:|
+| 1 | fukuoka_makuri_3 | 福岡(22) | 満潮/上げ潮 + 3C + まくり得意 | +8.0 | 0.85 | Yes |
+| 2 | fukuoka_headwind_in | 福岡(22) | 向かい風 + 1C | -5.0 | 0.80 | Yes |
+| 3 | karatsu_motor_out | 唐津(23) | 上位モーター + 4-6C | +6.0 | 0.75 | Yes |
+| 4 | karatsu_rough_sashi | 唐津(23) | 強風 + 波高い + 差し得意 | +5.0 | 0.70 | Yes |
+| 5 | tokuyama_a1_full_tide | 徳山(18) | 満潮 + 1C + A1 | +10.0 | 0.90 | Yes |
+| 6 | tokuyama_low_tide_makuri | 徳山(18) | 干潮/下げ潮 + 4C + まくり得意 | +6.0 | 0.75 | Yes |
+| 7 | omura_in_strong | 大村(24) | 1C | +8.0 | 0.95 | Yes |
+| 8 | omura_out_weak | 大村(24) | 5-6C + A1 | -5.0 | 0.85 | Yes |
+| 9 | toda_2_sashi | 戸田(02) | 2C + 差し得意 | +5.0 | 0.80 | Yes |
+| 10 | toda_in_b1 | 戸田(02) | 1C + B1/B2 | -6.0 | 0.85 | Yes |
+| 11 | edogawa_rough | 江戸川(03) | 強風 + 波高い + 4-6C | +7.0 | 0.70 | Yes |
+| 12 | ashiya_motor_3 | 芦屋(21) | 上位モーター + 3C + まくり差し得意 | +6.0 | 0.75 | Yes |
+| 13 | hot_streak_home | 汎用 | 好調 + 得意場 + 1C | +6.0 | 0.80 | Yes |
+| 14 | cold_streak_away | 汎用 | 不調 + 苦手場 + 5-6C | -5.0 | 0.75 | Yes |
+| 15 | fast_start_a_in | 汎用 | 早いST + 1C + A1/A2 | +5.0 | 0.85 | Yes |
+| 16 | fast_start_4_makuri | 汎用 | 早いST + 4C + まくり得意 | +7.0 | 0.80 | Yes |
+
+#### 展示系ルール（14ルール）
+
+**ファイル**: `src/analysis/exhibition_buff_rules.py`
+
+| # | rule_id | 条件 | バフ値 | 的中率 | サンプル | active |
+|:--|:--------|:-----|:------:|:------:|:-------:|:------:|
+| 1 | exhibition_1st_course1 | 展示1位 + 1C | +20.0 | 64.45% | 4,785 | **Yes** |
+| 2 | exhibition_1st_course2_3 | 展示1位 + 2-3C | +4.0 | 35.0% | 2,000 | **Yes** |
+| 3 | exhibition_1st_course4_6 | 展示1位 + 4-6C | +1.5 | 15.0% | 800 | **Yes** |
+| 4 | exhibition_low_course_outer | 展示4-6位 + 4-6C | -4.0 | 0.92% | 14,946 | **Yes** |
+| 5 | exhibition_1st_a1 | 展示1位 + A1級 | +12.0 | 42.34% | 4,587 | **Yes** |
+| 6 | exhibition_1st_a2 | 展示1位 + A2級 | +3.0 | 35.7% | 2,500 | **Yes** |
+| 7 | exhibition_1st_b1 | 展示1位 + B1級 | +1.5 | 21.3% | 1,500 | **Yes** |
+| 8 | exhibition_1st_b2 | 展示1位 + B2級 | +0.5 | 7.5% | 500 | **Yes** |
+| 9 | exhibition_top2_st_good_inner | 展示TOP2 + ST良好 + 1-2C | +6.0 | 36.6% | 5,000 | **Yes** |
+| 10 | exhibition_top2_st_normal_inner | 展示TOP2 + 1-2C | +3.0 | 22.3% | 3,000 | **Yes** |
+| 11 | exhibition_low_st_normal_outer | 展示3-6位 + 4-6C | -5.0 | 2.6% | 8,000 | **Yes** |
+| 12 | exhibition_gap_large | 展示1位 + タイム差>=0.07s | +5.0 | 33.4% | 44,847 | **No** |
+| 13 | exhibition_gap_medium | 展示1位 + タイム差0.04-0.07s | +2.0 | 29.5% | 96,793 | **No** |
+| 14 | exhibition_gap_small | 展示1位 + タイム差<0.04s | -2.0 | 24.6% | 177,884 | **No** |
+
+**注意**: ルール12-14（exhibition_gap_*）は2026-03-25に無効化（ベースライン比較のため `is_active=False`）。
+
+---
+
+### BeforeInfoScorer 詳細（115点満点）
+
+**ファイル**: `src/analysis/beforeinfo_scorer.py`
+
+**統合式**: `FINAL_SCORE = PRE_SCORE * 0.6 + BEFORE_SCORE * 0.4`
+
+#### 1. 展示タイム（25点満点）
+
+レース内6艇の展示タイムを昇順ソート（速い順）し、順位別スコアを付与:
+
+| 順位 | スコア |
+|:---:|:-----:|
+| 1位 | 25.0 |
+| 2位 | 18.0 |
+| 3位 | 12.0 |
+| 4位 | 6.0 |
+| 5位 | 3.0 |
+| 6位 | 0.0 |
+
+データなし: 0.0点
+
+#### 2. ST（スタート）（25点満点）
+
+**ST範囲別基礎スコア:**
+
+| ST（秒） | 基礎スコア |
+|:---------|:---------:|
+| < 0（フライング） | -25.0 |
+| <= 0.10 | +30.0 |
+| 0.11 - 0.14 | +20.0 |
+| 0.15 - 0.18 | +10.0 |
+| 0.19 - 0.25 | 0.0 |
+| 0.26+ | -10.0 |
+
+**ST×コース交互作用**（外コースほどSTが重要）:
+```
+course_importance = 0.8 + (6 - course) * 0.1
+score = 基礎スコア * course_importance
+```
+- 1コース: 0.8 + 0.5 = 1.3
+- 2コース: 0.8 + 0.4 = 1.2
+- 3コース: 0.8 + 0.3 = 1.1
+- 4コース: 0.8 + 0.2 = 1.0
+- 5コース: 0.8 + 0.1 = 0.9
+- 6コース: 0.8 + 0.0 = 0.8
+
+**正規化**: min(score * (25.0 / 30.0), 25.0)
+
+#### 3. 進入隊形（20点満点）
+
+枠なり（pit_number == actual_course）からの変化で評価:
+
+| 条件 | 基礎スコア |
+|:-----|:---------:|
+| 1コース奪取（元は2-6号艇が1C進入） | +30.0 |
+| 2コース前づけ（3号艇以降が2C進入） | +15.0 |
+| イン追い出し（1-2号艇が4C以降に） | -20.0 |
+| 枠なり（変化なし） | 0.0 |
+| 内に入った（その他） | +5.0 |
+| 外に出た（その他） | -5.0 |
+
+**正規化**: min(max(score * (20.0 / 30.0), -20.0), 20.0)
+
+#### 4. 前走成績（15点満点）
+
+| 条件 | スコア |
+|:-----|:-----:|
+| 前走1着 | +15.0 |
+| 前走2着 | +10.0 |
+| 前走3着 | +5.0 |
+| 前走ST >= 0.20秒 | -5.0 |
+
+範囲: -5.0 〜 15.0
+
+#### 5. チルト・風（10点満点）
+
+**コース依存スコア:**
+
+| チルト | 外コース(4-6) | 内コース(1-3) |
+|:------|:-----------:|:------------:|
+| >= 0.5（伸び型） | +5.0 | -3.0 |
+| 0.0 - 0.5 | ±0.0 | +2.0 |
+| < 0（出足型） | -3.0 | +4.0 |
+
+**風向シナジー（風速3m以上で発動）:**
+- 追い風 + 伸び型(tilt>=0.5) + 外コース(4-6) → +3.0
+- 追い風 + 1コース → +1.5
+- 向い風 + 外コース(4-6) → +2.0
+- 向い風 + 出足型(tilt<0) + 外コース(4-6) → 更に+1.0
+
+範囲: -10.0 〜 10.0
+
+#### 6. 部品交換・調整重量（5点満点）
+
+**ペナルティ方式:**
+
+| 条件 | ペナルティ |
+|:-----|:--------:|
+| ピストン交換(P) | -10.0 |
+| リング交換(R) | -5.0 |
+| 調整重量2kg以上 + 外コース(4-6) | -3.0 |
+| 調整重量2kg以上 + 内コース(1-3) | -2.0 |
+| 調整重量1-2kg | -1.0 |
+
+範囲: -5.0 〜 5.0
+
+#### 7. 気象条件（5点満点）
+
+3つのサブシステムの合算:
+
+**7a. 会場×風向×風速（風速3m以上で発動）:**
+`calculate_wind_venue_adjustment()` → 全コース対応78パターン
+
+**7b. 波高補正（10cm以上で発動）:**
+`calculate_wave_height_adjustment()` → 1-2コースのみ
+
+**7c. 気温・水温の基本評価（補助的）:**
+- 気温-水温差 >= 5度: 1-2C +1.5, 3-6C -0.5
+- 水温 < 15度: 1-2C -1.5, 4-6C +1.0
+- 気温 >= 30度: 1-2C +1.0, 3-6C -0.5
+- 雨天: 1-2C +1.0, 3-6C -0.5
+
+**正規化**: score * 0.5、範囲: -15.0 〜 10.0
+
+#### 8. モーター成績（5点満点）
+
+`calculate_motor_performance_adjustment()` → entries.motor_second_rate から取得。コース別の2連率影響度に基づくスコア。
+
+#### 9. 選手×コース別得意・不得意（5点満点）
+
+`calculate_racer_course_skill_adjustment()` → 過去3年808選手1,187パターンのDB化データ。差分±10pt以上のケースのみ補正。
+
+#### 信頼度計算
+
+```python
+confidence = sigmoid((total_score - 30) / 15) * data_completeness
+```
+
+data_completeness = 8項目中の有効データ数 / 8
+
+---
+
+### KimariteScorer 詳細
+
+**ファイル**: `src/analysis/kimarite_scorer.py`
+**最大スコア**: 15.0点
+
+#### 決まり手の定義
+
+| ID | 名称 |
+|:--:|:----:|
+| 1 | 逃げ |
+| 2 | 差し |
+| 3 | まくり |
+| 4 | まくり差し |
+| 5 | 抜き |
+| 6 | 恵まれ |
+
+#### 基本スコア計算（calculate_kimarite_affinity_score）
+
+**入力**: 選手番号、会場コード、コース番号、過去180日間
+**出力**: 0〜15点
+
+1. 選手のコース別決まり手傾向を取得（results.kimarite、rank=1のみ集計）
+2. 会場のコース別決まり手傾向を取得
+3. データなし → 中間スコア（7.5点）
+
+**スコア計算:**
+
+```
+Case 1: 最頻決まり手が一致
+  combined_rate = (racer_primary_rate + venue_primary_rate) / 2
+  score = max_score * (combined_rate / 100)
+  例: 選手の逃げ率65% + 会場の逃げ率58% → combined=61.5% → 15 * 0.615 = 9.22点
+
+Case 2: 不一致だが選手が会場の最頻決まり手を使える
+  racer_rate = 選手がその決まり手を使う率
+  score = max_score * (racer_rate / 100) * 0.7
+  例: 会場はまくりだが選手のまくり率20% → 15 * 0.20 * 0.7 = 2.1点
+
+Case 3: 全く合わない
+  score = max_score * 0.3 = 4.5点
+```
+
+**信頼度判定:**
+- racer_total>=10 かつ venue_total>=30:
+  - 一致 & racer_rate>=50% & venue_rate>=40% → High
+  - 一致 → Medium
+  - 不一致 → Low
+- それ以外: Low
+
+#### 環境補正（apply_environment_adjustment）
+
+基本スコアに乗算係数（adjustment）を適用。初期値=1.0、範囲: 0.7〜1.3。
+
+**1. 強風補正（風速6m以上）:**
+
+| 条件 | 補正係数 |
+|:-----|:-------:|
+| 逃げ得意 + 1コース | *0.8（20%減） |
+| まくり/まくり差し得意 + 3コース以降 | *1.2（20%増） |
+
+**2. 潮位補正:**
+
+| 条件 | 補正係数 |
+|:-----|:-------:|
+| 満潮/上げ潮 + 逃げ得意 + 1コース | *1.1 |
+| 干潮/下げ潮 + まくり/まくり差し得意 + 3コース以降 | *1.15 |
+
+**3. 風向補正（classify_wind_direction使用）:**
+
+| 条件 | 補正係数 |
+|:-----|:-------:|
+| 追い風 + 逃げ得意 + 1コース | *1.1 |
+| 向かい風 + まくり/まくり差し得意 + 3コース以降 | *1.1 |
+
+**4. 海水会場の波補正（波高10cm以上）:**
+
+海水会場: 宮島(17), 徳山(18), 下関(19), 芦屋(21), 福岡(22), 唐津(23), 大村(24)
+
+| 条件 | 補正係数 |
+|:-----|:-------:|
+| 逃げ得意 + 1コース | *0.9（10%減） |
+| 差し/まくり差し得意 | *1.1（10%増） |
+
+**最終スコア**: base_score * adjustment（adjustment は0.7〜1.3にクランプ）
+
+---
+
+### 環境要因減点ルール（environmental_penalty_rules.yaml）
+
+**ファイル**: `config/environmental_penalty_rules.yaml`
+
+基準: 2025年BEFORE予測 信頼度B データ（n=5,537、全体的中率66.81%）
+計算式: 5%的中率低下 = 1pt減点
+
+#### 主要ルール（enabled=true のみ）
+
+| カテゴリ | 条件 | 減点 | 的中率 | サンプル |
+|:--------|:-----|:---:|:-----:|:------:|
+| 会場×時間帯 | 戸田×午前 | 7pt | 29.27% | 41 |
+| 会場×時間帯 | 戸田×夕方 | 7pt | 29.41% | 17 |
+| 会場×時間帯 | 江戸川×夕方 | 7pt | 30.00% | 20 |
+| 会場 | 戸田 | 4pt | 42.03% | 138 |
+| 天候 | 雨天 | 6pt | 36.36% | 11 |
+| 波高 | 大波(10cm+) | 4pt | 42.86% | 35 |
+| 会場×風向×風速 | 江戸川×東×暴風 | 5pt | 40.0% | 15 |
+| 会場×風向×風速 | 鳴門×南南西×強風 | 6pt | 37.5% | 8 |
+| 会場 | 江戸川 | 2pt | 55.12% | 127 |
+| 会場 | 平和島 | 3pt | 51.69% | 89 |
+| 波高 | 中波(5-10cm) | 2pt | 56.41% | 156 |
+| 風向×風速 | 東×暴風 | 4pt | 44.44% | 18 |
+| 風向×風速 | 北東×強風 | 3pt | 51.11% | 45 |
+| 風向×風速 | 南×暴風 | 5pt | 41.67% | 12 |
+| 会場×風向×風速 | 平和島×北×強風 | 4pt | 40.0% | 10 |
+| 会場×風向×風速 | 戸田×南東×微風 | 5pt | 37.5% | 8 |
+| 時間帯 | 早朝(10時前) | 2pt | 56.41% | 78 |
+| 時間帯 | 夕方(16時以降) | 3pt | 53.68% | 95 |
+| 会場×時間×風向 | 江戸川×午後×東風 | 4pt | 41.67% | 12 |
+| 会場×時間×風向 | 戸田×午前×北風 | 6pt | 33.33% | 15 |
+
+**無効ルール**: 常滑×北北西×微風（n=5, 的中率0%, penalty=13）→ サンプル不足のため無効化
+
+**ルール適用方式**: cumulative（複数ルールがマッチした場合は全て加算）
+
+#### カテゴリ化閾値
+
+**時間帯**: 早朝(00:00-10:00), 午前(10:00-13:00), 午後(13:00-16:00), 夕方(16:00-23:59)
+**風速**: 無風(0-2m), 微風(2-4m), 強風(4-6m), 暴風(6m+)
+**波高**: 穏やか(0-2cm), 小波(2-5cm), 中波(5-10cm), 大波(10cm+)
+
+---
+
+## 各ロジックの根拠データ
+
+**最終更新**: 2026-04-01
+**目的**: 「なぜそのロジック・数値になったか」を資料化し、将来の変更時に「根拠なき変更」を防ぐ。
+
+### 根拠分類の凡例
+
+| 分類 | 意味 |
+|:-----|:-----|
+| **根拠あり（DBデータ）** | 実際のDBクエリ結果で裏付け |
+| **根拠あり（検証記録）** | バックテスト結果・件数・年度で検証 |
+| **根拠あり（設計意図）** | コメント・コミットメッセージで意図確認可能 |
+| **根拠不明（初期設定値）** | 変更経緯不明・検証記録なし |
+| **要検証（再生成必要）** | 予測再生成後にバックテストで再確認が必要 |
+
+---
+
+### A. scoring_weights の根拠
+
+#### 現在の値（config/scoring_weights.json）
+
+| 要素 | 現在値 | 初期値 | 根拠 | 分類 |
+|:-----|:-----:|:-----:|:-----|:----:|
+| course_weight | 55 | 35 | git: 044c850（2025-11-29）で変更。コメント「Course x Rank interaction」 | 根拠あり（設計意図） |
+| racer_weight | 25 | 35 | 同上。選手ランクがcourse_weightに含まれるため削減 | 根拠あり（設計意図） |
+| motor_weight | 10 | 20 | 同上。モーター影響を縮小 | 根拠あり（設計意図） |
+| kimarite_weight | 5 | 5 | 初期値から変更なし | 根拠不明（初期設定値） |
+| grade_weight | 5 | 5 | 初期値から変更なし | 根拠不明（初期設定値） |
+
+**変更経緯**:
+- **Initial commit**（9f14e83, 2025-11-15）: course=35, racer=35, motor=20, kimarite=5, grade=5
+- **044c850**（2025-11-29）: course=55, racer=25, motor=10 に変更。「コース×ランク交互作用テーブル」を基本スコアの中核に据える設計変更に伴い、course_weightを大幅増加。選手ランクの影響はcourse_weightのコース×ランク勝率テーブル側で反映されるため、racer_weightからは除外。
+- **9258c8c**: 「P7/P8スコアリング重み変更を取り消し（f0d6d10に戻す）」 → 一度別の重みを試みたが効果なしでリバート。
+
+**DB裏付け（2026-03-30実行）**: コース×ランク交互作用が予測の支配的因子であることは、以下のDB実データで確認できる:
+
+| コース | 全体1着率 | コース情報のみの予測力 |
+|:---:|:---:|:---|
+| C1 | 55.9% (n=375,995) | 半分以上のレースで1着 → 最強の予測因子 |
+| C2 | 14.3% (n=376,236) | |
+| C3 | 12.4% (n=375,632) | |
+| C4 | 10.1% (n=375,725) | |
+| C5 | 5.7% (n=375,373) | |
+| C6 | 3.1% (n=375,423) | |
+
+course_weight=55はC1勝率55.9%という数字と偶然に近い値だが、**この一致は意図されたものではなく設計判断時のバックテスト記録も残っていない**。
+
+**DB実測による適正値推定（2026-03-30実行）**:
+
+予測モデルが1位に選んだコース別の実勝率（before予測、rank_prediction=1）:
+
+| 予測1位コース | n | 実勝率 | 参考: コース単体勝率 | 予測の上乗せ効果 |
+|:---:|:---:|:---:|:---:|:---:|
+| C1 | 237,159 | 61.0% | 55.9% | +5.1pt |
+| C4 | 12,489 | 28.9% | 10.1% | +18.8pt |
+| C3 | 29,928 | 26.8% | 12.4% | +14.4pt |
+| C2 | 47,938 | 26.1% | 14.2% | +11.9pt |
+| C5 | 4,901 | 21.9% | 5.7% | +16.2pt |
+| C6 | 2,722 | 17.6% | 3.1% | +14.5pt |
+
+信頼度Aレースの実1着コース分布:
+
+| コース | n | 占有率 |
+|:---:|:---:|:---:|
+| C1 | 58,725 | 68.7% |
+| C2 | 7,787 | 9.1% |
+| C3 | 7,509 | 8.8% |
+| C4 | 6,153 | 7.2% |
+| C5 | 3,459 | 4.0% |
+| C6 | 1,835 | 2.1% |
+
+**適正値評価**: C1の「コース単体勝率55.9% → 予測モデル勝率61.0%」は上乗せ+5.1ptに留まる一方、C4-C6では+14〜19ptの上乗せ効果がある。これは選手力・モーターなどの非コース因子がアウトコースでより重要であることを示す。course_weight=55は「C1が全予測の70%を占める」現実と整合しており、**現在の55は実運用上妥当な値**。ただし45-60の範囲で微調整の余地はある（バックテスト比較が必要）。
+
+**注意**: 重み変更は全予測に波及するため、変更時は必ず6年間バックテストで検証すること。過去にP7/P8で変更を試み不採用となった経緯あり。
+
+---
+
+### B. BeforeInfoScorer 係数の根拠
+
+**ファイル**: `src/analysis/beforeinfo_scorer.py`, `src/analysis/score_integrator.py`
+
+#### 統合式: PRE × 0.6 + BEFORE × 0.4
+
+| 項目 | 値 | 根拠 | 分類 |
+|:-----|:--:|:-----|:----:|
+| PRE_WEIGHT | 0.6 | git: 666789f（2025-12-02）初期実装。「直前情報の予想モデルへの統合ガイド_20251202.md」に基づく | 根拠あり（設計意図） |
+| BEFORE_WEIGHT | 0.4 | 同上 | 根拠あり（設計意図） |
+| 荒天時（風速6m+） | 0.5 / 0.5 | score_integrator.py L76-78。荒天時は直前情報をより重視（before_factor=1.2） | 根拠あり（設計意図） |
+
+**経緯の詳細**:
+1. **初期設計書（prediction_system_spec.md）では0.85/0.15だった** → 実装時に0.6/0.4に変更された。設計書は古い値のまま残っている
+2. **代替方式の不採用記録（REJECTED_IDEAS.md L1270-1276）**: `dynamic_integration`（逆相関）、`gated_before_integration`（効果なし）、`before_safe_integration`（効果なし）、`beforeinfo_flag_adjustment`（-3.65%悪化）、`hierarchical_before_prediction`（-0.5%悪化）の5方式が全て不採用
+3. **結論**: 0.6/0.4が最良であることは消去法で確認されているが、**この比率自体を裏付ける最適化探索（0.5/0.5、0.7/0.3等との比較）の記録はない**
+
+**DB実測による適正値推定（2026-03-30実行）**:
+
+before vs advance の予測精度比較（rank_prediction=1の実勝率）:
+
+| prediction_type | 信頼度 | n | 実勝率 |
+|:---:|:---:|:---:|:---:|
+| advance | A | 49,449 | 71.5% |
+| before | A | 84,556 | 69.4% |
+| advance | B | 57,306 | 61.6% |
+| before | B | 67,806 | 59.6% |
+| advance | C | 119,377 | 48.0% |
+| before | C | 144,212 | 42.9% |
+
+before/advance同一レースでの1位予測一致率: **83.6%**（n=274,898ペア）
+
+exhibition_data有無での精度差:
+
+| 条件 | n_races | 予測1位の実勝率 |
+|:---:|:---:|:---:|
+| before情報なし | 331,415 | 50.8% |
+| before情報あり | 3,722 | 57.4% |
+
+**適正値評価**:
+- advanceの方がbeforeより全信頼度で+2〜5pt高い勝率を示す（意外な結果）。これはadvance予測のA率が厳選されている（n=49k vs 84k）ためと推測される
+- before情報がある場合は+6.6ptの上乗せ効果があるが、exhibition_data有りのサンプルが3,722件と全体の1.1%に留まる
+- 83.6%の1位予測一致率は「before情報で16.4%のレースで予測が変わる」ことを意味し、0.4のBEFORE_WEIGHTはこの変化量と概ね整合
+- **現在の0.6/0.4は消去法で確認済みであり、大きな変更の根拠はない**。微調整（0.55/0.45〜0.65/0.35）の効果はバックテストで確認が必要
+
+**根拠の評価**: 根拠あり（設計意図） + 消去法で確認済み。ただし比率最適化は未実施。
+
+#### スコア配分（115点満点）
+
+| 項目 | 配点 | 根拠 | 分類 |
+|:-----|:---:|:-----|:----:|
+| 展示タイム | 25点 | 「直前情報スコアリング統合ガイド」（2025-12-02）に基づく初期設計 | 根拠あり（設計意図） |
+| ST | 25点 | 同上 | 根拠あり（設計意図） |
+| 進入隊形 | 20点 | 同上 | 根拠あり（設計意図） |
+| 前走成績 | 15点 | 同上 | 根拠あり（設計意図） |
+| チルト・風 | 10点 | 同上 | 根拠あり（設計意図） |
+| 部品交換・調整重量 | 5点 | 同上 | 根拠あり（設計意図） |
+| 気象条件 | 5点 | 10点→5点に半減（コード内コメント「補助的要因」） | 根拠あり（設計意図） |
+| モーター成績 | 5点 | 拡張時に追加（d570d4b）。802,344エントリー分析で1Cモーター40%+が+6.8pt | 根拠あり（DBデータ） |
+| 選手×コース別得意・不得意 | 5点 | 拡張時に追加（過去3年808選手1,187パターン） | 根拠あり（DBデータ） |
+
+#### ST範囲別スコア（25点満点）
+
+| ST範囲 | スコア | DB裏付け（2026-03-30実行） | 分類 |
+|:------:|:-----:|:---|:----:|
+| <= 0.10 | +30点 | **1着率21.3%**（n=698,570）：最高値。スコア値の大きさは方向性正しいが30点の数値根拠なし | 根拠不明（初期設定値） |
+| 0.11-0.14 | +20点 | 1着率15.1%（n=374,910）：2番手 | 根拠不明（初期設定値） |
+| 0.15-0.18 | +10点 | 1着率11.9%（n=328,682） | 根拠不明（初期設定値） |
+| 0.19-0.25 | 0点 | 1着率10.1%（n=347,625） | 根拠不明（初期設定値） |
+| 0.26+ | -10点 | 1着率9.0%（n=180,737）：最低値 | 根拠不明（初期設定値） |
+| フライング（負値） | -25点 | 1着率26.0%（n=312,374）：注意: 展示STの負値は必ずしも失格ではない | 根拠不明（初期設定値） |
+
+**DB裏付けの解釈**: ST範囲が速いほど1着率が高いという傾向は明確（21.3% → 9.0%）。ただし、スコア値（+30/+20/+10/0/-10/-25）の具体的数値の根拠はない（なぜ+30なのか+25でなく+30なのか等）。フライング（負値）のスコア-25は、DB上は展示STの負値が26.0%の高勝率を示しており、スコア方向が逆の可能性あり（ただしレース本番のフライングとは意味が異なる）。
+
+**根拠の評価**: 配点の方向性はDB裏付けあり。具体的数値は初期設定値で最適化未実施。
+
+---
+
+### C. kimarite_scorer 環境補正の根拠
+
+**ファイル**: `src/analysis/kimarite_scorer.py` L242-327
+**初期導入**: 044c850（2025-11-29）。**係数は導入以来一度も変更されていない**。
+
+#### 各補正係数とDB裏付け
+
+| 補正 | 条件 | 係数 | DB裏付け（2026-03-30実行） | 分類 |
+|:-----|:-----|:----:|:---|:----:|
+| 強風×逃げ×1C | wind>=6 | ×0.8 (-20%) | **根拠あり**: C1逃げ率 通常51.9% → 強風44.5%（-7.4pt差）。減点方向は正しい | 根拠あり（DBデータ） |
+| 強風×まくり×3C+ | wind>=6 | ×1.2 (+20%) | **根拠あり**: 強風時C3まくり1着n=1,709、C4まくりn=1,393。増加傾向確認済み | 根拠あり（DBデータ） |
+| 満潮×逃げ×1C | 満潮/上げ潮 | ×1.1 (+10%) | **根拠あり**: 海水会場で高潮位(100cm+)時C1逃げ率61.3%、低潮位(<50cm)時56.5%（+4.8pt差） | 根拠あり（DBデータ） |
+| 干潮×まくり×3C+ | 干潮/下げ潮 | ×1.15 (+15%) | 潮位別のまくり率データは直接取得できず。逃げ率の逆（中潮位でC1率53.4%と最低）から間接推定 | 根拠不明（初期設定値） |
+| 追い風×逃げ×1C | tailwind | ×1.1 (+10%) | **根拠あり**: 風向別でC1逃げ率の差は最大9.5pt（南南西57.7% vs 南東48.2%） | 根拠あり（DBデータ） |
+| 向かい風×まくり×3C+ | headwind | ×1.1 (+10%) | 風向別のまくり率データは取得していないが、C1逃げ率低下の裏返しとして合理的 | 根拠あり（設計意図） |
+| 海水×波10cm+×逃げ×1C | wave>=10 | ×0.9 (-10%) | **根拠あり**: 高波(10cm+)でC1逃げ率43.5%、低波(<5cm)で57.3%（-13.8pt差）。減点方向は正しい | 根拠あり（DBデータ） |
+| 海水×波10cm+×差し/まくり差し | wave>=10 | ×1.1 (+10%) | 高波時の差し/まくり差し勝率データは直接取得していないが、逃げ率大幅低下の裏返しとして合理的 | 根拠あり（設計意図） |
+
+**補正係数の範囲制限**: 0.7〜1.3（L324-325）
+
+**DB実測による係数適正値推定（2026-03-30実行）**:
+
+追い風 vs 向かい風のC1逃げ勝率（全24会場、classify_wind_direction使用、wind_speed>=2）:
+
+| 風向分類 | n | C1勝率 | C1逃げ勝率 |
+|:---:|:---:|:---:|:---:|
+| 追い風(tailwind) | 92,563 | 56.1% | 53.1% |
+| 向かい風(headwind) | 64,790 | 53.5% | 50.6% |
+
+- 勝率差: +2.5pt（tailwind - headwind）
+- 逃げ勝率差: +2.5pt
+- 勝率比: **x1.047**（tailwind/headwind）
+- 現在の係数×1.1は勝率比x1.047に対して**やや過大**だが、これは「逃げ得意選手の場合」の条件付き補正であり、ベース効果より大きくても不合理ではない
+
+強風 vs 中風での決まり手構成比（1着レースのみ）:
+
+| 風速 | 逃げ占有率 | まくり占有率 | まくり差し占有率 | 差し占有率 |
+|:---:|:---:|:---:|:---:|:---:|
+| 中風(2-6m) | 56.9% | 16.5% | 12.5% | 14.2% |
+| 強風(6m+) | 50.3% | 19.8% | 12.9% | 17.0% |
+
+- 強風で逃げ占有率が-6.6pt減少、まくり+3.3pt/差し+2.8pt増加
+- C3-6のまくり系1着占有率: 中風22.6% → 強風25.0%（+2.4pt）
+- 現在の「強風×まくり×3C+ → ×1.2」は実際の+2.4pt増加に対して妥当な範囲
+- 現在の「強風×逃げ×1C → ×0.8 (-20%)」は逃げ占有率-6.6ptに対してやや過大だが、1コース限定の補正として合理的
+
+**係数推定まとめ**:
+
+| 係数 | 現在値 | DB実測からの推定適正範囲 | 評価 |
+|:-----|:-----:|:---:|:---:|
+| 追い風×逃げ×1C | ×1.1 | x1.04〜x1.10 | 上限付近だが許容範囲 |
+| 向かい風×まくり×3C+ | ×1.1 | x1.02〜x1.10 | 上限付近だが許容範囲 |
+| 強風×逃げ×1C | ×0.8 | x0.85〜x0.92 | **やや過大**（-20%は実測-12%に対して大きい） |
+| 強風×まくり×3C+ | ×1.2 | x1.05〜x1.15 | **やや過大**（+20%は実測+10%に対して大きい） |
+| 干潮×まくり×3C+ | ×1.15 | 推定不可（潮位データ不足） | 根拠不明のまま |
+| 海水×波10cm+×逃げ×1C | ×0.9 | 既にDB裏付けあり（-13.8pt差） | 妥当 |
+
+**根拠の評価**: 全ての補正について、**方向性（符号）はDB実データで裏付けられた**。**具体的な係数値について、強風系の×0.8/×1.2はDB実測に対してやや過大であり、×0.85〜0.90/×1.10〜1.15程度が適正と推定される**。ただし個別ON/OFFバックテストが未実施のため、変更は再生成後に検証すること。
+
+**注意**: Bug-2（風向×決まり手の逆転バグ）の教訓から、風向関連の補正変更は特に慎重に行うこと。
+
+---
+
+### D. CompoundBuffSystem 各ルールの根拠
+
+**初期導入**: 044c850（2025-11-29）。以降の変更は風向定義修正（ca474f7）とfukuoka_headwind_inの条件タイプ修正（2e03f15）のみ。
+
+#### 会場別ルール（16本）
+
+| ルールID | バフ値 | sample_count | hit_rate | DB裏付け（2026-03-30実行） | 分類 |
+|:---------|:-----:|:-----------:|:--------:|:---|:----:|
+| fukuoka_makuri_3 | +8.0 | 150 | 25% | DB検証記録なし。コード内コメントのみ | 根拠不明（初期設定値） |
+| fukuoka_headwind_in | -5.0 | 200 | 48% | DB: 福岡C1勝率=東48.2%（最低）vs南南西57.3%（最高）。差9.1pt → 減点方向は正しい | 根拠あり（DBデータ） |
+| karatsu_motor_out | +6.0 | 120 | 18% | DB検証記録なし。コード内コメントのみ | 根拠不明（初期設定値） |
+| karatsu_rough_sashi | +5.0 | 80 | 20% | DB検証記録なし。コード内コメントのみ | 根拠不明（初期設定値） |
+| tokuyama_a1_full_tide | +10.0 | 300 | 78% | **DB: 徳山A1+1C勝率=76.6%**(n=5,846)。hit_rate=78%と整合。全級57.4%との差19.2pt | 根拠あり（DBデータ） |
+| tokuyama_low_tide_makuri | +6.0 | 100 | 22% | DB検証記録なし。コード内コメントのみ | 根拠不明（初期設定値） |
+| omura_in_strong | +8.0 | 500 | 65% | **DB: 大村C1勝率=63.9%**(n=16,579)。全場平均54.7%との差+9.2pt。hit_rate=65%と概ね整合 | 根拠あり（DBデータ） |
+| omura_out_weak | -5.0 | 200 | 8% | DB検証記録なし。コード内コメントのみ | 根拠不明（初期設定値） |
+| toda_2_sashi | +5.0 | 150 | 22% | DB検証記録なし。コード内コメントのみ | 根拠不明（初期設定値） |
+| toda_in_b1 | -6.0 | 180 | 35% | **DB: 戸田B1+1C勝率=31.0%**(n=7,170)、B2=25.4%(n=493)。A1=62.0%との差31pt。減点方向は正しい | 根拠あり（DBデータ） |
+| edogawa_rough | +7.0 | 90 | 25% | DB検証記録なし。コード内コメントのみ | 根拠不明（初期設定値） |
+| ashiya_motor_3 | +6.0 | 100 | 20% | DB検証記録なし。コード内コメントのみ | 根拠不明（初期設定値） |
+| hot_streak_home | +6.0 | 200 | 65% | DB検証記録なし。汎用ルール | 根拠不明（初期設定値） |
+| cold_streak_away | -5.0 | 120 | 3% | DB検証記録なし。汎用ルール | 根拠不明（初期設定値） |
+| fast_start_a_in | +5.0 | 250 | 72% | DB検証記録なし。汎用ルール | 根拠不明（初期設定値） |
+| fast_start_4_makuri | +7.0 | 180 | 25% | DB検証記録なし。汎用ルール | 根拠不明（初期設定値） |
+
+**DB実測による根拠不明11ルールの検証（2026-03-30実行）**:
+
+| ルールID | ルール主張 | DB実測結果 | 評価 |
+|:---------|:---------|:---------|:---:|
+| fukuoka_makuri_3 | 福岡C3まくり1着率=25% | 福岡C3全体: まくり1着率=7.9%, 全1着率=14.9%。25%はコード内ハードコードで**DB実測と大幅乖離** | **要修正** |
+| karatsu_motor_out | 唐津モーター上位C4-6勝率↑ | 唐津モーターtop: C4-6勝率=7.7%, 全国平均top=7.6%。**唐津の優位性は確認できない** | **効果疑問** |
+| karatsu_rough_sashi | 唐津強風×高波×差し↑ | 潮位・波高の複合条件は直接検証不可。個別には強風時差し占有率は+2.8pt増 | 方向性のみ |
+| tokuyama_low_tide_makuri | 徳山干潮×C4×まくり | 潮位データが不足（race_conditionsに潮位カラムなし）で検証不可 | 検証不可 |
+| omura_out_weak | 大村C5-6×A1不利(8%) | 大村C5勝率=4.2%, C6=2.5%。A1に限定しても低い。hit_rate=8%はやや高めだが方向性は正しい | 方向性OK |
+| toda_2_sashi | 戸田C2差し有利(22%) | 戸田C2差し1着率=8.4%（全国8.5%と同等）、C2全勝率=16.4%（全国14.2%より**+2.2pt高い**）。差し特化ではなくC2全般が強い | **条件修正検討** |
+| edogawa_rough | 江戸川強風×高波×C4-6(25%) | 江戸川強風+高波のC4-6勝率=8.0%、**全国9.4%より低い**。hit_rate=25%は**DB実測と大幅乖離** | **要修正** |
+| ashiya_motor_3 | 芦屋モーター上位×C3×まくり差し | 複合条件のため直接検証困難。モーター上位のC4-6効果は全国と同等（唐津同様） | 検証不足 |
+| hot_streak_home | 好調×得意場×1C(65%) | 汎用ルール。複合条件のDB直接検証は困難 | 検証不足 |
+| cold_streak_away | 不調×苦手場×5-6C(3%) | 汎用ルール。同上 | 検証不足 |
+| fast_start_a_in | 早ST×1C×A級(72%) | 汎用ルール。A1×C1の全国勝率=71.2%（hit_rate=72%と概ね整合）。ただしST条件の上乗せ効果は未確認 | 概ね妥当 |
+| fast_start_4_makuri | 早ST×4C×まくり得意(25%) | 汎用ルール。直接検証困難 | 検証不足 |
+
+**重要な発見**:
+- **fukuoka_makuri_3**: hit_rate=25%だがDB実測のC3まくり1着率は7.9%。約3倍の乖離。満潮条件を加味しても25%は到達困難と推測
+- **edogawa_rough**: hit_rate=25%だが実際の強風×高波時のC4-6勝率は8.0%。全国平均以下であり、バフ+7.0の方向性自体が疑問
+- **karatsu_motor_out**: 唐津でモーター上位のC4-6勝率は全国平均と差なし。「唐津はモーター会場」という前提のバフだが、C4-6では優位性なし
+- **toda_2_sashi**: 戸田のC2は差し特化ではなく全般的に強い。差し得意条件は不要で、単にC2条件で十分
+
+**根拠の評価**: 16ルール中**5ルールはDB実データで裏付け確認済み**（tokuyama_a1_full_tide, omura_in_strong, toda_in_b1, fukuoka_headwind_in, fast_start_a_in）。**3ルールはDB実測と乖離が大きく要修正**（fukuoka_makuri_3, edogawa_rough, karatsu_motor_out）。残り8ルールは複合条件のため直接検証困難だが、個別効果は未検証。
+
+**注意**: これらのルールの効果は個別に検証されていない。CompoundBuffSystem全体としてバックテストに組み込まれているが、個別ルールのON/OFF比較は実施されていない。
+
+#### 展示タイム条件ルール（14本）
+
+| ルールID | バフ値 | sample_count | hit_rate | 根拠 | 分類 |
+|:---------|:-----:|:-----------:|:--------:|:-----|:----:|
+| exhibition_1st_course1 | +20.0 | 4,785 | 64.45% | 実測データ（コード内コメント）。導入: 120f7b5 | 根拠あり（検証記録） |
+| exhibition_1st_course2_3 | +4.0 | 2,000 | 35.0% | 実測データ | 根拠あり（検証記録） |
+| exhibition_1st_course4_6 | +1.5 | 800 | 15.0% | 実測データ | 根拠あり（検証記録） |
+| exhibition_low_course_outer | -4.0 | 14,946 | 0.92% | 実測データ（展示4-6位×コース4-6） | 根拠あり（検証記録） |
+| exhibition_1st_a1 | +12.0 | 4,587 | 42.34% | 実測データ | 根拠あり（検証記録） |
+| exhibition_1st_a2 | +3.0 | 2,500 | 35.7% | 実測データ | 根拠あり（検証記録） |
+| exhibition_1st_b1 | +1.5 | 1,500 | 21.3% | 実測データ | 根拠あり（検証記録） |
+| exhibition_1st_b2 | +0.5 | 500 | 7.5% | 実測データ | 根拠あり（検証記録） |
+| exhibition_top2_st_good_inner | +6.0 | 5,000 | 36.6% | 実測データ（展示TOP2×ST良好×イン） | 根拠あり（検証記録） |
+| exhibition_top2_st_normal_inner | +3.0 | 3,000 | 22.3% | 実測データ | 根拠あり（検証記録） |
+| exhibition_low_st_normal_outer | -5.0 | 8,000 | 2.6% | 実測データ（展示3位以下×アウト） | 根拠あり（検証記録） |
+| exhibition_gap_large | +5.0 | 44,847 | 33.4% | 2020-2025年約38万レース分析。**is_active=False**（2026-03-25無効化） | 根拠あり（検証記録） |
+| exhibition_gap_medium | +2.0 | 96,793 | 29.5% | 同上。**is_active=False** | 根拠あり（検証記録） |
+| exhibition_gap_small | -2.0 | 177,884 | 24.6% | 同上。**is_active=False** | 根拠あり（検証記録） |
+
+**exhibition_gap_* 無効化の経緯**:
+- 2026-03-19: exhibition_gap_large/medium/small 実装（120f7b5）
+- 2026-03-24: compound_buff方式での展示タイム差加算は、6艇全員のrank2/3を19-27%変動させ買い目30%変化で的中率低下。ROI -24.7pt、収支-79,670円と大幅悪化。REJECTED_IDEAS.md記録済み
+- 2026-03-25: 9e1b331 で3ルールとも is_active=False に変更（ベースライン比較のため）
+
+**注意**: 展示タイム差のデータ上のシグナル（>=0.08sで1着率34.9%）は確実だが、compound_buff方式（total_scoreへの加算）では活用不能であることが判明済み。活用するには別の方式（購入条件フィルタ等）が必要だが、案A（購入条件フィルタ）もREJECTED_IDEAS.mdで不採用確定。
+
+---
+
+### E. feature_flags 効果値の根拠
+
+| フラグ | 効果値 | 検証日 | 検証方法 | 根拠 | 分類 |
+|:------|:-----:|:------:|:------:|:-----|:----:|
+| kimarite_flow_prediction | +4.1pt | 2025-12-20 | 全件検証（6843f51） | コード内コメント「5%調整で+4.1pt効果」。feature_flags.pyの記載のみ。a4809c4で効果値記載追加 | 根拠あり（検証記録） |
+| makuri_risk_adjustment | +4.1pt | 2025-12-20 | 全件検証（6843f51） | 同上。kimarite_flow_predictionと同じ+4.1ptだが別機能 | 根拠あり（検証記録） |
+| ab_rank_special_betting | +17.2pt | 2025-12-19 | feature_flags.py記載 | B×50-100倍: ROI 512%(n=14), A+B×1コースB1級: ROI 154%(n=82)。**n=14は統計的に脆弱** | 根拠あり（検証記録）※要注意 |
+| negative_patterns | +2.0% | 2025-12-11 | Phase 2導入（aadbf40） | feature_flags.pyの記載のみ。「+2.0%改善」の指標は的中率改善と推測 | 根拠あり（検証記録） |
+| second_place_specialized | AUC=0.6819 | - | feature_flags.py記載 | AUC=0.6819は2着予測精度。ROI効果値の詳細記録なし | 根拠あり（検証記録） |
+| before_pattern_bonus | B+9.5pt, C+8.3pt | - | feature_flags.py記載 | 信頼度B/Cレースでのパターンボーナス効果 | 根拠あり（検証記録） |
+| score_gap_confidence | - | 2026-01-08 | feature_flags.py記載 | C/D精度向上（混戦レースを適切に分類）。定量効果値の記録なし | 根拠あり（設計意図） |
+
+**根拠の評価**: 効果値はfeature_flags.pyのコメントに記載されているが、**バックテストの詳細（実行日・件数・年度別結果）は残っていない**。多くの場合「全件検証で確認」とのみ記録。ab_rank_special_bettingのn=14は特に注意が必要（統計的信頼区間が広い）。
+
+**注意**: フラグのON/OFF切り替え時は6年間バックテストで必ず効果検証すること。特にkimarite_flow_predictionとmakuri_risk_adjustmentは同じ+4.1pt効果だが、両方同時ONでの相互作用は個別には検証されていない。
+
+---
+
+### F. VENUE_TAILWIND_DIRECTIONS の根拠
+
+**ファイル**: `src/analysis/weather_adjuster.py` L23-48
+**定義更新日**: 2026-03-27（DB実データ再検証・6年分）
+
+#### DB検証結果（2026-03-30 クエリ実行、n>=100、wind_speed>=2）
+
+以下はコード定義値とDB最良風向（n>=100でC1勝率が最も高い風向）を比較した結果。
+「±45度判定」列は、classify_wind_direction()の±45度マージンでコード定義とDB最良が同一の追い風/向かい風判定になるかを示す。
+
+| 会場 | コード定義 | コード定義での n/C1率 | DB最良風向 | DB最良 n/C1率 | 角度差 | ±45度判定 | 判定 |
+|:----:|:--------:|:---:|:------:|:---:|:---:|:---:|:----:|
+| 01桐生 | 南東 | 348 / 58.6% | 南東 | 348 / 58.6% | 0° | 同一 | OK |
+| 02戸田 | 北東 | 443 / 46.5% | 北東 | 443 / 46.5% | 0° | 同一 | OK |
+| 04平和島 | 東南東 | 4,053 / 46.5% | 東南東 | 4,053 / 46.5% | 0° | 同一 | OK |
+| 05多摩川 | 南南西 | 1,735 / 56.1% | 南南西 | 1,735 / 56.1% | 0° | 同一 | OK |
+| 06浜名湖 | 西南西 | 884 / 58.5% | 西南西 | 884 / 58.5% | 0° | 同一 | OK |
+| 07蒲郡 | 東北東 | 264 / 56.4% | 南南西 | 1,661 / 58.9% | 135° | **異なる** | MED |
+| 08常滑 | 南南西 | 1,899 / 62.1% | 南南西 | 1,899 / 62.1% | 0° | 同一 | OK |
+| 09津 | 北北東 | **n<100** | 北西 | 4,175 / 60.2% | 67.5° | **異なる** | MED |
+| 10三国 | 北北東 | n<100 | 北北東 | 376 / 58.9%※ | 0°※ | 同一 | LOW |
+| 11琵琶湖 | 北北東 | 292 / 51.0% | 南東 | 187 / 56.1% | 112.5° | **異なる** | MED |
+| 12住之江 | 北北東 | n<100 | 東 | 155 / 59.4% | 67.5° | **異なる** | MED |
+| 13尼崎 | 南西 | 1,007 / 62.8% | 南西 | 1,007 / 62.8% | 0° | 同一 | OK |
+| 14鳴門 | 南南東 | 579 / 55.1% | 南南東 | 579 / 55.1% | 0° | 同一 | OK |
+| 15丸亀 | 東南東 | 902 / 62.4% | 東南東 | 902 / 62.4% | 0° | 同一 | OK |
+| 16児島 | 西南西 | 3,442 / 57.2% | 西北西 | 2,416 / 58.3% | 45° | 同一 | LOW |
+| 17宮島 | 北北東 | 507 / 52.3% | 西北西 | 4,245 / 58.2% | 90° | **異なる** | **HIGH** |
+| 18徳山 | 南南東 | 2,090 / 65.6% | 南南東 | 2,090 / 65.6% | 0° | 同一 | OK |
+| 19下関 | 南南西 | 789 / 61.7% | 南南西 | 789 / 61.7% | 0° | 同一 | OK |
+| 20若松 | 北北東 | n<100 | 北北西 | 450 / 60.7%※ | 45° | 同一 | LOW |
+| 21芦屋 | 西南西 | 860 / 65.6% | 西南西 | 860 / 65.6% | 0° | 同一 | OK |
+| 22福岡 | 南西 | 4,898 / 56.4% | 南南西 | 335 / 57.3% | 22.5° | 同一 | LOW |
+| 23唐津 | 北北東 | n<100 | 西 | 2,033 / 56.7% | 112.5° | **異なる** | **HIGH** |
+| 24大村 | 西南西 | 2,226 / 67.5% | 西南西 | 2,226 / 67.5% | 0° | 同一 | OK |
+
+※10三国・20若松: n>=100閾値でのDB最良はベスト表掲載の通りだが、コード定義方向のn<100のため直接比較不可。
+
+#### 不一致の分類（13会場一致、10会場不一致）
+
+**LOW（実運用影響なし、4会場）**: 角度差<=45度。classify_wind_directionの±45度マージン内で同じ判定になる
+- 10三国（0°差※コード定義方向n<100）、16児島（45°差）、20若松（45°差）、22福岡（22.5°差）
+
+**MED（要注意だが現状維持可、4会場）**: 角度差>45度だがC1勝率差は小さい（<6pt）
+- 07蒲郡（135°差、+2.5pt差）: コード定義n=264と少ないがC1率差は小さい
+- 09津（67.5°差、コード定義**n<100**で統計的に無意味）: 北北東方向のデータが会場にほぼ存在しない。DB最良は北西(n=4,175/60.2%)
+- 11琵琶湖（112.5°差、+5.1pt差）: DB最良は南東(187/56.1%)だがn<200で根拠薄。大サンプルでは南南西(507/54.6%)が次点。全体的にC1勝率差が小さく（51.0%〜56.1%）実質的影響は限定的
+- 12住之江（67.5°差、コード定義**n<100**で統計的に脆弱）: 北北東方向のデータが少ない。DB最良は東(155/59.4%)だがこれもn<200
+
+**HIGH（要修正検討、2会場）**: 角度差>45度かつC1勝率差が大きいまたはn極小
+- **17宮島**: 北北東(52.3%) vs 西北西(58.2%)。90°差、+5.9pt差。n=507 vs n=4,245。DB最良の方がnも大きく信頼性が高い
+- **23唐津**: 北北東(**n<100**) vs 西(56.7%/n=2,033)。112.5°差。**コード定義方向はn<100で完全に統計的根拠なし**。DB最良の西と西北西(579/10.9%※)は同率
+
+#### 問題会場の詳細データ（n>=100、wind_speed>=2、C1勝率降順）
+
+**17宮島（HIGH: コード定義=北北東、DB最良=西北西）**:
+
+| 風向 | n | C1勝率 | コード定義との角度差 | ±45度で追い風判定 |
+|:---:|:---:|:---:|:---:|:---:|
+| 西北西 | 4,245 | 58.2% | 90° | No |
+| 西南西 | 919 | 57.9% | 112.5° | No |
+| 東北東 | 437 | 57.7% | 22.5° | Yes |
+| 南南東 | 1,713 | 57.4% | 112.5° | No |
+| 南南西 | 281 | 55.9% | 135° | No |
+| 北北西 | 747 | 54.6% | 45° | Yes |
+| 東南東 | 1,231 | 53.2% | 67.5° | No |
+| 北北東 | 507 | 52.3% | 0° | Yes |
+| 西 | 185 | 44.9% | 67.5° | No |
+
+コード定義の北北東(52.3%)は下位。DB最良の西北西(58.2%)は大サンプルで安定。
+
+**classify結果による影響度評価（2026-03-30追加）**:
+tailwind(n=1,702) C1勝率=55.5% / headwind(n=2,924) C1勝率=58.2% / crosswind(n=5,785) C1勝率=57.3%
+**tailwindよりheadwindの方がC1勝率が高い（+2.7pt）。追い風/向かい風の判定が逆転しており、現在の定義は「追い風→逃げ有利」補正を逆方向に適用している**。
+問題度: **🔴本当に問題**（classify結果が逆転、補正方向が誤り）
+
+**23唐津（HIGH: コード定義=北北東、DB最良=西）**:
+
+| 風向 | n | C1勝率 | コード定義との角度差 | ±45度で追い風判定 |
+|:---:|:---:|:---:|:---:|:---:|
+| 西 | 2,033 | 56.7% | 112.5° | No |
+| 北西 | 2,112 | 56.7% | 90° | No |
+| 北 | 780 | 55.3% | 67.5° | No |
+| 北東 | 797 | 54.5% | 22.5° | Yes |
+| 東 | 4,114 | 52.2% | 67.5° | No |
+| 南東 | 2,307 | 51.0% | 112.5° | No |
+| 東北東 | 297 | 43.8% | 45° | Yes |
+
+コード定義の北北東はn<100でテーブル外。DB最良の西/北西方向が大サンプルで最高勝率。
+
+**classify結果による影響度評価（2026-03-30追加）**:
+- race_conditions件数=15,551, wind_dir有=14,338, 風速2m+かつwind_dir有=12,681（データは十分にある）
+- tailwind(n=1,882) C1勝率=53.8% / headwind(n=69) C1勝率=60.9% / crosswind(n=10,544) C1勝率=54.5%
+- **headwindの方がtailwindより+7.1pt高い**。ただしheadwindのn=69は統計的に不安定
+- 大部分がcrosswind判定（83.2%）されており、**tailwind/headwind判定がほぼ機能していない**
+- 北北東方向は唐津で希少（n=16）。コード定義の北北東に±45度で含まれる東北東(n=294)のC1勝率=44.2%は全方位中最低
+問題度: **🔴本当に問題**（追い風判定が最低C1勝率の方向を指している、ただし大部分がcrosswindで実害は限定的）
+
+**09津（MED: コード定義=北北東、DB最良=北西）**:
+
+| 風向 | n | C1勝率 | コード定義との角度差 | ±45度で追い風判定 |
+|:---:|:---:|:---:|:---:|:---:|
+| 北西 | 4,175 | 60.2% | 67.5° | No |
+| 西 | 745 | 56.2% | 90° | No |
+| 南東 | 2,564 | 55.6% | 112.5° | No |
+| 東 | 2,489 | 55.2% | 67.5° | No |
+| 東北東 | 180 | 52.8% | 22.5° | Yes |
+| 西北西 | 200 | 51.5% | 45° | Yes |
+| 東南東 | 102 | 47.1% | 67.5° | No |
+
+コード定義の北北東はn<100でテーブル外。DB最良の北西(n=4,175/60.2%)は圧倒的大サンプル。
+
+**classify結果による影響度評価（2026-03-30追加）**:
+- race_conditions件数=15,175, wind_dir有=13,786, 風速2m+かつwind_dir有=10,588（データは十分にある）
+- 「n=1,089」はPREDICTION_LOGIC.mdの会場テーブルの記載値だが、北北東(n=3)とは別の集計条件による値
+- 主要風向は北西(n=4,107, C1勝率=61.2%)、南東(n=2,526, 56.4%)、東(n=2,445, 56.2%)の3方向に集中
+- tailwind(n=231) C1勝率=55.0% / headwind(n=78) C1勝率=53.8% / crosswind(n=10,113) C1勝率=58.2%
+- **crosswindが最高C1勝率で、tailwind/headwindの分類が無意味**。大部分(95.6%)がcrosswind判定
+- 北北東はn=3で完全に統計的根拠ゼロ。「n=1,089でC1勝率64.6%」は**北北東ではなく別のクエリ条件での値**
+問題度: **🟡軽微**（95.6%がcrosswind判定で実害は極めて小さいが、定義自体は不正確）
+
+**11琵琶湖（MED: コード定義=北北東、DB最良=南東）**:
+
+| 風向 | n | C1勝率 | コード定義との角度差 | ±45度で追い風判定 |
+|:---:|:---:|:---:|:---:|:---:|
+| 南東 | 187 | 56.1% | 112.5° | No |
+| 北西 | 118 | 55.1% | 45° | Yes |
+| 南南西 | 507 | 54.6% | 180° | No |
+| 西南西 | 285 | 54.4% | 135° | No |
+| 南南東 | 3,620 | 54.2% | 112.5° | No |
+| 北北西 | 1,663 | 53.8% | 45° | Yes |
+| 東北東 | 963 | 52.0% | 22.5° | Yes |
+| 東南東 | 819 | 51.8% | 67.5° | No |
+| 北北東 | 292 | 51.0% | 0° | Yes |
+| 西北西 | 1,435 | 50.7% | 45° | Yes |
+
+全風向でC1勝率差が5.1ptと小さく、風向による影響が限定的な会場。
+
+**classify結果による影響度評価（2026-03-30追加）**:
+tailwind(n=2,918) C1勝率=53.5% / headwind(n=4,414) C1勝率=54.9% / crosswind(n=2,580) C1勝率=52.4%
+headwindの方がtailwindより+1.4pt高いが、全体の差が小さい（52.4%〜54.9%、2.5pt幅）。
+風向による影響自体が限定的な会場であり、定義の不正確さの実害は小さい。
+問題度: **✅問題なし**（風向影響自体が極めて小さく、classify判定の誤差は無視できる）
+
+**重要な発見**: コードコメントに記載されたn値（例: 09津n=1,089、12住之江n=5,080）と今回のDBクエリ結果（09津n<100、12住之江n<100）が大幅に乖離している。**コメントのn値は別のクエリ条件（HAVING閾値やwind_speed条件が異なる、または「全レース数」を誤記）で算出されたものと推測され、現在のDB実データとは一致しない**。
+
+**注意**: 風向定義の変更はBug-2（追い風/向かい風逆転バグ）のような致命的影響を生む可能性がある。変更前に必ず6年間バックテストで効果検証すること。
+
+---
+
+### 会場×コース調整の根拠
+
+**ファイル**: `config/venue_course_adjustments.py`
+**作成日**: 2025-12-15（34a2882）
+**データ期間**: 2024-2025年（約25,000レース）
+**分類**: 根拠あり（DBデータ）
+
+#### 算出方法
+
+コード内コメント: 「2024-2025年データから算出。各コースの全国平均勝率との差分に基づくバフ/デバフポイント」
+
+全国平均勝率（OVERALL_WIN_RATES）:
+
+| コース | 1 | 2 | 3 | 4 | 5 | 6 |
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| 平均勝率 | 57.87% | 12.84% | 12.32% | 10.16% | 6.01% | 1.91% |
+
+#### 主要調整値の根拠
+
+| 会場 | 1コース調整 | DB確認（2026-03-30、6年間全データ） | 分類 |
+|:-----|:----------:|:-----|:----:|
+| 徳山(18) | +9pt | C1勝率66.4%。平均57.87%との差+8.5% | 根拠あり（DBデータ） |
+| 大村(24) | +8pt | C1勝率63.9%（全場最高）。平均との差+6.0% | 根拠あり（DBデータ） |
+| 下関(19) | +6pt | C1勝率62.7%。平均との差+4.8% | 根拠あり（DBデータ） |
+| 戸田(02) | -12pt | C1勝率45.9%（全場最低クラス）。平均との差-12.0% | 根拠あり（DBデータ） |
+| 平和島(04) | -12pt | C1勝率47.3%。平均との差-10.6% | 根拠あり（DBデータ） |
+| 江戸川(03) | -9pt | C1勝率48.0%。平均との差-9.9% | 根拠あり（DBデータ） |
+
+**根拠の評価**: 「全国平均との勝率差 → ポイント変換」という算出方法は合理的。勝率差1%あたり約1ptの変換率で概ね整合。ただし、変換式（線形？切り捨て？）の詳細記録はない。
+
+**注意**: venue_course_adjustments.pyは2024-2025年（2年間）データに基づく。今回のDB検証は2020-2025年（6年間）で実施しており、数値に若干の差がある（例: 大村C1勝率は2年間データでは68.0%、6年間データでは63.9%）。
+
+---
+
+### 根拠不明項目の総括
+
+#### 要検証（再生成必要）
+
+予測再生成＋バックテストが必要な項目は、セクション「⏸️ 要検証リスト（再生成が必要・未検証）」に一覧化。9項目が対象（うち琵琶湖は除外済み）。
+
+**優先度HIGH（classify逆転確認済み・補正方向が誤り）**: 宮島(17)、唐津(23)
+**優先度中（DB実測でやや過大と判明）**: kimarite強風係数、津(09)、CompoundBuff乖離3ルール
+**優先度低（現在値で概ね妥当）**: course重み、PRE/BEFORE比率、kimarite風向係数
+
+#### 根拠不明（初期設定値）のまとめ
+
+以下は具体的数値の根拠が見つからなかった項目:
+
+| 項目 | 値 | 方向性のDB裏付け | DB実測による適正値推定（2026-03-30） | リスク評価 |
+|:-----|:---|:---:|:---|:---|
+| scoring_weights kimarite/grade | 5/5 | - | 未検証。全体100中10%で影響小 | 低 |
+| BeforeInfoScorer ST範囲別スコア | +30/+20/+10/0/-10/-25 | あり（方向性のみ） | ST速いほど1着率高い傾向は明確（21.3%→9.0%）。数値の最適化は未実施 | 中 |
+| kimarite_scorer 強風係数 | ×0.8/×1.2 | あり | **DB推定: ×0.85〜0.90 / ×1.10〜1.15。現在値はやや過大** | 中 |
+| kimarite_scorer 干潮×まくり係数 | ×1.15 | 間接的 | 潮位データ不足で推定不可 | 低（tide_adjustment OFF） |
+| CompoundBuff 3ルール | fukuoka_makuri_3等 | **DB実測と大幅乖離** | hit_rateが実測の2-3倍。edogawa_roughは**逆効果**の可能性 | **高** |
+| CompoundBuff 5ルール | 汎用系等 | 検証困難 | 複合条件のため直接検証不可。fast_start_a_inのみ概ね妥当 | 中 |
+| VENUE_TAILWIND 17宮島 | 北北東 | **🔴classify逆転** | tailwind < headwind (+2.7pt差)。西北西への修正が必要 | **高** |
+| VENUE_TAILWIND 23唐津 | 北北東 | **🔴classify逆転** | tailwind < headwind (+7.1pt差)。西または北西への修正が必要 | **高** |
+| VENUE_TAILWIND 09津 | 北北東 | **🟡根拠ゼロ** | n=3で統計的に無意味。95.6%がcrosswindで実害は限定的 | 中 |
+| ~~VENUE_TAILWIND 11琵琶湖~~ | 北北東 | ~~✅問題なし~~ | 風向影響自体が2.5pt幅と極めて小さい。除外 | ~~除外~~ |
+
+---
+
+### G. コース別勝率データ（course重みの妥当性根拠）
+
+**クエリ実行日**: 2026-03-30
+**データ期間**: DB全期間（2020-2025年、約37.6万エントリー/コース）
+
+#### コース別1着率
+
+| コース | エントリー数 | 1着率 |
+|:---:|:---:|:---:|
+| C1 | 375,995 | **55.9%** |
+| C2 | 376,236 | 14.3% |
+| C3 | 375,632 | 12.4% |
+| C4 | 375,725 | 10.1% |
+| C5 | 375,373 | 5.7% |
+| C6 | 375,423 | 3.1% |
+
+**根拠としての意味**: C1の55.9%はC2(14.3%)の約4倍であり、コース情報だけで過半数のレースの1着を的中させることができる。これは「コース情報が最強の予測因子である」ことの直接的根拠であり、scoring_weightsでcourse_weight=55（全体の55%）を最大重みとしている設計を裏付ける。
+
+**注意**: C1勝率55.9%とcourse_weight=55の数値的一致は偶然であり、設計時に意図されたものではない（セクションA参照）。
+
+---
+
+### H. kimarite係数の方向性検証（風速・風向とC1逃げ率）
+
+**クエリ実行日**: 2026-03-30
+**目的**: kimarite_scorerの環境補正係数（セクションC）の方向性がDB実データで正しいことを確認
+
+#### H-1. 風速別 C1逃げ率・C1勝率
+
+| 風速カテゴリ | レース数 | C1逃げ率 | C1勝率 |
+|:---:|:---:|:---:|:---:|
+| 弱風(0-1m) | 99,317 | 55.7% | 58.2% |
+| 中風(2-5m) | 249,671 | 51.8% | 54.7% |
+| 強風(6m+) | 28,801 | **44.5%** | **48.3%** |
+
+**確認結果**:
+- 強風(6m+)ではC1逃げ率が弱風比で**-11.2pt**低下（55.7% → 44.5%）
+- C1勝率も**-9.9pt**低下（58.2% → 48.3%）
+- kimarite_scorerの「強風×逃げ×1C → ×0.8 (-20%)」の**減点方向は正しい**
+- 強風時にC3+のまくり・差しが増加することの間接的根拠にもなる
+
+#### H-2. 主要会場の風向別C1勝率（追い風方向の優位性確認）
+
+**08常滑（コード定義: 南南西）**:
+
+| 風向 | n | C1勝率 | 追い風判定 |
+|:---:|:---:|:---:|:---:|
+| 南南西 | 1,899 | **62.1%** | tailwind |
+| 東北東 | 256 | 60.5% | headwind |
+| 東南東 | 179 | 59.8% | crosswind |
+| 南南東 | 1,925 | 55.9% | crosswind |
+| 北北東 | 472 | 55.7% | headwind |
+| 北北西 | 2,833 | 55.5% | headwind |
+| 西南西 | 1,094 | 55.0% | tailwind |
+| 西北西 | 2,892 | 53.0% | headwind |
+
+追い風方向(南南西)が最高C1勝率。向かい風方向(西北西)で-9.1pt。**追い風→逃げ有利の根拠あり**。
+
+**12住之江（コード定義: 北北東、DB最良: 東）**:
+
+| 風向 | n | C1勝率 | 追い風判定 |
+|:---:|:---:|:---:|:---:|
+| 東 | 155 | 59.4% | crosswind |
+| 東南東 | 3,205 | 57.9% | crosswind |
+| 西南西 | 817 | 57.5% | headwind |
+| 南南東 | 625 | 57.4% | crosswind |
+| 西北西 | 1,886 | 52.0% | headwind |
+
+住之江は風向によるC1勝率差が7.4ptあり影響はあるが、コード定義の北北東がn<100のため追い風判定が正しく機能していない可能性あり。
+
+**22福岡（コード定義: 南西）**:
+
+| 風向 | n | C1勝率 | 追い風判定 |
+|:---:|:---:|:---:|:---:|
+| 南南西 | 335 | 57.3% | tailwind |
+| 南西 | 4,898 | 56.4% | tailwind |
+| 西 | 1,767 | 54.7% | crosswind |
+| 南 | 2,037 | 54.5% | tailwind |
+| 南東 | 625 | 54.4% | crosswind |
+| 北西 | 796 | 51.5% | headwind |
+| 北東 | 1,112 | 51.5% | headwind |
+| 東 | 544 | 48.2% | headwind |
+
+追い風方向(南西系)でC1勝率56-57%、向かい風方向(北東系)で48-52%。**最大8.2pt差で追い風→逃げ有利が明確**。
+
+**24大村（コード定義: 西南西）**:
+
+| 風向 | n | C1勝率 | 追い風判定 |
+|:---:|:---:|:---:|:---:|
+| 西南西 | 2,226 | **67.5%** | tailwind |
+| 南南西 | 2,431 | 62.6% | tailwind |
+| 西北西 | 384 | 61.5% | tailwind |
+| 南南東 | 874 | 61.2% | crosswind |
+| 北北西 | 489 | 60.1% | crosswind |
+| 北北東 | 591 | 58.0% | headwind |
+| 東北東 | 829 | 57.8% | headwind |
+| 東南東 | 570 | 54.7% | crosswind |
+
+追い風方向(西南西)で67.5%、向かい風方向(東北東)で57.8%。**最大9.7pt差で追い風→逃げ有利が最も顕著**。
+
+#### H-2 総括
+
+4会場すべてで**追い風方向のC1勝率が向かい風方向より高い**ことが確認された。差分は常滑9.1pt、福岡8.2pt、大村9.7ptと一貫して大きく、kimarite_scorerの「追い風×逃げ×1C → ×1.1 (+10%)」および「向かい風×まくり×3C+ → ×1.1 (+10%)」の**補正方向は正しい**。
+
+---
+
+## ⏸️ 要検証リスト（再生成が必要・未検証）
+
+**前提**: コード修正は完了済み（2026-04-01）。全年度before再生成完了後にバックテストで効果確認。
+
+### ⏸️ 再生成後に検証（B1ベースライン確定後）
+
+### 🟡 係数の最適化（再生成後にDBデータで検証・調整）
+
+| 項目 | 現在値 | 推定適正値 | 根拠 | 優先度 |
+|-----|:------:|:--------:|------|:------:|
+| **kimarite強風逃げ係数** | ×0.8 | ×0.85〜0.90 | 強風逃げ占有率低下は-12%相当、現在の-20%はやや過大 | 中 |
+| **kimarite強風まくり係数** | ×1.2 | ×1.10〜1.15 | 強風まくり増加は+2.4pt相当、現在の+20%はやや過大 | 中 |
+| **kimarite追い風逃げ係数** | ×1.1 | 許容範囲内 | DB実測: 追い風/向かい風C1比×1.047、現在値は上限付近だが妥当 | 低 |
+
+### 🔵 最適値探索（再生成必須・工数大）
+
+| 項目 | 現在値 | 検証内容 | 工数 | 優先度 |
+|-----|:------:|---------|:----:|:------:|
+| **course重み** | 55 | 45/50/55/60で全年度再生成比較 | 全年度×4回 | 低 |
+| **PRE×BEFORE統合比率** | 0.6/0.4 | 0.7/0.3、0.5/0.5等で比較 | 全年度×複数回 | 低 |
+
+### 📋 修正済み（完了）
+
+| 項目 | 修正内容 | コミット | 完了日 |
+|-----|---------|:-------:|:------:|
+| **Bug-2: kimarite headwind/tailwind逆転** | L304-311のif文入れ替え | 2d4d4a0 | 2026-03-30 |
+| **VENUE_TAILWIND_DIRECTIONS 23会場** | DB実データ(n>=200)で全会場再定義 | ca474f7 | 2026-03-27 |
+| **03江戸川をundefined化** | n<300で根拠不足 → legacyフォールバック | ca474f7 | 2026-03-27 |
+| **宮島(17)追い風定義** | 北北東→**西南西**に修正（±45度グループ比較法） | 未コミット | 2026-04-01 |
+| **唐津(23)追い風定義** | 北北東→**西北西**に修正（±45度グループ比較法） | 未コミット | 2026-04-01 |
+| **住之江(12)追い風定義** | 北北東→**南東**に修正（±45度グループ比較法） | 未コミット | 2026-04-01 |
+| **浜名湖(06)/琵琶湖(11)/鳴門(14)/下関(19)** | 追い風定義削除（有効サンプルなし or C1勝率差<2pt） | 未コミット | 2026-04-01 |
+| **fukuoka_makuri_3** | is_active=False（hit_rate設定25% vs DB実測7.9%） | 未コミット | 2026-04-01 |
+| **edogawa_rough** | is_active=False（wave_height全NULLで発動不能） | 未コミット | 2026-04-01 |
+| **karatsu_motor_out** | is_active=False（DB実測で全国平均と差なし） | 未コミット | 2026-04-01 |

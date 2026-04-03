@@ -115,7 +115,8 @@ class CompoundBuffSystem:
             buff_value=8.0,
             confidence=0.85,
             sample_count=150,
-            hit_rate=0.25
+            hit_rate=0.25,
+            is_active=False  # 2026-04-01 無効化: hit_rate設定25% vs DB実測7.9%(3倍乖離)。tideデータ未整備のため発動実績ゼロ
         ))
 
         # 福岡 + 向かい風 + 1コース → イン不利
@@ -151,7 +152,8 @@ class CompoundBuffSystem:
             buff_value=6.0,
             confidence=0.75,
             sample_count=120,
-            hit_rate=0.18
+            hit_rate=0.18,
+            is_active=False  # 2026-04-01 無効化: DB実測で全国平均と差なし（効果ゼロ確認）
         ))
 
         # 唐津 + 強風 + 波高い → 差し決まりやすい
@@ -298,7 +300,8 @@ class CompoundBuffSystem:
             buff_value=7.0,
             confidence=0.70,
             sample_count=90,
-            hit_rate=0.25
+            hit_rate=0.25,
+            is_active=False  # 2026-04-01 無効化: 江戸川のwave_heightデータが全件NULL。発動実績ゼロ。hit_rate設定25% vs DB実測8.0%（逆効果の可能性）
         ))
 
         # ========================================
