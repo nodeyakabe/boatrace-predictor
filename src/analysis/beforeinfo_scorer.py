@@ -493,7 +493,8 @@ class BeforeInfoScorer:
             # 波高補正を適用（10cm以上で効果発動）
             wave_adj = calculate_wave_height_adjustment(
                 course=course,
-                wave_height=wave_height
+                wave_height=wave_height,
+                venue_code=venue_code
             )
             score += wave_adj
 

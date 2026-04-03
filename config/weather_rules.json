@@ -81,7 +81,7 @@
   "wave_height_categories": {
     "calm": {"min": 0, "max": 2, "label": "静穏"},
     "mid": {"min": 3, "max": 5, "label": "中波"},
-    "rough": {"min": 6, "max": 99, "label": "高波"}
+    "rough": {"min": 5, "max": 99, "label": "高波"}
   },
 
   "venue_wave_rules": {

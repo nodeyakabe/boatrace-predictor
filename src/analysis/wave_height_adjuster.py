@@ -7,21 +7,32 @@
 from typing import Optional
 
 
+# 5-9cm帯で影響が大きい会場（波が立ちやすい外洋・内海接続型）
+_HIGH_IMPACT_VENUES = {'06', '08', '10', '11', '12', '13', '14'}
+# 児島=06, 宮島=08, 若松=10, 下関=11, 鳴門=12, 芦屋=13, 唐津=14
+
+# 5-9cm帯で影響が小さい会場（比較的穏やかな内湾型）
+_LOW_IMPACT_VENUES = {'07', '09', '23', '24'}
+# 丸亀=07, 徳山=09, 大村=23, 福岡=24
+
+
 def calculate_wave_height_adjustment(
     course: int,
-    wave_height: Optional[float]
+    wave_height: Optional[float],
+    venue_code: Optional[str] = None
 ) -> float:
     """
     波高による補正スコアを計算
 
     2025年通年データの統計:
+    - 5-9cm:   会場依存（影響大7会場: course1=-5.0, 影響小4会場: course1=-2.5）
     - 10-14cm: 1コース 40.3% (-16.1pt)、2コース 22.2% (+9.3pt)
-    - 15-19cm: 1コース 51.0% (-5.4pt)
-    - 20cm+:   1コース 47.3% (-9.1pt)
+    - 15cm+:   1コース 47.3% (-9.1pt)
 
     Args:
         course: コース番号(1-6)
         wave_height: 波高(cm)
+        venue_code: 会場コード（2桁文字列、5-9cm帯の会場別補正に使用）
 
     Returns:
         補正スコア（-10.0 ~ +5.0点）
@@ -32,8 +43,24 @@ def calculate_wave_height_adjustment(
     if wave_height is None:
         return 0.0
 
+    # 5-9cm: 会場依存の補正
+    if 5 <= wave_height < 10:
+        if venue_code in _HIGH_IMPACT_VENUES:
+            # 影響大7会場: 1コースにやや不利
+            if course == 1:
+                score -= 5.0
+            elif course == 2:
+                score += 2.0
+        elif venue_code in _LOW_IMPACT_VENUES:
+            # 影響小4会場: 1コースに軽微な影響
+            if course == 1:
+                score -= 2.5
+            elif course == 2:
+                score += 1.0
+        # その他会場は補正なし（会場コード不明含む）
+
     # 10-14cm: 最も1コースに不利、2コースに有利
-    if 10 <= wave_height < 15:
+    elif 10 <= wave_height < 15:
         if course == 1:
             # 1コース: 大幅不利（-16.1pt → -8.0点）
             score -= 8.0
@@ -41,13 +68,13 @@ def calculate_wave_height_adjustment(
             # 2コース: 有利（+9.3pt → +5.0点）
             score += 5.0
 
-    # 15cm以上: やや不利（15-19cmと20cm+の平均を取る）
+    # 15cm以上: 高波（15-19cmと20cm+の平均 -9.1pt）
     elif wave_height >= 15:
         if course == 1:
-            # 1コース: やや不利（平均-7.3pt → -3.5点）
-            score -= 3.5
+            # 1コース: 大幅不利（平均-9.1pt → -8.0点）
+            score -= 8.0
         elif course == 2:
-            # 2コースもやや有利（18-19%程度）
+            # 2コースも有利
             score += 2.0
 
     # スコア範囲を制限（-10.0 ~ +5.0点）

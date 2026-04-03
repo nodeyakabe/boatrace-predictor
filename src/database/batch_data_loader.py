@@ -270,11 +270,11 @@ class BatchDataLoader:
                 'avg_st': row['avg_st']
             }
 
-        # 2. コース別成績を一括取得
+        # 2. コース別成績を一括取得（actual_course使用: 実際の進入コースで集計）
         query_course = f"""
             SELECT
                 e.racer_number,
-                e.pit_number as course,
+                COALESCE(rd.actual_course, e.pit_number) as course,
                 COUNT(*) as total_races,
                 SUM(CASE WHEN r.rank = 1 THEN 1 ELSE 0 END) as win_count,
                 SUM(CASE WHEN r.rank <= 2 THEN 1 ELSE 0 END) as place_2,
@@ -283,11 +283,12 @@ class BatchDataLoader:
             FROM results r
             JOIN races ra ON r.race_id = ra.id
             JOIN entries e ON r.race_id = e.race_id AND r.pit_number = e.pit_number
+            LEFT JOIN race_details rd ON r.race_id = rd.race_id AND r.pit_number = rd.pit_number
             WHERE e.racer_number IN ({placeholders})
               AND ra.race_date >= ?
               AND ra.race_date < ?
               AND r.is_invalid = 0
-            GROUP BY e.racer_number, e.pit_number
+            GROUP BY e.racer_number, COALESCE(rd.actual_course, e.pit_number)
         """
 
         cursor.execute(query_course, racer_numbers + [start_date, target_date])
@@ -833,22 +834,23 @@ class BatchDataLoader:
         if racer_numbers:
             placeholders = ','.join('?' * len(racer_numbers))
 
-            # 選手×コース別の決まり手統計
+            # 選手×コース別の決まり手統計（actual_course使用）
             query_racer = f"""
                 SELECT
                     e.racer_number,
-                    e.pit_number as course,
+                    COALESCE(rd.actual_course, e.pit_number) as course,
                     r.kimarite,
                     COUNT(*) as count
                 FROM results r
                 JOIN races ra ON r.race_id = ra.id
                 JOIN entries e ON r.race_id = e.race_id AND r.pit_number = e.pit_number
+                LEFT JOIN race_details rd ON r.race_id = rd.race_id AND r.pit_number = rd.pit_number
                 WHERE e.racer_number IN ({placeholders})
                   AND r.rank = 1
                   AND r.kimarite IS NOT NULL
                   AND ra.race_date >= ?
                   AND ra.race_date < ?
-                GROUP BY e.racer_number, e.pit_number, r.kimarite
+                GROUP BY e.racer_number, COALESCE(rd.actual_course, e.pit_number), r.kimarite
             """
 
             cursor.execute(query_racer, racer_numbers + [start_date, target_date])
@@ -885,17 +887,18 @@ class BatchDataLoader:
             query_venue = f"""
                 SELECT
                     ra.venue_code,
-                    r.pit_number as course,
+                    COALESCE(rd.actual_course, r.pit_number) as course,
                     r.kimarite,
                     COUNT(*) as count
                 FROM results r
                 JOIN races ra ON r.race_id = ra.id
+                LEFT JOIN race_details rd ON r.race_id = rd.race_id AND r.pit_number = rd.pit_number
                 WHERE ra.venue_code IN ({placeholders})
                   AND r.rank = 1
                   AND r.kimarite IS NOT NULL
                   AND ra.race_date >= ?
                   AND ra.race_date < ?
-                GROUP BY ra.venue_code, r.pit_number, r.kimarite
+                GROUP BY ra.venue_code, COALESCE(rd.actual_course, r.pit_number), r.kimarite
             """
 
             cursor.execute(query_venue, venue_codes + [start_date, target_date])
