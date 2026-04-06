@@ -472,9 +472,10 @@ class BeforeInfoScorer:
         wind_speed = weather.get('wind_speed')
         wind_direction = weather.get('wind_direction')
 
+        # venue_code を事前に取得（波高補正でも使用するため wind_speed ブロック外で初期化）
+        venue_code = self._get_venue_code(race_id)
+
         if wind_speed is not None and wind_speed >= 3.0:
-            # 会場コードを取得
-            venue_code = self._get_venue_code(race_id)
 
             if venue_code:
                 # 会場×風向の補正を適用（全コース対応版）
