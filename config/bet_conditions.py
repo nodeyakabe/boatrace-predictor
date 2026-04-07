@@ -3,8 +3,16 @@
 このファイルを修正すると、バックテストと実運用の両方に反映されます。
 条件追加時は必ずバックテストで検証してから実運用に適用してください。
 
-Version: v2.39.0
-Last Updated: 2026-03-19
+Version: v2.43.0
+Last Updated: 2026-04-07
+
+【v2.43.0 変更内容】
+- B_A1_30_50_8VENUES: use_pattern_h False→True（パターンH適用）
+  検証結果: 286件/ROI 205.5%/+30,180円（1点）→ 757件/ROI 162.2%/+61,180円（パターンH）
+  追加分（p1-p2-p4/p5軸）のROI独立計算: 投資87,000円/収支+31,007円/ROI 135.6%（Tier2基準130%クリア）
+  全体効果: 1,610件/139.8%/+64,090円/5/6年 → 1,586件/152.6%/+95,290円/6/6年（+31,200円/+12.8pt/1年改善）
+  注意: 津×C×B1にも同時試験したが逆効果（ROI 168.1%→118.0%/-4,030円）→ 津は1点維持。
+        パターンH設計原則: 1-2着のエッジが十分強い条件（ROI 180%+）のみ有効。
 
 【v2.39.0 変更内容】
 - B_A1_30_50_ALL 追加（全会場×B信頼度×A1ランク×30-50倍×1点）
@@ -259,8 +267,8 @@ from typing import List, Dict, Any, Optional
 # ============================================================
 # バージョン管理
 # ============================================================
-CONDITION_VERSION = "v2.39.0"
-LAST_UPDATED = "2026-03-19"
+CONDITION_VERSION = "v2.42.0"
+LAST_UPDATED = "2026-04-07"
 
 # ============================================================
 # 標準BetTargetEvaluatorのパラメータ
@@ -456,29 +464,26 @@ STANDARD_BET_CONDITIONS = [
     #     'backtest_black_years': '3/6',
     # },
 
-    # 【2026-03-05更新】パターンH→1点買いに変更
-    # Tier 1(2024-2025): 1点買い ROI 223.3%, 2/2年黒字（旧パターンH: ROI 92.9%, -12,170円）
-    # 理由: 30-50倍帯では1点集中が効率的（外れ時損失1/4、的中時リターン十分）
-    {
-        'id': 'C_Kojima_B1',
-        'priority': 6,
-        'name': '児島×C×B1×30-50×1点買い',
-        'confidence': 'C',
-        'c1_rank': ['B1'],
-        'odds_min': 30,
-        'odds_max': 50,
-        'venue_filter': [16],  # 児島のみ
-        # race_exclude削除（v2.37.0: Opus評価でレース番号に因果なし・月次除外と同一問題）
-        # month_exclude削除（v2.36.0: 4/9月各~16件は50件未満のため根拠薄として撤廃）
-        'description': '児島×C×B1級×30-50倍×1点買い（v2.37.0: 全除外撤廃/ROI要再テスト）',
-        'use_pattern_h': False,  # 1点買い（2026-03-05変更: パターンH廃止）
-        'version': '1.6',
-        'added_date': '2026-01-08',
-        'backtest_period': '2020-2025',
-        'backtest_roi': 129.8,   # v2.14.0以前（除外なし: 382件/ROI 129.8%）→ 要再テスト
-        'backtest_profit': 11380,
-        'backtest_black_years': '5/6',
-    },
+    # 【廃止: 2026-04-06】児島×C×B1×30-50倍×1点買い
+    # v2.40.0リークフリー実測(unique): 373件/ROI 75.9%/-8,990円 → 新Tier2基準(130%)大幅未達
+    # {
+    #     'id': 'C_Kojima_B1',
+    #     'priority': 6,
+    #     'name': '児島×C×B1×30-50×1点買い',
+    #     'confidence': 'C',
+    #     'c1_rank': ['B1'],
+    #     'odds_min': 30,
+    #     'odds_max': 50,
+    #     'venue_filter': [16],  # 児島のみ
+    #     'description': '児島×C×B1級×30-50倍×1点買い',
+    #     'use_pattern_h': False,
+    #     'version': '1.6',
+    #     'added_date': '2026-01-08',
+    #     'backtest_period': '2020-2025',
+    #     'backtest_roi': 75.9,   # v2.40.0リークフリー実測(unique)
+    #     'backtest_profit': -8990,
+    #     'backtest_black_years': '?/6',
+    # },
 
     # ----------------------------------------------------------------
     # D条件
@@ -557,6 +562,7 @@ STANDARD_BET_CONDITIONS = [
         # month_exclude削除（v2.36.0: 2月~15-20件は50件未満のため根拠薄として撤廃）
         'description': '丸亀+尼崎+蒲郡×A×B1×30-50倍×1点買い（v2.36.0: 月次除外撤廃→196件/ROI 269.8%/4/6年黒字）',
         'use_pattern_h': False,  # 1点買い
+        'advance_before_match': True,  # advance/before完全一致フィルタ（2026-04-07追加）
         'version': '1.2',
         'added_date': '2026-03-13',
         'backtest_period': '2020-2025',
@@ -565,30 +571,26 @@ STANDARD_BET_CONDITIONS = [
         'backtest_black_years': '4/6',
     },
 
-    # 【2026-03-13追加】鳴門×C×B1×30-50倍×1点買い
-    # Opus分析: B1ランク限定298件/ROI 181.2%/5/6年黒字
-    # 全B1+B2: 1,058件/ROI 144.1%/5/6年黒字（B1限定の方が精度高）
-    # 廃止済みC_Naruto_A2（ROI 60.9%, 1/6年黒字）とは異なりB1ランク限定で安定
-    # GLOBAL_VENUE_MONTH_EXCLUDESで鳴門×1月・2月は除外済み
-    {
-        'id': 'C_Naruto_30_50',
-        'priority': 3,
-        'name': '鳴門×C×B1×30-50×1点買い',
-        'confidence': 'C',
-        'c1_rank': ['B1'],
-        'odds_min': 30,
-        'odds_max': 50,
-        'venue_filter': [14],  # 鳴門のみ
-        # month_exclude削除（v2.36.0: 4月~37件は50件未満のため根拠薄として撤廃）
-        'description': '鳴門×C×B1級×30-50倍×1点買い（v2.36.0: 月次除外撤廃→478件/ROI 144.5%/5/6年黒字）',
-        'use_pattern_h': False,  # 1点買い
-        'version': '1.2',
-        'added_date': '2026-03-13',
-        'backtest_period': '2020-2025',
-        'backtest_roi': 144.5,   # v2.8.0時点（月次除外なし）
-        'backtest_profit': 21270,
-        'backtest_black_years': '5/6',
-    },
+    # 【廃止: 2026-04-06】鳴門×C×B1×30-50倍×1点買い
+    # v2.40.0リークフリー実測(unique): 348件/ROI 95.8%/-1,470円 → 新Tier2基準(130%)未達
+    # {
+    #     'id': 'C_Naruto_30_50',
+    #     'priority': 3,
+    #     'name': '鳴門×C×B1×30-50×1点買い',
+    #     'confidence': 'C',
+    #     'c1_rank': ['B1'],
+    #     'odds_min': 30,
+    #     'odds_max': 50,
+    #     'venue_filter': [14],  # 鳴門のみ
+    #     'description': '鳴門×C×B1級×30-50倍×1点買い',
+    #     'use_pattern_h': False,
+    #     'version': '1.2',
+    #     'added_date': '2026-03-13',
+    #     'backtest_period': '2020-2025',
+    #     'backtest_roi': 95.8,   # v2.40.0リークフリー実測(unique)
+    #     'backtest_profit': -1470,
+    #     'backtest_black_years': '?/6',
+    # },
 
     # 【2026-03-13追加/v2.23.0分割】びわこ×C×B1×30-50倍×1点（6月除外追加）
     # 分割前(びわこ+芦屋合算): 589件/ROI 174.2%/5/6年/+43,720円
@@ -632,6 +634,7 @@ STANDARD_BET_CONDITIONS = [
         # month_exclude削除（v2.36.0: 12月~18件は50件未満のため根拠薄として撤廃）
         'description': '芦屋×C×B1×30-50倍×1点買い（v2.37.0: 全除外撤廃/ROI要再テスト）',
         'use_pattern_h': False,
+        'advance_before_match': True,  # advance/before完全一致フィルタ（2026-04-07追加）
         'version': '2.4',
         'added_date': '2026-03-13',
         'backtest_period': '2020-2025',
@@ -640,30 +643,26 @@ STANDARD_BET_CONDITIONS = [
         'backtest_black_years': '5/6',
     },
 
-    # 【2026-03-16追加】多摩川×C×A1×30-50倍×1点
-    # Tier1: 58件/ROI 269.5%/2/2年黒字
-    # Tier2: 180件/ROI 159.7%/4/6年黒字 (+10,740円)
-    # 年度別: 2020×-1,600 / 2021○+5,310 / 2022○+400 / 2023×-3,200 / 2024○+5,460 / 2025○+4,370
-    {
-        'id': 'C_A1_30_50_TAMAGAWA',
-        'priority': 11,
-        'name': '多摩川×C×A1×30-50×1点',
-        'confidence': 'C',
-        'c1_rank': ['A1'],
-        'odds_min': 30,
-        'odds_max': 50,
-        'venue_filter': [5],  # 多摩川
-        # race_exclude削除（v2.37.0: Opus評価でレース番号に因果なし・月次除外と同一問題）
-        # month_exclude削除（v2.36.0: 4/6月:~17件/8月:~10件は全て50件未満のため撤廃）
-        'description': '多摩川×C×A1級×30-50倍×1点買い（v2.37.0: 全除外撤廃/ROI要再テスト）',
-        'use_pattern_h': False,
-        'version': '1.4',
-        'added_date': '2026-03-16',
-        'backtest_period': '2020-2025',
-        'backtest_roi': 159.7,   # v2.12.0時点（除外なし: 180件/ROI 159.7%）→ 要再テスト
-        'backtest_profit': 10740,
-        'backtest_black_years': '4/6',
-    },
+    # 【廃止: 2026-04-06】多摩川×C×A1×30-50倍×1点
+    # v2.40.0リークフリー実測: 404件/ROI 75.0%/-10,090円/2/6年黒字 → 新Tier2基準(130%)大幅未達
+    # {
+    #     'id': 'C_A1_30_50_TAMAGAWA',
+    #     'priority': 11,
+    #     'name': '多摩川×C×A1×30-50×1点',
+    #     'confidence': 'C',
+    #     'c1_rank': ['A1'],
+    #     'odds_min': 30,
+    #     'odds_max': 50,
+    #     'venue_filter': [5],  # 多摩川
+    #     'description': '多摩川×C×A1級×30-50倍×1点買い',
+    #     'use_pattern_h': False,
+    #     'version': '1.4',
+    #     'added_date': '2026-03-16',
+    #     'backtest_period': '2020-2025',
+    #     'backtest_roi': 75.0,   # v2.40.0リークフリー実測
+    #     'backtest_profit': -10090,
+    #     'backtest_black_years': '2/6',
+    # },
 
     # 【廃止: 2026-03-18 v2.38.0】唐津×C×A1×30-60倍×1点
     # pairwise正常期間（2020-2023）: 106件/ROI 66.2%/1/4年黒字 → Tier 2基準大幅未達
@@ -705,6 +704,7 @@ STANDARD_BET_CONDITIONS = [
         'venue_filter': [1, 20, 6, 7],  # 桐生=1, 若松=20, 浜名湖=6, 蒲郡=7
         'description': '桐生+若松+浜名湖+蒲郡×A×A1×30-70倍×1点買い（v2.21.0: Tier1 ROI 261.6%、6年ROI 296.3%/6/6年黒字）',
         'use_pattern_h': False,
+        'advance_before_match': True,  # advance/before完全一致フィルタ（2026-04-07追加）
         'version': '1.1',
         'added_date': '2026-03-16',
         'backtest_period': '2020-2025',
@@ -713,29 +713,26 @@ STANDARD_BET_CONDITIONS = [
         'backtest_black_years': '6/6',
     },
 
-    # 【2026-03-16追加】児島+徳山×C×A2×30-50
-    # Tier1: 56件/ROI 252.5%/2/2年黒字 → 合格
-    # Tier2: 171件/ROI 166.6%/5/6年黒字 (+11,390円)
-    # 年度別: 2020○+1,490/2021○+3,250/2022○+610/2023×-2,500/2024○+3,520/2025○+5,020
-    {
-        'id': 'C_A2_30_50_KOJIMA_TOKUYAMA',
-        'priority': 14,
-        'name': '児島+徳山×C×A2×30-50×1点',
-        'confidence': 'C',
-        'c1_rank': ['A2'],
-        'odds_min': 30,
-        'odds_max': 50,
-        'venue_filter': [16, 18],  # 児島=16, 徳山=18
-        # month_exclude削除（v2.36.0: 1月:~14件/6月:~14件は50件未満のため撤廃）
-        'description': '児島+徳山×C×A2×30-50倍×1点買い（v2.36.0: 月次除外撤廃→171件/ROI 166.6%/5/6年黒字）',
-        'use_pattern_h': False,
-        'version': '1.2',
-        'added_date': '2026-03-16',
-        'backtest_period': '2020-2025',
-        'backtest_roi': 166.6,   # v2.18.0時点（月次除外なし）
-        'backtest_profit': 11390,
-        'backtest_black_years': '5/6',
-    },
+    # 【廃止: 2026-04-06】児島+徳山×C×A2×30-50
+    # v2.40.0リークフリー実測: 102件/ROI 66.3%/-3,440円/1/6年黒字 → 新Tier2基準(130%)大幅未達
+    # {
+    #     'id': 'C_A2_30_50_KOJIMA_TOKUYAMA',
+    #     'priority': 14,
+    #     'name': '児島+徳山×C×A2×30-50×1点',
+    #     'confidence': 'C',
+    #     'c1_rank': ['A2'],
+    #     'odds_min': 30,
+    #     'odds_max': 50,
+    #     'venue_filter': [16, 18],  # 児島=16, 徳山=18
+    #     'description': '児島+徳山×C×A2×30-50倍×1点買い',
+    #     'use_pattern_h': False,
+    #     'version': '1.2',
+    #     'added_date': '2026-03-16',
+    #     'backtest_period': '2020-2025',
+    #     'backtest_roi': 66.3,   # v2.40.0リークフリー実測
+    #     'backtest_profit': -3440,
+    #     'backtest_black_years': '1/6',
+    # },
 
     # 【2026-03-16追加】戸田×C×A2×30-50
     # Tier1(元): 142件/ROI 167.9%/2/2年黒字 → 合格
@@ -780,6 +777,7 @@ STANDARD_BET_CONDITIONS = [
         'venue_filter': [9, 6, 20],  # 津=9, 浜名湖=6, 若松=20
         'description': '津+浜名湖+若松×A×A2×30-50倍×1点買い（Tier1 ROI 285.4%、6年ROI 252.9%/6/6年黒字）',
         'use_pattern_h': False,
+        'advance_before_match': True,  # advance/before完全一致フィルタ（2026-04-07追加）
         'version': '1.0',
         'added_date': '2026-03-16',
         'backtest_period': '2020-2025',
@@ -799,64 +797,107 @@ STANDARD_BET_CONDITIONS = [
     # → 4/6年黒字未達（3/6）で Tier2 FAIL。2020-2022年が構造的に機能しない
     # → REJECTED_IDEAS.md に記録済み
 
-    # 【2026-03-17追加 Tier2合格】福岡+戸田+浜名湖+三国×D×B1×50-70倍×1点
-    # OpusのSQL全会場スキャンで発見（D信頼度×B1×高オッズ帯×4会場）
-    # ⚠️ 旧コメント誤記訂正(v2.34.0): 22=福岡(下関ではない/下関=19), 10=三国(常滑ではない/常滑=8)
-    # Tier1合格: 282件/ROI 153.5%/2/2年黒字
-    #   2024: 137件/ROI 185.8%/+11,760円
-    #   2025: 145件/ROI 122.9%/+3,320円
-    # Tier2合格: 760件/ROI 194.4%/6/6年黒字/+71,710円
-    {
-        'id': 'D_B1_50_70_4VENUES',
-        'priority': 17,
-        'name': '福岡+戸田+浜名湖+三国×D×B1×50-70×1点',
-        'confidence': 'D',
-        'c1_rank': ['B1'],
-        'odds_min': 50,
-        'odds_max': 70,
-        'venue_filter': [22, 2, 6, 10],  # 福岡=22, 戸田=2, 浜名湖=6, 三国=10 ※v2.34.0で誤記訂正
-        'description': '福岡+戸田+浜名湖+三国×D×B1×50-70倍×1点買い（Tier2 ROI 194.4%/6/6年黒字/+71,710円）',
-        'use_pattern_h': False,  # 1点買い
-        'version': '1.0',
-        'added_date': '2026-03-17',
-        'backtest_period': '2020-2025',
-        'backtest_roi': 194.4,
-        'backtest_profit': 71710,
-        'backtest_black_years': '6/6',
-    },
+    # 【廃止: 2026-04-06】福岡+戸田+浜名湖+三国×D×B1×50-70倍×1点
+    # v2.40.0リークフリー実測: 396件/ROI 55.2%/-17,740円/1/6年黒字 → 新Tier2基準(130%)大幅未達
+    # {
+    #     'id': 'D_B1_50_70_4VENUES',
+    #     'priority': 17,
+    #     'name': '福岡+戸田+浜名湖+三国×D×B1×50-70×1点',
+    #     'confidence': 'D',
+    #     'c1_rank': ['B1'],
+    #     'odds_min': 50,
+    #     'odds_max': 70,
+    #     'venue_filter': [22, 2, 6, 10],
+    #     'description': '福岡+戸田+浜名湖+三国×D×B1×50-70倍×1点買い',
+    #     'use_pattern_h': False,
+    #     'version': '1.0',
+    #     'added_date': '2026-03-17',
+    #     'backtest_period': '2020-2025',
+    #     'backtest_roi': 55.2,   # v2.40.0リークフリー実測
+    #     'backtest_profit': -17740,
+    #     'backtest_black_years': '1/6',
+    # },
 
-    # 【2026-03-19 Tier2合格】全会場×B×A1×30-50×1点
-    # SQL分析（2020-2023）: 336件/ROI 186.0%/+28,910円
-    # Tier1: ROI 108.5%/2/2年黒字（2024年pairwise誤生成で過小評価）
-    # Tier2合格: 458件/ROI 164.8%/4/6年黒字/+29,660円
-    #   2020: ×-4,600 / 2021: ○+4,270 / 2022: ○+8,840 / 2023: ○+15,370 / 2024: ×-250 / 2025: ○+6,030
-    # 全体: 3,239件/ROI 174.1%/+239,890円（vs v2.38.0: 2,914件/177.6%/+226,040円）
-    # ※会場絞り込み案（黒字12会場→ROI 295.6%/+47,920）はOpus評価で不採用
-    #   理由: 12会場中6会場が「6年で1的中のみ」、全敗会場除外は統計的根拠なし
-    #   （的中率4.37%×20件で全敗確率40%→24会場中12全敗は確率的に自然）
-    {
-        'id': 'B_A1_30_50_ALL',
-        'priority': 18,
-        'name': '全会場 B×A1×30-50×1点',
-        'confidence': 'B',
-        'c1_rank': ['A1'],
-        'odds_min': 30,
-        'odds_max': 50,
-        'description': '全会場×B信頼度×A1ランク×30-50倍×1点買い（Tier2 ROI 164.8%/4/6年黒字/+29,660円）',
-        'use_pattern_h': False,
-        'version': '1.0',
-        'added_date': '2026-03-19',
-        'backtest_period': '2020-2025',
-        'backtest_roi': 164.8,
-        'backtest_profit': 29660,
-        'backtest_black_years': '4/6',
-    },
+    # 【廃止: 2026-04-06】全会場×B×A1×30-50×1点
+    # v2.40.0リークフリー実測(unique): 890件/ROI 94.1%/-5,270円 → 新Tier2基準(130%)大幅未達
+    # 会場絞り込み版（黒字8会場: ROI 206.2%/5/6年/285件）に置換候補あり → 別途Tier1テスト予定
+    # {
+    #     'id': 'B_A1_30_50_ALL',
+    #     'priority': 18,
+    #     'name': '全会場 B×A1×30-50×1点',
+    #     'confidence': 'B',
+    #     'c1_rank': ['A1'],
+    #     'odds_min': 30,
+    #     'odds_max': 50,
+    #     'description': '全会場×B×A1×30-50倍×1点買い',
+    #     'use_pattern_h': False,
+    #     'version': '1.0',
+    #     'added_date': '2026-03-19',
+    #     'backtest_period': '2020-2025',
+    #     'backtest_roi': 94.1,   # v2.40.0リークフリー実測(unique)
+    #     'backtest_profit': -5270,
+    #     'backtest_black_years': '?/6',
+    # },
 
     # 【2026-03-17 Tier2テスト → 不採用】浜名湖+鳴門×C×A2×30-50
     # Tier1合格: 127件/ROI 194.3%/2/2年黒字
     # Tier2: 380件/ROI 118.3%/3/6年黒字（2020○+4,220/2021×-2,020/2022×-6,700/2023×-510/2024○+5,950/2025○+6,020）
     # → 4/6年黒字未達（3/6）で Tier2 FAIL。鳴門×C×A2が2020-2022年代に構造的弱さ
     # → REJECTED_IDEAS.md に記録済み
+
+    # ----------------------------------------------------------------
+    # 2026-04-06追加条件
+    # ----------------------------------------------------------------
+
+    # 【2026-04-06追加 Tier2相当合格済み】津×C×B1×30-50×1点
+    # DB実測（v2.40.0・4月除外済み・重複除外なし）: 311件/ROI 168.7%/収支+21,360円/5/6年黒字
+    # 年度別: 2020○+3,240 / 2021○+4,310 / 2022×-1,210 / 2023○+250 / 2024○+6,580 / 2025○+8,190
+    # 新Tier2基準（B/C/D: 130%/4/6年/90件）: 全合格
+    # 年間最大損失: -1,210円（2022年）
+    {
+        'id': 'C_TSU_B1_30_50',
+        'priority': 5,
+        'name': '津×C×B1×30-50×1点',
+        'confidence': 'C',
+        'c1_rank': ['B1'],
+        'odds_min': 30,
+        'odds_max': 50,
+        'venue_filter': [9],  # 津=9
+        'description': '津×C×B1×30-50倍×1点買い（DB実測 ROI 168.7%/5/6年黒字/+21,360円）',
+        'use_pattern_h': False,
+        'advance_before_match': True,  # advance/before完全一致フィルタ（2026-04-07追加）
+        'version': '1.0',
+        'added_date': '2026-04-06',
+        'backtest_period': '2020-2025',
+        'backtest_roi': 168.7,
+        'backtest_profit': 21360,
+        'backtest_black_years': '5/6',
+    },
+
+    # 【2026-04-06追加 Tier1テスト待ち】B×A1×30-50×黒字8会場×1点
+    # B_A1_30_50_ALL廃止に伴う置換候補。DB実測（v2.40.0）: 285件/ROI 206.2%/+30,280円/5/6年黒字
+    # 年度別: 2020○+10,140 / 2021○+180 / 2022○+8,630 / 2023○+11,670 / 2024×-3,700 / 2025○+3,360
+    # ⚠️ 2024年が0的中（-3,700円）。Tier1テストで直近2年の傾向を確認済み（Tier2合格判断で採用）
+    # 8会場: 戸田(2)+江戸川(3)+浜名湖(6)+常滑(8)+住之江(12)+津(9)+宮島(17)+下関(19)
+    {
+        'id': 'B_A1_30_50_8VENUES',
+        'priority': 15,
+        'name': 'B×A1×30-50×8会場×1点',
+        'confidence': 'B',
+        'c1_rank': ['A1'],
+        'odds_min': 30,
+        'odds_max': 50,
+        'venue_filter': [2, 3, 6, 8, 12, 9, 17, 19],  # 戸田,江戸川,浜名湖,常滑,住之江,津,宮島,下関
+        'description': 'B×A1×30-50倍×黒字8会場×パターンH（DB実測 ROI 206.2%/5/6年黒字/+30,280円）',
+        'use_pattern_h': True,
+        'advance_before_match': True,  # advance/before完全一致フィルタ（2026-04-07追加）
+        'version': '1.0',
+        'added_date': '2026-04-06',
+        'backtest_period': '2020-2025',
+        'backtest_roi': 206.2,
+        'backtest_profit': 30280,
+        'backtest_black_years': '5/6',
+    },
 
     # ----------------------------------------------------------------
     # B2条件（市場との差を活用）
