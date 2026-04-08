@@ -304,7 +304,6 @@ def get_race_ids_for_condition(
 
         for race_id in race_ids:
             # 予測順位を取得（オッズコンビネーション構築のため）
-            _limit = 4 if (_use_ph and _excl_p5) else 5
             cursor.execute("""
                 SELECT pit_number
                 FROM race_predictions
