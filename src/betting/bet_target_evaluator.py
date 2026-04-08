@@ -42,6 +42,7 @@ class BetTarget:
     multi_bet_result: Optional[MultiBetResult] = None  # 複数点買い情報
     venue_course_adjustment: Optional[AdjustmentResult] = None  # 会場コース調整情報
     use_pattern_h: bool = True           # パターンH（3点買い）を使用するか（2026-01-07追加）
+    pattern_h_exclude_p5: bool = False   # p5軸を除外して2点にするか（2026-04-08追加）
 
 
 @dataclass
@@ -311,7 +312,8 @@ class BetTargetEvaluator:
         escape_rate: Optional[float] = None,  # 1着予測選手の逃げ率（0-1）- 2026-01-09追加
         bias_index: Optional[float] = None,  # 1着予測選手のバイアス指数 - 2026-01-13追加
         odds_data: Optional[Dict] = None,  # 全オッズデータ（パターンH用）- 2026-02-13追加
-        old_prediction: Optional[List[int]] = None  # 予測順位（ピット番号のリスト、パターンH用）- 2026-02-16追加
+        old_prediction: Optional[List[int]] = None,  # 予測順位（ピット番号のリスト、パターンH用）- 2026-02-16追加
+        wave_height: Optional[float] = None  # 波高フィルター用（cm）- 2026-04-06追加
     ) -> BetTarget:
         """
         購入対象を判定する
@@ -336,6 +338,7 @@ class BetTargetEvaluator:
             bias_index: 1着予測選手のバイアス指数（2026-01-13追加）
             odds_data: 全オッズデータ（パターンH用、2026-02-13追加）
             old_prediction: 予測順位（ピット番号のリスト、パターンH用、2026-02-16追加）
+            wave_height: 波高（cm）。wave_height_max/wave_height_min 条件チェックに使用（2026-04-06追加）
 
         Returns:
             BetTarget: 購入対象情報
@@ -495,6 +498,16 @@ class BetTargetEvaluator:
                 if bias_index >= cond['bias_max']:
                     continue  # bias_index が閾値以上なら除外
 
+            # 波高フィルターチェック（2026-04-06追加）
+            # wave_height_max: この値を超える波高の場合は除外（荒れレース除外が主用途）
+            # wave_height_min: この値未満の波高の場合は除外（荒れレース専用条件が主用途）
+            if 'wave_height_max' in cond:
+                if wave_height is not None and wave_height > cond['wave_height_max']:
+                    continue
+            if 'wave_height_min' in cond:
+                if wave_height is None or wave_height < cond['wave_height_min']:
+                    continue
+
             # 方式と買い目の決定
             if cond['method'] == '従来':
                 combo = old_combo
@@ -546,22 +559,24 @@ class BetTargetEvaluator:
 
             # オッズ範囲チェック（パターンH対応）
             use_pattern_h = cond.get('use_pattern_h', True)
+            exclude_p5 = cond.get('pattern_h_exclude_p5', False)
 
-            # パターンH条件だが5位までの予測がない場合は対象外（Tier 2のINNER JOINと同じ動作）
-            if use_pattern_h and (not old_prediction or len(old_prediction) < 5):
+            # パターンH条件だが4位までの予測がない場合は対象外（Tier 2のINNER JOINと同じ動作）
+            if use_pattern_h and (not old_prediction or len(old_prediction) < 4):
+                continue
+            # p5使用時は5位まで必要
+            if use_pattern_h and not exclude_p5 and len(old_prediction) < 5:
                 continue
 
-            # パターンH条件の場合、3点（1-2-3, 1-2-4, 1-2-5）すべてをチェック
-            if use_pattern_h and odds_data and old_prediction and len(old_prediction) >= 5:
-                # 予測順位から3点の買い目を生成
+            # パターンH条件の場合、各点の買い目をチェック
+            if use_pattern_h and odds_data and old_prediction and len(old_prediction) >= 4:
+                # 予測順位から買い目を生成
                 combo_123 = f"{old_prediction[0]}-{old_prediction[1]}-{old_prediction[2]}"
                 combo_124 = f"{old_prediction[0]}-{old_prediction[1]}-{old_prediction[3]}"
-                combo_125 = f"{old_prediction[0]}-{old_prediction[1]}-{old_prediction[4]}"
 
-                # 3点のオッズを取得
+                # オッズを取得
                 odds_123 = odds_data.get(combo_123)
                 odds_124 = odds_data.get(combo_124)
-                odds_125 = odds_data.get(combo_125)
 
                 # いずれかがオッズ範囲内なら購入対象
                 matched_combos = []
@@ -569,14 +584,19 @@ class BetTargetEvaluator:
                     matched_combos.append((combo_123, odds_123))
                 if odds_124 and odds_min <= odds_124 < odds_max:
                     matched_combos.append((combo_124, odds_124))
-                if odds_125 and odds_min <= odds_125 < odds_max:
-                    matched_combos.append((combo_125, odds_125))
+
+                # p5除外でない場合は1-2-5も確認
+                if not exclude_p5 and len(old_prediction) >= 5:
+                    combo_125 = f"{old_prediction[0]}-{old_prediction[1]}-{old_prediction[4]}"
+                    odds_125 = odds_data.get(combo_125)
+                    if odds_125 and odds_min <= odds_125 < odds_max:
+                        matched_combos.append((combo_125, odds_125))
 
                 if matched_combos:
                     # 最もオッズが高い買い目を選択
                     combo, odds = max(matched_combos, key=lambda x: x[1])
                 else:
-                    # 3点すべてが範囲外なら次の条件へ
+                    # 全点が範囲外なら次の条件へ
                     continue
             else:
                 # パターンH以外、または条件が揃わない場合は1点のみチェック
@@ -596,7 +616,8 @@ class BetTargetEvaluator:
             if 'predicted_course' in cond:
                 reason_parts.append(f'{cond["predicted_course"]}コース予測')
             # パターンH適用有無を理由に追加
-            bet_mode = 'パターンH' if use_pattern_h else '1点買い'
+            _exclude_p5 = exclude_p5 if use_pattern_h else False
+            bet_mode = 'パターンH2' if (use_pattern_h and _exclude_p5) else ('パターンH' if use_pattern_h else '1点買い')
             reason_parts.append(bet_mode)
             reason = ' + '.join(reason_parts)
 
@@ -611,7 +632,8 @@ class BetTargetEvaluator:
                 expected_roi=cond['expected_roi'],
                 bet_amount=cond['bet_amount'],
                 reason=reason,
-                use_pattern_h=use_pattern_h
+                use_pattern_h=use_pattern_h,
+                pattern_h_exclude_p5=_exclude_p5
             )
 
         # オッズ未取得でCANDIDATE候補がある場合（全条件確認済み）
@@ -661,7 +683,8 @@ class BetTargetEvaluator:
         race_data: Dict[str, Any],
         predictions: Dict[str, Any],
         odds_data: Optional[Dict[str, float]] = None,
-        has_beforeinfo: bool = False
+        has_beforeinfo: bool = False,
+        advance_top3: Optional[List[int]] = None,  # advance予測の1-2-3位ピット番号（2026-04-07追加）
     ) -> BetTarget:
         """
         レースデータから購入対象を判定する
@@ -700,6 +723,7 @@ class BetTargetEvaluator:
 
         # 気象データを取得
         wind_speed = race_data.get('wind_speed', 0.0)
+        wave_height = race_data.get('wave_height')  # 波高フィルター用（2026-04-06追加）
 
         # 予測情報
         confidence = predictions.get('confidence', 'D')
@@ -784,6 +808,29 @@ class BetTargetEvaluator:
             bias_index = self._get_player_bias_index(str(first_pred_racer))
 
         # ============================================================
+        # advance/before 完全一致フィルタ（2026-04-07追加）
+        # びわこ(venue_code=11)はフィルタ不適用
+        # advance_top3=Noneはパススルー（advance予測欠損）
+        # advance/before不一致の場合はEXCLUDED
+        # ============================================================
+        BIWAKO_VENUE_CODE = 11
+        if venue_code != BIWAKO_VENUE_CODE and advance_top3 is not None:
+            before_top3 = old_pred[:3]
+            if list(advance_top3[:3]) != list(before_top3):
+                return BetTarget(
+                    status=BetStatus.EXCLUDED,
+                    confidence=confidence,
+                    method='-',
+                    combination='-',
+                    odds=None,
+                    odds_range='-',
+                    c1_rank=c1_rank,
+                    expected_roi=0,
+                    bet_amount=0,
+                    reason=f'advance/before不一致: adv={advance_top3[:3]} bef={before_top3}'
+                )
+
+        # ============================================================
         # B2級特別条件チェック（2026-02-12追加、2026-02-13一時無効化）
         # ============================================================
         # 【2026-02-13】B2条件はconfig/bet_conditions.pyでコメントアウトされているため
@@ -814,7 +861,8 @@ class BetTargetEvaluator:
             escape_rate=escape_rate,  # 逃げ率フィルター用（2026-01-09追加）
             bias_index=bias_index,  # バイアス指数フィルター用（2026-01-28追加）
             odds_data=odds_data,  # パターンH用全オッズ（2026-02-13追加）
-            old_prediction=old_pred  # パターンH用予測順位（2026-02-16追加）
+            old_prediction=old_pred,  # パターンH用予測順位（2026-02-16追加）
+            wave_height=wave_height  # 波高フィルター用（2026-04-06追加）
         )
 
         # 会場×コース別調整を適用
@@ -840,6 +888,7 @@ class BetTargetEvaluator:
 
         # 購入対象の場合、複数点買いを生成（use_pattern_hがTrueの場合のみ）
         # 【2026-01-07更新】条件別にパターンH/1点買いを切り替え
+        # 【2026-04-08更新】pattern_h_exclude_p5=TrueならPATTERN_H2（2点）を使用
         if self.use_multi_bet and bet_target.status in [BetStatus.TARGET_CONFIRMED, BetStatus.TARGET_ADVANCE]:
             # use_pattern_hフラグをチェック（デフォルトはTrue）
             if bet_target.use_pattern_h:
@@ -862,10 +911,14 @@ class BetTargetEvaluator:
                         existing_odds=odds_data
                     )
 
+                    # p5除外フラグに応じてパターンを選択
+                    _pattern = MultiBetPattern.PATTERN_H2 if bet_target.pattern_h_exclude_p5 else MultiBetPattern.PATTERN_H
+
                     try:
                         multi_bet_result = self.multi_bet_generator.generate(
                             predictions=full_prediction,
-                            odds_dict=odds_dict_complete
+                            odds_dict=odds_dict_complete,
+                            pattern=_pattern
                         )
                         bet_target.multi_bet_result = multi_bet_result
                     except Exception as e:

@@ -89,7 +89,14 @@ def analyze_race_result(cursor, cond, race_id):
         return None
     a1, a2, a3 = row
 
-    if use_pattern_h and len(pits) >= 5:
+    exclude_p5 = cond.get('pattern_h_exclude_p5', False)
+    if use_pattern_h and exclude_p5 and len(pits) >= 4:
+        # パターンH2: p1-p2-{p3,p4} を 200/100円（p5除外版）
+        combos = [
+            (f"{pits[0]}-{pits[1]}-{pits[2]}", pits[0], pits[1], pits[2], 200),
+            (f"{pits[0]}-{pits[1]}-{pits[3]}", pits[0], pits[1], pits[3], 100),
+        ]
+    elif use_pattern_h and len(pits) >= 5:
         # パターンH: p1-p2-{p3,p4,p5} を 200/100/100円
         combos = [
             (f"{pits[0]}-{pits[1]}-{pits[2]}", pits[0], pits[1], pits[2], 200),

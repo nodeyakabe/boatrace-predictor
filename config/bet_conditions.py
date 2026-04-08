@@ -3,8 +3,15 @@
 このファイルを修正すると、バックテストと実運用の両方に反映されます。
 条件追加時は必ずバックテストで検証してから実運用に適用してください。
 
-Version: v2.44.0
-Last Updated: 2026-04-07
+Version: v2.45.0
+Last Updated: 2026-04-08
+
+【v2.45.0 変更内容】
+- B_A1_30_50_8VENUES: pattern_h_exclude_p5 True追加（p5軸廃止・p3+p4の2点化）
+  検証: advance/before一致フィルタ適用後 p5=756件/ROI 72.4%（赤字・構造的に弱い）
+  p3+p4のみの2点版 Tier1: 105件/ROI 181.6%/黒字2/2年 → Tier2: 408件/ROI 224.2%/黒字6/6年
+  変更前後（B×A1条件単体・2020-2025）: 1,054件/142%/+58,700→ 408件/224%/+79,600（+20,900円）
+  根拠: 予測5位の3着的中率はモデルの精度限界（的中率2%/ROI 72%は統計的に有意な赤字）
 
 【v2.44.0 変更内容】
 - C_B1_30_50_BIWAKO: 廃止
@@ -893,8 +900,9 @@ STANDARD_BET_CONDITIONS = [
         'venue_filter': [2, 3, 6, 8, 12, 9, 17, 19],  # 戸田,江戸川,浜名湖,常滑,住之江,津,宮島,下関
         'description': 'B×A1×30-50倍×黒字8会場×パターンH（DB実測 ROI 206.2%/5/6年黒字/+30,280円）',
         'use_pattern_h': True,
+        'pattern_h_exclude_p5': True,  # p5軸廃止（2026-04-08）: ROI 72.4%/756件の赤字軸を除外
         'advance_before_match': True,  # advance/before完全一致フィルタ（2026-04-07追加）
-        'version': '1.0',
+        'version': '1.1',
         'added_date': '2026-04-06',
         'backtest_period': '2020-2025',
         'backtest_roi': 206.2,

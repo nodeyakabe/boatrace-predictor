@@ -14,6 +14,7 @@ class MultiBetPattern(Enum):
     """複数点買いパターン"""
     SINGLE = "single"                    # 現行: 1点買い
     PATTERN_H = "pattern_h"              # H: 1-2軸傾斜（200/100/100）- 最高収支
+    PATTERN_H2 = "pattern_h2"            # H2: 1-2軸傾斜2点（200/100）- p5除外版（2026-04-08）
     PATTERN_B = "pattern_b"              # B: 1-2軸均等（100x3）- 最高ROI
     PATTERN_L = "pattern_l"              # L: 重点買い（300+100）
     PATTERN_I = "pattern_i"              # I: 2点買い（200+100）
@@ -133,6 +134,8 @@ class MultiBetGenerator:
             return self._generate_single(predictions, odds_dict)
         elif pattern == MultiBetPattern.PATTERN_H:
             return self._generate_pattern_h(predictions, odds_dict)
+        elif pattern == MultiBetPattern.PATTERN_H2:
+            return self._generate_pattern_h2(predictions, odds_dict)
         elif pattern == MultiBetPattern.PATTERN_B:
             return self._generate_pattern_b(predictions, odds_dict)
         elif pattern == MultiBetPattern.PATTERN_L:
@@ -202,6 +205,49 @@ class MultiBetGenerator:
             bets=bets,
             total_investment=total,
             description="パターンH: 1-2軸3点傾斜配分（200/100/100円）",
+            expected_hit_rate=stats['hit_rate'],
+            expected_roi=stats['roi'],
+        )
+
+    def _generate_pattern_h2(
+        self, predictions: List[int], odds_dict: Dict[str, float]
+    ) -> MultiBetResult:
+        """
+        パターンH2: 1-2軸2点傾斜配分（200/100）- p5除外版
+
+        【p5廃止対応・2026-04-08】
+        - 1-2着は予測1-2位で固定
+        - 3着候補は予測3-4位のみ（p5除外）
+        - 配分: 1点目200円、2点目100円
+        """
+        p1, p2 = predictions[0], predictions[1]
+        third_candidates = [predictions[2], predictions[3]]  # p3, p4のみ
+        bet_amounts = [200, 100]
+
+        bets = []
+        priority = 1
+        for i, third in enumerate(third_candidates):
+            if third != p1 and third != p2:
+                combo = f"{p1}-{p2}-{third}"
+                odds = odds_dict.get(combo, 0)
+                if odds > 0:
+                    bets.append(MultiBet(
+                        combination=combo,
+                        odds=odds,
+                        bet_amount=bet_amounts[i],
+                        priority=priority
+                    ))
+                    priority += 1
+
+        total = sum(b.bet_amount for b in bets)
+        # PATTERN_H2専用の期待値統計がないためPATTERN_Hの値を参照
+        stats = self.PATTERN_STATS[MultiBetPattern.PATTERN_H]
+
+        return MultiBetResult(
+            pattern=MultiBetPattern.PATTERN_H2,
+            bets=bets,
+            total_investment=total,
+            description="パターンH2: 1-2軸2点傾斜配分（200/100円、p5除外）",
             expected_hit_rate=stats['hit_rate'],
             expected_roi=stats['roi'],
         )
