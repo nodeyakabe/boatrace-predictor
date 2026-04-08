@@ -41,6 +41,7 @@
 import sys
 import os
 import io
+import json
 import sqlite3
 import warnings
 import argparse
@@ -614,6 +615,93 @@ def run_fast_backtest(df_features: pd.DataFrame, start_date: str, end_date: str)
     return results
 
 
+def save_json(yearly_results: dict, param_desc: str, path: str):
+    """バックテスト結果をJSONに保存"""
+    data = {
+        'saved_at': datetime.now().isoformat(),
+        'param_desc': param_desc,
+        'yearly': {}
+    }
+    for year, yr in yearly_results.items():
+        bet = sum(v['bet'] for v in yr.values())
+        ret = sum(v['return'] for v in yr.values())
+        hits = sum(v['hits'] for v in yr.values())
+        races = sum(v['races'] for v in yr.values())
+        roi = ret / bet * 100 if bet > 0 else 0.0
+        data['yearly'][str(year)] = {
+            'bet': bet, 'return': ret, 'hits': hits,
+            'races': races, 'roi': round(roi, 2), 'profit': ret - bet,
+            'conditions': {cid: v for cid, v in yr.items()}
+        }
+    # 合計
+    total_bet = sum(v['bet'] for yr in yearly_results.values() for v in yr.values())
+    total_ret = sum(v['return'] for yr in yearly_results.values() for v in yr.values())
+    total_hits = sum(v['hits'] for yr in yearly_results.values() for v in yr.values())
+    total_races = sum(v['races'] for yr in yearly_results.values() for v in yr.values())
+    total_roi = total_ret / total_bet * 100 if total_bet > 0 else 0.0
+    black_years = sum(1 for yr in data['yearly'].values() if yr['profit'] >= 0)
+    data['total'] = {
+        'bet': total_bet, 'return': total_ret, 'hits': total_hits,
+        'races': total_races, 'roi': round(total_roi, 2),
+        'profit': total_ret - total_bet, 'black_years': black_years
+    }
+    os.makedirs(os.path.dirname(path), exist_ok=True) if os.path.dirname(path) else None
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    print(f"\nJSON保存完了: {path}")
+
+
+def compare_json(yearly_results: dict, compare_path: str, param_desc: str):
+    """保存済みJSONと現在の結果を比較表示"""
+    with open(compare_path, 'r', encoding='utf-8') as f:
+        base = json.load(f)
+
+    print(f"\n{'='*70}")
+    print(f"ベースライン比較 [{base['param_desc']} → {param_desc}]")
+    print(f"{'='*70}")
+
+    print(f"\n【年度別比較】")
+    print(f"{'年度':^6} {'旧件数':>7} {'新件数':>7} {'旧ROI':>8} {'新ROI':>8} {'ROI差':>7} {'旧収支':>10} {'新収支':>10} {'収支差':>10}")
+    print('-' * 80)
+
+    total_old_bet = total_old_ret = total_new_bet = total_new_ret = 0
+    for year in sorted(yearly_results.keys()):
+        yr_new = yearly_results[year]
+        new_bet = sum(v['bet'] for v in yr_new.values())
+        new_ret = sum(v['return'] for v in yr_new.values())
+        new_races = sum(v['races'] for v in yr_new.values())
+        new_roi = new_ret / new_bet * 100 if new_bet > 0 else 0.0
+        new_profit = new_ret - new_bet
+
+        yr_base = base['yearly'].get(str(year), {})
+        old_races = yr_base.get('races', 0)
+        old_roi = yr_base.get('roi', 0.0)
+        old_profit = yr_base.get('profit', 0)
+
+        roi_diff = new_roi - old_roi
+        profit_diff = new_profit - old_profit
+        roi_sign = '+' if roi_diff >= 0 else ''
+        p_sign = '+' if profit_diff >= 0 else ''
+
+        print(f"{year:^6} {old_races:>7,} {new_races:>7,} {old_roi:>7.1f}% {new_roi:>7.1f}% {roi_sign}{roi_diff:>5.1f}pt {old_profit:>+10,} {new_profit:>+10,} {p_sign}{profit_diff:>+9,}")
+        total_old_bet += yr_base.get('bet', 0)
+        total_old_ret += yr_base.get('return', 0)
+        total_new_bet += new_bet
+        total_new_ret += new_ret
+
+    print('-' * 80)
+    old_total_roi = total_old_ret / total_old_bet * 100 if total_old_bet > 0 else 0.0
+    new_total_roi = total_new_ret / total_new_bet * 100 if total_new_bet > 0 else 0.0
+    old_total_profit = total_old_ret - total_old_bet
+    new_total_profit = total_new_ret - total_new_bet
+    roi_diff = new_total_roi - old_total_roi
+    profit_diff = new_total_profit - old_total_profit
+    old_races_total = base['total'].get('races', 0)
+    new_races_total = sum(v['races'] for yr in yearly_results.values() for v in yr.values())
+    print(f"{'合計':^6} {old_races_total:>7,} {new_races_total:>7,} {old_total_roi:>7.1f}% {new_total_roi:>7.1f}% {'+' if roi_diff>=0 else ''}{roi_diff:>5.1f}pt {old_total_profit:>+10,} {new_total_profit:>+10,} {'+' if profit_diff>=0 else ''}{profit_diff:>+9,}")
+    print(f"\n{'='*70}")
+
+
 def print_report(yearly_results: dict, param_desc: str):
     """結果をレポート出力"""
     print(f"\n{'='*70}")
@@ -705,6 +793,10 @@ def main():
     parser.add_argument('--motor-weight', type=float, help='motor_weight 上書き（デフォルト: 20）')
     parser.add_argument('--course-weight', type=float, help='course_weight 上書き（デフォルト: 35）')
     parser.add_argument('--weights-yaml',  type=str,   help='別の scoring_weights.yaml を指定')
+
+    # ベースライン保存・比較
+    parser.add_argument('--save-json', type=str, help='結果をJSONに保存（例: data/baselines/v2.44.0.json）')
+    parser.add_argument('--compare-json', type=str, help='保存済みJSONと比較（例: data/baselines/v2.44.0.json）')
 
     args = parser.parse_args()
 
@@ -808,6 +900,15 @@ def main():
 
     # レポート出力
     print_report(yearly_results, param_desc)
+
+    # JSON保存
+    if args.save_json:
+        save_json(yearly_results, param_desc, args.save_json)
+
+    # ベースライン比較
+    if args.compare_json:
+        compare_json(yearly_results, args.compare_json, param_desc)
+
     print(f"完了")
 
 
