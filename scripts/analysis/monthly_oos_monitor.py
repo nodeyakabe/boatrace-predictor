@@ -21,6 +21,10 @@
     - 月次: 記録のみ（件数少のため判断不要）
     - 半年（2026年10月末）: 全体ROI < 100% なら原因調査
     - 年次（2026年12月末）: 条件別退出判定
+
+集計方式:
+    - standard_backtest_unique と同じ優先度順重複除外を適用
+    - 1レース1条件（実運用シミュレーション）
 """
 import sys
 import os
@@ -28,7 +32,7 @@ import io
 import json
 import sqlite3
 import argparse
-from datetime import datetime, date
+from datetime import datetime
 
 # Windows コンソールの文字化け対策
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -36,122 +40,129 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from config.settings import DATABASE_PATH
 from config.bet_conditions import STANDARD_BET_CONDITIONS
+from scripts.backtest.backtest_helpers import get_race_ids_for_condition
+
+
+def assign_races_to_conditions(cursor, conditions, start_date, end_date):
+    """優先度順に重複除外してレースを条件に割り当て（standard_backtest_uniqueと同ロジック）"""
+    sorted_conditions = sorted(
+        conditions,
+        key=lambda x: (x.get('priority', 999), conditions.index(x))
+    )
+    assigned = set()
+    condition_to_races = {}
+    for cond in sorted_conditions:
+        race_ids = get_race_ids_for_condition(cursor, cond, start_date, end_date)
+        new_ids = race_ids - assigned
+        assigned |= new_ids
+        condition_to_races[cond['id']] = new_ids
+    return condition_to_races
+
+
+def analyze_race_result(cursor, cond, race_id):
+    """1レースの実績を計算。オッズ範囲外・データ欠損はNoneを返す"""
+    use_pattern_h = cond.get('use_pattern_h', False)
+    odds_min = cond.get('odds_min', 0)
+    odds_max = cond.get('odds_max', 9999)
+
+    # 予測を取得（before、rank 1-5）
+    cursor.execute("""
+        SELECT pit_number FROM race_predictions
+        WHERE race_id = ? AND prediction_type = 'before'
+        ORDER BY rank_prediction
+        LIMIT 5
+    """, (race_id,))
+    pits = [row[0] for row in cursor.fetchall()]
+    if len(pits) < 3:
+        return None
+
+    # 実際の結果を取得
+    cursor.execute("""
+        SELECT res1.pit_number, res2.pit_number, res3.pit_number
+        FROM results res1
+        JOIN results res2 ON res2.race_id = ? AND res2.rank = '2'
+        JOIN results res3 ON res3.race_id = ? AND res3.rank = '3'
+        WHERE res1.race_id = ? AND res1.rank = '1'
+    """, (race_id, race_id, race_id))
+    row = cursor.fetchone()
+    if not row:
+        return None
+    a1, a2, a3 = row
+
+    if use_pattern_h and len(pits) >= 5:
+        # パターンH: p1-p2-{p3,p4,p5} を 200/100/100円
+        combos = [
+            (f"{pits[0]}-{pits[1]}-{pits[2]}", pits[0], pits[1], pits[2], 200),
+            (f"{pits[0]}-{pits[1]}-{pits[3]}", pits[0], pits[1], pits[3], 100),
+            (f"{pits[0]}-{pits[1]}-{pits[4]}", pits[0], pits[1], pits[4], 100),
+        ]
+    else:
+        combos = [(f"{pits[0]}-{pits[1]}-{pits[2]}", pits[0], pits[1], pits[2], 100)]
+
+    total_bet = 0
+    total_return = 0.0
+    hit = False
+
+    for combo, p1, p2, p3, bet_amt in combos:
+        cursor.execute(
+            "SELECT odds FROM trifecta_odds WHERE race_id = ? AND combination = ?",
+            (race_id, combo)
+        )
+        row = cursor.fetchone()
+        if row is None or row[0] is None:
+            continue
+        odds = row[0]
+        if not (odds_min <= odds < odds_max):
+            continue
+        total_bet += bet_amt
+        if p1 == a1 and p2 == a2 and p3 == a3:
+            total_return += odds * bet_amt
+            hit = True
+
+    if total_bet == 0:
+        return None
+
+    return {'bet': total_bet, 'return': total_return, 'hit': hit}
 
 
 def get_monthly_results(year: int, month: int = None):
-    """指定年（月）の実運用成績を集計"""
-    conn = sqlite3.connect(DATABASE_PATH)
-    cursor = conn.cursor()
-
+    """指定年（月）の実運用成績を集計（優先度順重複除外あり）"""
     if month:
         start = f"{year}-{month:02d}-01"
-        if month == 12:
-            end = f"{year+1}-01-01"
-        else:
-            end = f"{year}-{month+1:02d}-01"
-        months = [month]
+        end = f"{year+1}-01-01" if month == 12 else f"{year}-{month+1:02d}-01"
     else:
         start = f"{year}-01-01"
         end = f"{year+1}-01-01"
-        months = list(range(1, 13))
+
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+
+    # 優先度順の重複除外でレースを割り当て
+    condition_to_races = assign_races_to_conditions(cursor, STANDARD_BET_CONDITIONS, start, end)
 
     results = {}
-
     for cond in STANDARD_BET_CONDITIONS:
         cid = cond['id']
-        cname = cond['name']
-        odds_min = cond.get('odds_min', 0)
-        odds_max = cond.get('odds_max', 9999)
-        confidence = cond.get('confidence')
-        c1_ranks = cond.get('c1_rank', [])
-        venue_filter = cond.get('venue_filter', [])
-        use_pattern_h = cond.get('use_pattern_h', False)
-        advance_before_match = cond.get('advance_before_match', False)
-
-        # GLOBAL_MONTH_EXCLUDES = [4]
-        month_exclude_clause = "AND CAST(strftime('%m', r.race_date) AS INTEGER) != 4"
-
-        # 会場フィルター
-        if venue_filter:
-            venue_codes = [f"'{str(v).zfill(2)}'" for v in venue_filter]
-            venue_clause = f"AND r.venue_code IN ({','.join(venue_codes)})"
-        else:
-            venue_clause = ""
-
-        # ランクフィルター
-        if c1_ranks:
-            ranks_str = ','.join(f"'{r}'" for r in c1_ranks)
-            rank_clause = f"AND e1.racer_rank IN ({ranks_str})"
-        else:
-            rank_clause = ""
-
-        # 信頼度フィルター
-        if confidence:
-            conf_clause = f"AND rp.confidence = '{confidence}'"
-        else:
-            conf_clause = ""
-
-        # advance/before一致フィルター
-        if advance_before_match:
-            adv_join = """
-            LEFT JOIN race_predictions adv1 ON r.id = adv1.race_id AND adv1.prediction_type = 'advance' AND adv1.rank_prediction = 1
-            LEFT JOIN race_predictions adv2 ON r.id = adv2.race_id AND adv2.prediction_type = 'advance' AND adv2.rank_prediction = 2
-            LEFT JOIN race_predictions adv3 ON r.id = adv3.race_id AND adv3.prediction_type = 'advance' AND adv3.rank_prediction = 3
-            """
-            adv_clause = """
-            AND (r.venue_code = '11' OR adv1.pit_number IS NULL
-                 OR (adv1.pit_number = rp1.pit_number AND adv2.pit_number = rp2.pit_number AND adv3.pit_number = rp3.pit_number))
-            """
-        else:
-            adv_join = ""
-            adv_clause = ""
-
-        query = f"""
-        SELECT
-            r.race_date,
-            rp1.pit_number as p1, rp2.pit_number as p2, rp3.pit_number as p3,
-            res1.pit_number as actual1, res2.pit_number as actual2, res3.pit_number as actual3,
-            t.odds as odds_123
-        FROM races r
-        JOIN race_predictions rp ON r.id = rp.race_id AND rp.prediction_type = 'before' AND rp.rank_prediction = 1
-        JOIN race_predictions rp1 ON r.id = rp1.race_id AND rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
-        JOIN race_predictions rp2 ON r.id = rp2.race_id AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
-        JOIN race_predictions rp3 ON r.id = rp3.race_id AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
-        JOIN entries e1 ON r.id = e1.race_id AND e1.pit_number = 1
-        JOIN results res1 ON r.id = res1.race_id AND res1.rank = '1'
-        JOIN results res2 ON r.id = res2.race_id AND res2.rank = '2'
-        JOIN results res3 ON r.id = res3.race_id AND res3.rank = '3'
-        LEFT JOIN trifecta_odds t ON r.id = t.race_id
-            AND t.combination = CAST(rp1.pit_number AS TEXT) || '-' || CAST(rp2.pit_number AS TEXT) || '-' || CAST(rp3.pit_number AS TEXT)
-        {adv_join}
-        WHERE r.race_date >= '{start}' AND r.race_date < '{end}'
-        {conf_clause}
-        {rank_clause}
-        {venue_clause}
-        {month_exclude_clause}
-        {adv_clause}
-        AND t.odds >= {odds_min} AND t.odds < {odds_max}
-        """
-
-        cursor.execute(query)
-        rows = cursor.fetchall()
+        race_ids = condition_to_races.get(cid, set())
 
         total_bet = 0
-        total_ret = 0
+        total_ret = 0.0
         hits = 0
-        for row in rows:
-            _, p1, p2, p3, a1, a2, a3, odds = row
-            if odds is None:
+        valid_races = 0
+
+        for race_id in race_ids:
+            r = analyze_race_result(cursor, cond, race_id)
+            if r is None:
                 continue
-            bet_amt = 200 if use_pattern_h else 100
-            total_bet += bet_amt
-            if p1 == a1 and p2 == a2 and p3 == a3:
-                total_ret += odds * bet_amt
+            valid_races += 1
+            total_bet += r['bet']
+            total_ret += r['return']
+            if r['hit']:
                 hits += 1
 
         results[cid] = {
-            'name': cname,
-            'races': len(rows),
+            'name': cond['name'],
+            'races': valid_races,
             'bet': total_bet,
             'return': total_ret,
             'hits': hits,
@@ -169,6 +180,7 @@ def print_monthly_report(year: int, month: int = None, results: dict = None, bas
     print(f"\n{'='*65}")
     print(f"月次OOS監視レポート [{period}]")
     print(f"集計日時: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"集計方式: standard_backtest_unique準拠（優先度順重複除外あり）")
     print(f"{'='*65}")
 
     total_bet = sum(v['bet'] for v in results.values())
@@ -179,9 +191,9 @@ def print_monthly_report(year: int, month: int = None, results: dict = None, bas
     total_profit = total_ret - total_bet
 
     print(f"\n【全体サマリー】")
-    print(f"  購入件数: {total_races}件")
+    print(f"  購入件数: {total_races}件（重複除外後）")
     print(f"  ROI:      {total_roi:.1f}%")
-    print(f"  収支:     {total_profit:+,}円")
+    print(f"  収支:     {total_profit:+,.0f}円")
     print(f"  的中数:   {total_hits}件")
 
     # ベースライン比較
@@ -189,10 +201,14 @@ def print_monthly_report(year: int, month: int = None, results: dict = None, bas
         with open(baseline_path, 'r', encoding='utf-8') as f:
             base = json.load(f)
         base_roi = base['total']['roi']
-        base_profit_per_race = base['total']['profit'] / base['total']['races'] if base['total']['races'] > 0 else 0
+        # standard_backtest_unique は 'bets' キー、fast_backtest は 'races' キーを使用
+        base_total_races = base['total'].get('bets', base['total'].get('races', 1))
+        base_profit_per_race = base['total']['profit'] / base_total_races if base_total_races > 0 else 0
         est_profit = base_profit_per_race * total_races
-        print(f"\n【ベースライン比較（{base['param_desc']}）】")
+        param_desc = base.get('param_desc', os.path.basename(baseline_path))
+        print(f"\n【ベースライン比較（{param_desc}）】")
         print(f"  バックテストROI: {base_roi:.1f}%  →  実運用ROI: {total_roi:.1f}%  (差: {total_roi - base_roi:+.1f}pt)")
+        print(f"  期待収支（件数比例）: {est_profit:+,.0f}円  →  実績収支: {total_profit:+,.0f}円")
         print(f"  ※件数が少ないため統計的な判断は月次では不可。参考値として記録のみ。")
 
     print(f"\n【条件別成績】")
@@ -204,10 +220,10 @@ def print_monthly_report(year: int, month: int = None, results: dict = None, bas
         if not v or v['races'] == 0:
             continue
         name = v['name'][:30]
-        print(f"{name:<32} {v['races']:>5} {v['roi']:>7.1f}% {v['profit']:>+10,} {v['hits']:>4}")
+        print(f"{name:<32} {v['races']:>5} {v['roi']:>7.1f}% {v['profit']:>+10,.0f} {v['hits']:>4}")
 
     print('-' * 65)
-    print(f"{'合計':<32} {total_races:>5} {total_roi:>7.1f}% {total_profit:>+10,} {total_hits:>4}")
+    print(f"{'合計':<32} {total_races:>5} {total_roi:>7.1f}% {total_profit:>+10,.0f} {total_hits:>4}")
 
     # 警告
     print(f"\n【判定】")

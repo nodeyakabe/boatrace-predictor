@@ -123,7 +123,7 @@ def analyze_assigned_races(
         }
 
     # パターンHか1点買いかで投資額・払戻を計算
-    use_pattern_h = cond.get('use_pattern_h', True)
+    use_pattern_h = cond.get('use_pattern_h', False)
     placeholders = ','.join(['?'] * len(race_ids))
 
     if use_pattern_h:
@@ -289,6 +289,7 @@ def run_unique_backtest(year: int = 2025, full_test: bool = False) -> Dict:
     results = {
         'test_type': 'unique',
         'date': datetime.now().isoformat(),
+        'param_desc': f"standard_backtest_unique {'full(2020-2025)' if full_test else str(year)}",
         'conditions': [],
         'total': {},
     }
