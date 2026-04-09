@@ -193,7 +193,8 @@ class CompoundBuffSystem:
             buff_value=10.0,
             confidence=0.90,
             sample_count=300,
-            hit_rate=0.78
+            hit_rate=0.78,
+            is_active=False  # 2026-04-09 無効化: tide_adjustment=False（feature_flags）のため発動実績ゼロ。tokuyama_low_tide_makriと整合性統一。将来有効化時はDB実測検証必須（buff_value=10.0は全ルール最大値）
         ))
 
         # 徳山 + 干潮 + 4コース + まくり得意 → まくり有利
