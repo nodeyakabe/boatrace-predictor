@@ -291,6 +291,18 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
         )
         """
 
+    # 波高フィルター（2026-04-06追加）
+    # wave_height_max: この値を超える波高を除外（荒れレース除外が主用途）
+    # wave_height_min: この値未満の波高を除外（荒れレース専用条件が主用途）
+    wave_height_join = ""
+    wave_height_clause = ""
+    if cond.get('wave_height_max') is not None or cond.get('wave_height_min') is not None:
+        wave_height_join = "LEFT JOIN race_conditions rc ON r.id = rc.race_id"
+        if cond.get('wave_height_max') is not None:
+            wave_height_clause += f"AND (rc.wave_height IS NULL OR rc.wave_height <= {cond['wave_height_max']}) "
+        if cond.get('wave_height_min') is not None:
+            wave_height_clause += f"AND rc.wave_height IS NOT NULL AND rc.wave_height >= {cond['wave_height_min']} "
+
     if use_pattern_h:
         # パターンH: 3点買い（1-2-3: 200円, 1-2-4: 100円, 1-2-5: 100円）
         query = f'''
@@ -317,6 +329,7 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
             {escape_rate_join}
             {bias_join}
             {motor_rate_join}
+            {wave_height_join}
             WHERE rp.rank_prediction = 1
             {confidence_clause}
             AND e1.racer_rank IN ('{c1_rank_str}')
@@ -333,6 +346,7 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
             {escape_rate_clause}
             {bias_clause}
             {motor_rate_clause}
+            {wave_height_clause}
             {predicted_rank_class_clause}
         ),
         race_with_results AS (
@@ -423,6 +437,7 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
             {escape_rate_join}
             {bias_join}
             {motor_rate_join}
+            {wave_height_join}
             WHERE rp.rank_prediction = 1
             {confidence_clause}
             AND e1.racer_rank IN ('{c1_rank_str}')
@@ -439,6 +454,7 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
             {escape_rate_clause}
             {bias_clause}
             {motor_rate_clause}
+            {wave_height_clause}
             {predicted_rank_class_clause}
         ),
         race_bets AS (
