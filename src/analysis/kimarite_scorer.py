@@ -277,15 +277,19 @@ class KimariteScorer:
         racer_kimarite = kimarite_result.get('racer_primary_kimarite', '')
 
         # === 1. 強風補正（6m以上） ===
+        # K-1/K-2: 2026-04-09 DB実測値に基づき補正係数を修正
+        # 旧: 逃げ×0.8(-20%) / まくり×1.2(+20%)
+        # 新: 逃げ×0.87(-13%) / まくり×1.12(+12%)
+        # 根拠: 強風時逃げ減少はDB実測-12%相当・まくり増加は+12%相当（旧係数は過大評価）
         if wind_speed and wind_speed >= 6:
             if racer_kimarite == '逃げ':
                 # 強風時は逃げにくい（1コースに不利）
                 if course == 1:
-                    adjustment *= 0.8  # 20%減
+                    adjustment *= 0.87  # 13%減（旧: 20%減）
             elif racer_kimarite in ['まくり', 'まくり差し']:
                 # 強風時はまくり有利（外コースに有利）
                 if course >= 3:
-                    adjustment *= 1.2  # 20%増
+                    adjustment *= 1.12  # 12%増（旧: 20%増）
 
         # === 2. 潮位補正 ===
         if tide_phase:
