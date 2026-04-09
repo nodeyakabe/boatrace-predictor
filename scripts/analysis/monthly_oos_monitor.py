@@ -15,7 +15,7 @@
     python scripts/analysis/monthly_oos_monitor.py --year 2026 --month 4
 
     # ベースラインJSONと比較（全体ROIの傾向確認）
-    python scripts/analysis/monthly_oos_monitor.py --year 2026 --baseline data/baselines/v2.44.0.json
+    python scripts/analysis/monthly_oos_monitor.py --year 2026 --baseline data/baselines/v2.45.0.json
 
 運用ルール（docs/guides/VALIDATION_WORKFLOW.md 参照）:
     - 月次: 記録のみ（件数少のため判断不要）
@@ -250,8 +250,8 @@ def main():
     parser = argparse.ArgumentParser(description='月次OOS監視スクリプト')
     parser.add_argument('--year', type=int, required=True, help='対象年（例: 2026）')
     parser.add_argument('--month', type=int, help='対象月（省略時は年間累計）')
-    parser.add_argument('--baseline', type=str, default='data/baselines/v2.44.0.json',
-                        help='比較用ベースラインJSON（デフォルト: data/baselines/v2.44.0.json）')
+    parser.add_argument('--baseline', type=str, default='data/baselines/v2.45.0.json',
+                        help='比較用ベースラインJSON（デフォルト: data/baselines/v2.45.0.json）')
     args = parser.parse_args()
 
     results = get_monthly_results(args.year, args.month)
