@@ -159,7 +159,7 @@ def analyze_assigned_races(
                 *,
                 CASE WHEN odds_123 >= {cond['odds_min']} AND odds_123 < {cond['odds_max']} THEN 200 ELSE 0 END as bet_123,
                 CASE WHEN odds_124 >= {cond['odds_min']} AND odds_124 < {cond['odds_max']} THEN 100 ELSE 0 END as bet_124,
-                CASE WHEN odds_125 >= {cond['odds_min']} AND odds_125 < {cond['odds_max']} THEN 100 ELSE 0 END as bet_125,
+                {'0' if cond.get('pattern_h_exclude_p5') else f"CASE WHEN odds_125 >= {cond['odds_min']} AND odds_125 < {cond['odds_max']} THEN 100 ELSE 0 END"} as bet_125,
                 CASE
                     WHEN actual_1st = p1 AND actual_2nd = p2 AND actual_3rd = p3
                          AND odds_123 >= {cond['odds_min']} AND odds_123 < {cond['odds_max']}
@@ -170,15 +170,15 @@ def analyze_assigned_races(
                          AND odds_124 >= {cond['odds_min']} AND odds_124 < {cond['odds_max']}
                     THEN odds_124 * 100 ELSE 0
                 END as payout_124,
-                CASE
+                {'0' if cond.get('pattern_h_exclude_p5') else f"""CASE
                     WHEN actual_1st = p1 AND actual_2nd = p2 AND actual_3rd = p5
                          AND odds_125 >= {cond['odds_min']} AND odds_125 < {cond['odds_max']}
                     THEN odds_125 * 100 ELSE 0
-                END as payout_125,
+                END"""} as payout_125,
                 CASE
                     WHEN (actual_1st = p1 AND actual_2nd = p2 AND actual_3rd = p3 AND odds_123 >= {cond['odds_min']} AND odds_123 < {cond['odds_max']})
                       OR (actual_1st = p1 AND actual_2nd = p2 AND actual_3rd = p4 AND odds_124 >= {cond['odds_min']} AND odds_124 < {cond['odds_max']})
-                      OR (actual_1st = p1 AND actual_2nd = p2 AND actual_3rd = p5 AND odds_125 >= {cond['odds_min']} AND odds_125 < {cond['odds_max']})
+                      {''.join(['', f'OR (actual_1st = p1 AND actual_2nd = p2 AND actual_3rd = p5 AND odds_125 >= {cond["odds_min"]} AND odds_125 < {cond["odds_max"]})']) if not cond.get('pattern_h_exclude_p5') else ''}
                     THEN 1 ELSE 0
                 END as is_hit
             FROM race_bets
