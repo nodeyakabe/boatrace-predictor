@@ -75,13 +75,17 @@ def get_todays_target_and_candidates(db_path: str) -> tuple:
             # オッズデータを取得（全組み合わせ）
             odds_data = _get_odds_data_for_eval(cursor, race_id)
 
+            # advance予測の1-2-3位を取得（advance/beforeフィルタ用・before時のみ意味あり）
+            advance_top3 = _get_advance_top3(cursor, race_id) if has_beforeinfo else None
+
             # BetTargetEvaluatorで購入判定
             try:
                 bet_target = evaluator.evaluate_race(
                     race_data=race_data,
                     predictions=predictions,
                     odds_data=odds_data,
-                    has_beforeinfo=has_beforeinfo
+                    has_beforeinfo=has_beforeinfo,
+                    advance_top3=advance_top3
                 )
 
                 # 会場名マップ（venue_codeは"01", "02"などのテキスト型）
@@ -229,6 +233,27 @@ def _get_predictions_for_eval(cursor, race_id: int):
                 'first_racer_number': first_racer_number,
             }, prediction_type
     return None, None
+
+
+def _get_advance_top3(cursor, race_id: int):
+    """advance予測の1-2-3位ピット番号を取得（advance/beforeフィルタ用）
+
+    Returns:
+        list[int] or None: [1位pit, 2位pit, 3位pit] or None（advance予測なし）
+    """
+    cursor.execute("""
+        SELECT pit_number, rank_prediction
+        FROM race_predictions
+        WHERE race_id = ? AND prediction_type = 'advance' AND rank_prediction IN (1, 2, 3)
+        ORDER BY rank_prediction
+    """, (race_id,))
+    rows = cursor.fetchall()
+    if len(rows) < 3:
+        return None
+    rank_to_pit = {row['rank_prediction']: row['pit_number'] for row in rows}
+    if 1 in rank_to_pit and 2 in rank_to_pit and 3 in rank_to_pit:
+        return [rank_to_pit[1], rank_to_pit[2], rank_to_pit[3]]
+    return None
 
 
 def _get_odds_data_for_eval(cursor, race_id: int):

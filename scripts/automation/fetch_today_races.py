@@ -74,7 +74,6 @@ def fetch_todays_races(headless: bool = True) -> int:
         # 開催場のみを対象に並列収集
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from src.scraper.race_scraper_v2 import RaceScraperV2
-        from src.scraper.result_scraper import ResultScraper
         from src.database.fast_data_manager import FastDataManager
         import time
         import threading
@@ -86,12 +85,11 @@ def fetch_todays_races(headless: bool = True) -> int:
             """スレッドローカルなスクレイパーを取得"""
             if not hasattr(thread_local, 'race_scraper'):
                 thread_local.race_scraper = RaceScraperV2()
-                thread_local.result_scraper = ResultScraper()
-            return thread_local.race_scraper, thread_local.result_scraper
+            return thread_local.race_scraper
 
         def fetch_venue_races(venue_code):
             """1会場の全レースを取得"""
-            race_scraper, result_scraper = get_scrapers()
+            race_scraper = get_scrapers()
             today_yyyymmdd = datetime.now().strftime('%Y%m%d')
             races_data = []
 
@@ -105,11 +103,11 @@ def fetch_todays_races(headless: bool = True) -> int:
                     race_data['race_date'] = today_yyyymmdd
                     race_data['race_number'] = race_number
 
-                    result_data = result_scraper.get_race_result(venue_code, today_yyyymmdd, race_number)
-
+                    # 結果収集は前日分のみAブロック(fetch_yesterday_results.py)が担当
+                    # 当日は未終了レースのため結果取得は不要
                     races_data.append({
                         'race': race_data,
-                        'result': result_data
+                        'result': None
                     })
 
                     time.sleep(0.1)
@@ -166,11 +164,7 @@ def fetch_todays_races(headless: bool = True) -> int:
 
                             race_id = data_manager.save_race_data_fast(race_data)
 
-                            if race_id and result_data:
-                                result_data['venue_code'] = venue_code
-                                result_data['race_date'] = race_data['race_date']
-                                result_data['race_number'] = race_data['race_number']
-                                data_manager.save_race_result_fast(result_data)
+                            if race_id:
                                 saved_count += 1
 
                         except Exception as e:

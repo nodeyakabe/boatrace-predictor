@@ -115,12 +115,16 @@ class RaceMonitor:
                 # 直前情報の有無を動的に判定
                 has_beforeinfo = race_id in self.fetched_direct_info
 
+                # advance予測の1-2-3位を取得（advance/beforeフィルタ用・before時のみ意味あり）
+                advance_top3 = self._get_advance_top3(cursor, race_id) if has_beforeinfo else None
+
                 # BetTargetEvaluatorで購入判定
                 bet_target = self.bet_evaluator.evaluate_race(
                     race_data=race_data,
                     predictions=predictions,
                     odds_data=odds_data,
-                    has_beforeinfo=has_beforeinfo
+                    has_beforeinfo=has_beforeinfo,
+                    advance_top3=advance_top3
                 )
 
                 # 購入対象と候補レースを追加
@@ -419,12 +423,16 @@ class RaceMonitor:
                 # オッズデータを再取得
                 odds_data = self._get_odds_data(cursor, race_id, predictions)
 
+                # advance予測の1-2-3位を取得（advance/beforeフィルタ用）
+                advance_top3 = self._get_advance_top3(cursor, race_id)
+
                 # 購入判定を再評価（has_beforeinfo=True、最新のrace_dataを使用）
                 bet_target = self.bet_evaluator.evaluate_race(
                     race_data=race_data,
                     predictions=predictions,
                     odds_data=odds_data,
-                    has_beforeinfo=True
+                    has_beforeinfo=True,
+                    advance_top3=advance_top3
                 )
 
                 # 元のステータスと比較
@@ -492,6 +500,26 @@ class RaceMonitor:
             'new_prediction': new_pred,
             'first_racer_number': first_racer_number
         }
+
+    def _get_advance_top3(self, cursor, race_id: int):
+        """advance予測の1-2-3位ピット番号を取得（advance/beforeフィルタ用）
+
+        Returns:
+            list[int] or None: [1位pit, 2位pit, 3位pit] or None（advance予測なし）
+        """
+        cursor.execute("""
+            SELECT pit_number, rank_prediction
+            FROM race_predictions
+            WHERE race_id = ? AND prediction_type = 'advance' AND rank_prediction IN (1, 2, 3)
+            ORDER BY rank_prediction
+        """, (race_id,))
+        rows = cursor.fetchall()
+        if len(rows) < 3:
+            return None
+        rank_to_pit = {row['rank_prediction']: row['pit_number'] for row in rows}
+        if 1 in rank_to_pit and 2 in rank_to_pit and 3 in rank_to_pit:
+            return [rank_to_pit[1], rank_to_pit[2], rank_to_pit[3]]
+        return None
 
     def _check_and_fetch_odds(self, race: Dict) -> bool:
         """
@@ -590,11 +618,15 @@ class RaceMonitor:
 
                 has_beforeinfo = race_id in self.fetched_direct_info
 
+                # advance予測の1-2-3位を取得（advance/beforeフィルタ用・before時のみ意味あり）
+                advance_top3 = self._get_advance_top3(cursor, race_id) if has_beforeinfo else None
+
                 bet_target = self.bet_evaluator.evaluate_race(
                     race_data=race_data,
                     predictions=predictions,
                     odds_data=new_odds_data,
-                    has_beforeinfo=has_beforeinfo
+                    has_beforeinfo=has_beforeinfo,
+                    advance_top3=advance_top3
                 )
 
                 old_status = race['bet_target'].status
