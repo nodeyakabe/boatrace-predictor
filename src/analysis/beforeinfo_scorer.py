@@ -415,17 +415,16 @@ class BeforeInfoScorer:
         """
         score = 0.0
 
-        # 部品交換ペナルティ
+        # 部品交換ペナルティ（重大度別・2026-04-09 試し収集結果に基づく設計）
+        # 実出現頻度: 交換あり5.3%（リング系2.0%、ギヤ0.5%、キャブ0.4%、電気0.4%、ピストン0.1%等）
         parts = parts_replacements.get(pit_number, '')
-        if 'ピストン' in parts:
-            # ピストン交換は最重度の機関系トラブル指標（-10点）
-            # NOTE: 旧実装は ASCII 'P' を検索していたが、日本語部品名にはマッチしない。(2026-04-09修正)
-            score -= 10.0
-        # NOTE: 'R'（リング交換）ペナルティは廃止 (2026-04-09)
-        # DBの全2,332,152件が parts_replacement='R' のため、全選手に一律-5.0ptが適用される。
-        # 差別化情報としての意味がなく、スコアを全体的に下げるだけの副作用がある。
-        # if 'R' in parts:
-        #     score -= 5.0
+        _HEAVY_PARTS = ['ピストン', '電気', 'シリンダ']   # 主要機関・電装系
+        _MEDIUM_PARTS = ['ギヤ', 'キャブ', 'シャフト']    # 補助機関系
+        if any(p in parts for p in _HEAVY_PARTS):
+            score -= 10.0   # 重大: 主要機関系トラブル指標
+        elif any(p in parts for p in _MEDIUM_PARTS):
+            score -= 5.0    # 中程度: 補助機関系
+        # リング・キャリボ等の消耗品: scorer では加点なし（flag_adjuster の-3%のみ）
 
         # 調整重量ペナルティ
         weight = adjusted_weights.get(pit_number, 0.0)

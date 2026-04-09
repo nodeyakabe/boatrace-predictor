@@ -92,10 +92,22 @@ class BeforeInfoFlagAdjuster:
                 score_multiplier *= 1.1
                 reasons.append("展示タイム好調 (+10%)")
 
-            # 部品交換フラグ: PRE_SCORE × 0.9
+            # 部品交換フラグ: 重大度別ペナルティ（2026-04-09 試し収集結果に基づく設計）
+            # 実出現部品: リング×2(2.0%), ギヤ(0.5%), キャブ(0.4%), 電気(0.4%), ピストン(0.1%)等
             if flags['parts_replaced']:
-                score_multiplier *= 0.9
-                reasons.append("部品交換あり (-10%)")
+                parts = beforeinfo.get('parts_replacement', '')
+                _HEAVY = ['ピストン', '電気', 'シリンダ']   # 主要機関・電装系: -15%
+                _MEDIUM = ['ギヤ', 'キャブ', 'シャフト']    # 補助機関系: -10%
+                # リング・キャリボ等の消耗品定期交換: -3%
+                if any(p in parts for p in _HEAVY):
+                    score_multiplier *= 0.85
+                    reasons.append(f"部品交換（重大: {parts}）-15%")
+                elif any(p in parts for p in _MEDIUM):
+                    score_multiplier *= 0.90
+                    reasons.append(f"部品交換（中程度: {parts}）-10%")
+                else:
+                    score_multiplier *= 0.97
+                    reasons.append(f"部品交換（軽微: {parts}）-3%")
 
             return {
                 'score_multiplier': score_multiplier,
