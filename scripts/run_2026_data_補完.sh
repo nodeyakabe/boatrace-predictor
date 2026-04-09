@@ -1,106 +1,115 @@
 #!/bin/bash
-# 2026年データ補完スクリプト
-# 2026-03-23 作成
+# 2026年データ補完 + 予測再生成スクリプト（1〜3月）
+# 月別分割・途中停止後は再実行で再開可能（各月のCSVが存在すればfetch_to_csvをスキップ）
 #
-# 前提:
-#   - DB復元完了済み（boatrace_backup_pairwise_test.db → boatrace.db）
-#   - Phase A完了済み（beforeinfo 01-03/18・odds 01-03/18・統計指標）
-#   - entries/results CSV: 1月・2月は存在（未投入）、3月は未収集
-#   - odds: 03-19〜03-22分が不足
-#
-# 実行方法:
-#   cd c:/Users/User/Desktop/BR/BoatRace_package_20251115_172032
-#   bash scripts/run_2026_data_補完.sh
+# 実行順序:
+#   Step 1a  : 1月 entries/results 収集 → DB投入
+#   Step 1b  : 2月 entries/results 収集 → DB投入
+#   Step 1c  : 3月 entries/results 収集 → DB投入
+#   Step 1.5 : kimarite 補完
+#   Step 1.6 : race_details 補完
+#   Step 1.7 : trifecta_odds 収集
+#   Step 2   : exhibition_data 収集 → DB投入
+#   Step 2.5 : 統計指標再生成
+#   Step 3   : advance 予測再生成
+#   Step 4   : before 予測再生成
 
 set -e
+
 cd "$(dirname "$0")/.."
 
-LOG="logs/data_補完_2026_$(date +%Y%m%d_%H%M%S).log"
-mkdir -p logs
-exec > >(tee -a "$LOG") 2>&1
+echo "=============================="
+echo "2026年データ補完 + 予測再生成"
+echo "=============================="
 
-echo "================================================================"
-echo "=== 2026年データ補完開始: $(date) ==="
-echo "================================================================"
+# ===== 月別fetch+import関数 =====
+fetch_and_import_month() {
+    local label=$1
+    local start=$2
+    local end=$3
+    local output=$4
 
-# ================================================================
-# STEP 1: 2026年3月分 entries/results CSV収集
-# ================================================================
+    echo ""
+    echo "[${label}] entries/results CSV収集 (${start} 〜 ${end}) ※brute-force"
 
+    if [ -f "${output}/races.csv" ]; then
+        echo "[${label}] スキップ: ${output}/races.csv が既に存在します"
+    else
+        python scripts/data_collection/fetch_to_csv_parallel_improved.py \
+            --start ${start} --end ${end} \
+            --output ${output} \
+            --workers 2 \
+            --brute-force
+    fi
+
+    echo "[${label}] DB投入"
+    python scripts/data_collection/import_races_csv.py \
+        --dir ${output}
+
+    echo "[${label}] 完了"
+}
+
+# ===== Step 1a: 1月 =====
+fetch_and_import_month "Step 1a: 1月" "2026-01-01" "2026-01-31" "data/csv/2026_01_bf"
+
+# ===== Step 1b: 2月 =====
+fetch_and_import_month "Step 1b: 2月" "2026-02-01" "2026-02-28" "data/csv/2026_02_bf"
+
+# ===== Step 1c: 3月 =====
+fetch_and_import_month "Step 1c: 3月" "2026-03-01" "2026-03-30" "data/csv/2026_03_bf"
+
+# ===== Step 1.5: kimarite補完 =====
 echo ""
-echo "[STEP 1] 2026-03 entries/results CSV収集..."
-python scripts/data_collection/fetch_to_csv_parallel_improved.py \
-    --start 2026-03-01 --end 2026-03-22 \
-    --output data/csv/2026_03_補完 --workers 8
-echo "[OK] 2026-03 CSV収集完了"
+echo "[Step 1.5] kimarite補完"
+python scripts/data_collection/補完_決まり手データ_改善版.py
+echo "[Step 1.5] 完了"
 
-# ================================================================
-# STEP 2: entries/results DB投入（1月・2月・3月）
-# ================================================================
-
+# ===== Step 1.6: race_details補完 =====
 echo ""
-echo "[STEP 2-1] 2026-01 DB投入..."
-python scripts/data_collection/import_races_csv.py --dir data/csv/2026_01_補完
-echo "[OK] 2026-01 完了"
+echo "[Step 1.6] race_details補完"
+python scripts/data_collection/補完_レース詳細データ_改善版v4.py
+echo "[Step 1.6] 完了"
 
+# ===== Step 1.7: trifecta_odds収集 =====
 echo ""
-echo "[STEP 2-2] 2026-02 DB投入..."
-python scripts/data_collection/import_races_csv.py --dir data/csv/2026_02_補完
-echo "[OK] 2026-02 完了"
-
-echo ""
-echo "[STEP 2-3] 2026-03 DB投入..."
-python scripts/data_collection/import_races_csv.py --dir data/csv/2026_03_補完
-echo "[OK] 2026-03 完了"
-
-# ================================================================
-# STEP 3: 後続処理（entries/results追加後の必須チェーン）
-# ================================================================
-
-echo ""
-echo "[STEP 3-1] kimarite補完..."
-python scripts/data_collection/補完_決まり手データ_改善版.py \
-    --start-date 2026-01-01 --end-date 2026-03-22
-echo "[OK] kimarite補完完了"
-
-echo ""
-echo "[STEP 3-2] race_details補完..."
-python scripts/data_collection/補完_レース詳細データ_改善版v4.py \
-    --start-date 2026-01-01 --end-date 2026-03-22
-echo "[OK] race_details補完完了"
-
-echo ""
-echo "[STEP 3-3] trifecta_odds補完（2026-03-19〜03-22）..."
-# fetch_odds_parallel_safe.py はDB直接保存（CSV経由ではない）
+echo "[Step 1.7] trifecta_odds収集 (2026-01-01 〜 2026-03-30)"
 python scripts/data_collection/fetch_odds_parallel_safe.py \
-    --start-date 2026-03-19 --end-date 2026-03-22 --workers 8
-echo "[OK] odds補完完了"
+    --start-date 2026-01-01 --end-date 2026-03-30 \
+    --workers 2
+echo "[Step 1.7] 完了"
 
+# ===== Step 2: exhibition_data補完 =====
 echo ""
-echo "[STEP 3-4] 統計指標再生成（2026年全体）..."
-python scripts/data_collection/build_indicator_stats.py \
-    --start 2026-01-01 --end 2026-03-22
-echo "[OK] 統計指標再生成完了"
+echo "[Step 2] exhibition_data CSV収集 (2026-01-01 〜 2026-03-30)"
+echo y | python scripts/data_collection/collect_beforeinfo_to_csv_parallel.py \
+    --start 2026-01-01 --end 2026-03-30 \
+    --output data/csv/beforeinfo/2026_補完 \
+    --workers 2
 
-# ================================================================
-# STEP 4: beforeinfo補完（03-19〜03-22分）
-# ================================================================
-
-echo ""
-echo "[STEP 4] beforeinfo補完（2026-03-19〜03-22）..."
-# stdin を /dev/null にリダイレクトして対話プロンプト (y/N) を回避
-python scripts/data_collection/collect_beforeinfo_to_csv_parallel.py \
-    --start 2026-03-19 --end 2026-03-22 \
-    --output data/csv/beforeinfo/2026_03_post --workers 8 < /dev/null
+echo "[Step 2] DB投入"
 python scripts/data_collection/import_beforeinfo_csv_to_db.py \
-    --input data/csv/beforeinfo/2026_03_post
-echo "[OK] beforeinfo補完完了"
+    --input data/csv/beforeinfo/2026_補完
+echo "[Step 2] 完了"
+
+# ===== Step 2.5: 統計指標再生成 =====
+echo ""
+echo "[Step 2.5] 統計指標再生成（全期間累積）"
+python scripts/data_collection/build_indicator_stats.py
+echo "[Step 2.5] 完了"
+
+# ===== Step 3: advance予測再生成 =====
+echo ""
+echo "[Step 3] advance予測再生成 (2026年)"
+python scripts/prediction/generate_advance_fast.py --year 2026
+echo "[Step 3] 完了"
+
+# ===== Step 4: before予測再生成 =====
+echo ""
+echo "[Step 4] before予測再生成 (2026年)"
+python scripts/prediction/generate_before_fast.py --year 2026
+echo "[Step 4] 完了"
 
 echo ""
-echo "================================================================"
-echo "=== 全タスク完了: $(date) ==="
-echo "================================================================"
-echo ""
-echo "次のアクション（手動）:"
-echo "  - before予測再生成（2026年・任意）:"
-echo "    python scripts/prediction/fast_prediction_generator.py --date 2026-03-23 --type before"
+echo "=============================="
+echo "2026年データ補完 + 予測再生成 全ステップ完了"
+echo "=============================="
