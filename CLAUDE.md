@@ -53,14 +53,19 @@
 
 以下のドキュメントは**過去ログ**であり、最新情報ではありません：
 
-- **`docs/archive/` 配下すべて** — 明示的にアーカイブ済み。参照禁止。
+- **`docs/archive/` 配下すべて** — 明示的にアーカイブ済み。最新情報としての参照禁止。
   - `archive/analysis/` `archive/analysis_2025/` `archive/implementation/` `archive/reports_2025/` `archive/reports_2026/` `archive/performance_old/`
+  - `archive/guides/` `archive/improvement_attempts/` `archive/architecture_old/` `archive/knowledge/`（2026-04-06追加）
 - **日付付きファイル**（`*_2025*.md`, `*_2026*.md`）— いずれかのarchiveサブディレクトリに移動済み
 - **`docs/implementation/`** — 全ファイルをarchiveに移動済み（空ディレクトリ）
+- **`docs/knowledge/`** — 全ファイルをarchive/knowledge/に移動済み（空ディレクトリ）
+
+**過去の知見を調べたいとき**:
+- [docs/archive/ARCHIVE_INDEX.md](docs/archive/ARCHIVE_INDEX.md) — 全275ファイルの索引。ファイル名・概要・移動理由を記載
 
 **例外（参照必須）**:
 - `docs/improvement_attempts/REJECTED_IDEAS.md` - 不採用案の確認に必須
-- `docs/guides/` 配下のガイド類 - ハウツー情報として有効
+- `docs/guides/` 配下のガイド類（10ファイル）- ハウツー情報として有効
 
 ## よく使うコマンド
 
@@ -483,19 +488,24 @@ WHERE t.race_id IN (
 │   ├── performance/         # 年度別成績・テスト結果（最新版のみ）
 │   ├── presets/             # 購入条件・プリセット
 │   ├── improvement_attempts/ # 不採用案・検証履歴
-│   ├── guides/              # ガイド類（56ファイル）
-│   ├── knowledge/           # 予測ロジック知見ベース
+│   ├── guides/              # ガイド類（10ファイル・現役のみ）
+│   ├── knowledge/           # 予測ロジック知見ベース（空・archive/knowledge/に移動済み）
 │   ├── checklists/          # 検証チェックリスト
 │   ├── lessons_learned/     # 過去の教訓
 │   ├── templates/           # ドキュメントテンプレート
 │   ├── maintenance/         # メンテナンス記録
-│   └── archive/             # 過去ログ（★参照禁止）
+│   └── archive/             # 過去ログ（★最新情報としての参照禁止・索引あり）
+│       ├── ARCHIVE_INDEX.md # ★全275ファイルの索引（検索はここから）
 │       ├── analysis/        # 分析レポート（90ファイル）
 │       ├── analysis_2025/   # 2025年の分析レポート（51ファイル）
 │       ├── implementation/  # 完了済み実装レポート（36ファイル）
 │       ├── reports_2025/    # 2025年のその他レポート（4ファイル）
 │       ├── reports_2026/    # 2026年の過去レポート（14ファイル）
-│       └── performance_old/ # 旧ベースライン・補完完了レポート
+│       ├── performance_old/ # 旧ベースライン・補完完了レポート
+│       ├── guides/          # 旧ガイド類（46ファイル、2026-04-06移動）
+│       ├── improvement_attempts/ # 不採用案詳細メモ（5ファイル、REJECTED_IDEAS.mdに要約済み）
+│       ├── architecture_old/ # 旧アーキテクチャ文書（4ファイル、現役版はarchitecture/）
+│       └── knowledge/       # 旧知見ベース（6ファイル、2026-04-06移動）
 ├── ui/            # Streamlit UI
 ├── tests/         # テスト
 ├── temp/          # 一時ファイル（展示データJSON等）
