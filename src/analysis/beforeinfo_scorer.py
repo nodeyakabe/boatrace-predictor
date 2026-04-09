@@ -417,7 +417,9 @@ class BeforeInfoScorer:
 
         # 部品交換ペナルティ
         parts = parts_replacements.get(pit_number, '')
-        if 'P' in parts:
+        if 'ピストン' in parts:
+            # ピストン交換は最重度の機関系トラブル指標（-10点）
+            # NOTE: 旧実装は ASCII 'P' を検索していたが、日本語部品名にはマッチしない。(2026-04-09修正)
             score -= 10.0
         # NOTE: 'R'（リング交換）ペナルティは廃止 (2026-04-09)
         # DBの全2,332,152件が parts_replacement='R' のため、全選手に一律-5.0ptが適用される。

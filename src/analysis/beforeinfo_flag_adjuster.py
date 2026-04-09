@@ -278,8 +278,11 @@ class BeforeInfoFlagAdjuster:
         if parts is None:
             return False
 
-        # プロペラ、電気系統、ギヤケースのいずれかが交換されている
-        return parts in ['プロペラ', '電気一式', 'ギヤケース', '\\1', '\\2', '\\3']
+        # 部品名が存在すれば交換あり（値が入っている = 何らかの部品が交換されている）
+        # 実際の部品名例: キャブ、ピストン×２、キャリボ、ピストン×２キャリボ 等
+        # NOTE: 旧実装は scraper の列ずれにより全件 "R"（前走成績のデフォルト値）が
+        #       入っており、この判定が一切機能していなかった。(2026-04-09修正)
+        return bool(parts)
 
     def _load_beforeinfo(self, conn: sqlite3.Connection, race_id: int, pit_number: int) -> Optional[Dict]:
         """

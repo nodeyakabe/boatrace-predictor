@@ -297,13 +297,13 @@ class BeforeInfoScraper:
                                 except ValueError:
                                     pass
 
-                        # 部品交換を探す（"R", "E", "C" などの1文字または数文字）
-                        # 部品交換は「前検」列（インデックス8）にある
-                        if len(cols) > 8:
-                            parts_col = cols[8]  # インデックス8が部品交換列
+                        # 部品交換を取得（Col 7: 部品名テキスト。例: キャブ、ピストン×２、キャリボ等）
+                        # NOTE: 旧実装は Col 8（前走成績）を誤読していた。正しくは Col 7。
+                        # 文字数制限も除去（複数部品の場合「ピストン×２キャリボ」等、9文字以上になる）
+                        if len(cols) > 7:
+                            parts_col = cols[7]  # Col 7 が部品交換列
                             parts_text = parts_col.get_text(strip=True)
-                            # "R"（交換済み）などのマーク（1〜3文字）
-                            if parts_text and 1 <= len(parts_text) <= 3:
+                            if parts_text:
                                 parts_replacements[pit_number] = parts_text
 
                         # 調整重量を探す（Row 0, Col 9に格納されている）
