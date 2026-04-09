@@ -132,7 +132,8 @@ class CompoundBuffSystem:
             buff_value=-5.0,
             confidence=0.80,
             sample_count=200,
-            hit_rate=0.48
+            hit_rate=0.48,
+            is_active=False  # 2026-04-09 無効化: wind_dir分類データのカバレッジが2%以下で発動実績ゼロ
         ))
 
         # ========================================
@@ -170,7 +171,8 @@ class CompoundBuffSystem:
             buff_value=5.0,
             confidence=0.70,
             sample_count=80,
-            hit_rate=0.20
+            hit_rate=0.20,
+            is_active=False  # 2026-04-09 無効化: tide/wave_height DBカバレッジ2%以下。発動実績ゼロ
         ))
 
         # ========================================
@@ -208,7 +210,8 @@ class CompoundBuffSystem:
             buff_value=6.0,
             confidence=0.75,
             sample_count=100,
-            hit_rate=0.22
+            hit_rate=0.22,
+            is_active=False  # 2026-04-09 無効化: tide_dataカバレッジ2%以下。発動実績ゼロ
         ))
 
         # ========================================
@@ -322,7 +325,8 @@ class CompoundBuffSystem:
             buff_value=6.0,
             confidence=0.75,
             sample_count=100,
-            hit_rate=0.20
+            hit_rate=0.20,
+            is_active=False  # 2026-04-09 無効化: DB実測 hit_rate 12.4% vs 設定20%（大幅乖離・過大評価）
         ))
 
         # ========================================

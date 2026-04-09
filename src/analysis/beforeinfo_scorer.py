@@ -419,8 +419,11 @@ class BeforeInfoScorer:
         parts = parts_replacements.get(pit_number, '')
         if 'P' in parts:
             score -= 10.0
-        if 'R' in parts:
-            score -= 5.0
+        # NOTE: 'R'（リング交換）ペナルティは廃止 (2026-04-09)
+        # DBの全2,332,152件が parts_replacement='R' のため、全選手に一律-5.0ptが適用される。
+        # 差別化情報としての意味がなく、スコアを全体的に下げるだけの副作用がある。
+        # if 'R' in parts:
+        #     score -= 5.0
 
         # 調整重量ペナルティ
         weight = adjusted_weights.get(pit_number, 0.0)
