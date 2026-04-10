@@ -56,7 +56,7 @@ fetch_and_import_month "Step 1a: 1月" "2026-01-01" "2026-01-31" "data/csv/2026_
 fetch_and_import_month "Step 1b: 2月" "2026-02-01" "2026-02-28" "data/csv/2026_02_bf"
 
 # ===== Step 1c: 3月 =====
-fetch_and_import_month "Step 1c: 3月" "2026-03-01" "2026-03-30" "data/csv/2026_03_bf"
+fetch_and_import_month "Step 1c: 3月" "2026-03-01" "2026-03-31" "data/csv/2026_03_bf"
 
 # ===== Step 1.5: kimarite補完 =====
 echo ""
@@ -72,17 +72,17 @@ echo "[Step 1.6] 完了"
 
 # ===== Step 1.7: trifecta_odds収集 =====
 echo ""
-echo "[Step 1.7] trifecta_odds収集 (2026-01-01 〜 2026-03-30)"
+echo "[Step 1.7] trifecta_odds収集 (2026-01-01 〜 2026-03-31)"
 python scripts/data_collection/fetch_odds_parallel_safe.py \
-    --start-date 2026-01-01 --end-date 2026-03-30 \
+    --start-date 2026-01-01 --end-date 2026-03-31 \
     --workers 2
 echo "[Step 1.7] 完了"
 
 # ===== Step 2: exhibition_data補完 =====
 echo ""
-echo "[Step 2] exhibition_data CSV収集 (2026-01-01 〜 2026-03-30)"
+echo "[Step 2] exhibition_data CSV収集 (2026-01-01 〜 2026-03-31)"
 echo y | python scripts/data_collection/collect_beforeinfo_to_csv_parallel.py \
-    --start 2026-01-01 --end 2026-03-30 \
+    --start 2026-01-01 --end 2026-03-31 \
     --output data/csv/beforeinfo/2026_補完 \
     --workers 2
 

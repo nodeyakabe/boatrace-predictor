@@ -24,6 +24,7 @@ from scripts.automation.fetch_yesterday_final_odds import fetch_yesterday_final_
 from scripts.automation.fetch_yesterday_beforeinfo import fetch_yesterday_beforeinfo
 from scripts.automation.daily_tenji_collector import collect_previous_day_tenji
 from scripts.automation.generate_yesterday_before_predictions import generate_yesterday_before_predictions
+from scripts.automation.reconcile_yesterday_bets import reconcile_yesterday_bets, format_reconcile_message
 from scripts.automation.notify import send_discord_notification, send_error_notification
 
 
@@ -35,6 +36,7 @@ class BlockARunner:
         self.errors = []
         self.start_time = None
         self.end_time = None
+        self._reconcile_result = None
 
     def run_all(self) -> bool:
         """全タスクを順次実行"""
@@ -52,6 +54,7 @@ class BlockARunner:
             ("前日直前情報収集", self._task_beforeinfo),
             ("前日展示データ収集", self._task_tenji),
             ("前日直前予想生成", self._task_before_predictions),
+            ("前日予想結果突合せ", self._task_reconcile),
         ]
 
         for idx, (name, task_func) in enumerate(tasks, 1):
@@ -111,6 +114,16 @@ class BlockARunner:
         """前日直前予想生成"""
         return generate_yesterday_before_predictions(force=False)
 
+    def _task_reconcile(self) -> int:
+        """前日予想結果突合せ"""
+        db_path = str(project_root / 'data' / 'boatrace.db')
+        yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        result = reconcile_yesterday_bets(db_path=db_path, target_date=yesterday)
+        self._reconcile_result = result
+
+        # 購入対象件数を返す（タスク件数カウント用）
+        return result['target_count']
+
     def _finalize(self) -> bool:
         """最終結果をサマリー表示・通知"""
         total_elapsed = (self.end_time - self.start_time).total_seconds()
@@ -153,6 +166,11 @@ class BlockARunner:
 
         if self.errors:
             message += f"\n⚠️ エラー {len(self.errors)}件発生"
+
+        # 突合せ結果を別通知で送信
+        if self._reconcile_result is not None:
+            reconcile_msg = format_reconcile_message(self._reconcile_result)
+            send_discord_notification(reconcile_msg)
 
         send_discord_notification(message)
 
