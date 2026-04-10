@@ -40,11 +40,12 @@ from src.scraper.beforeinfo_scraper import BeforeInfoScraper
 
 # スレッドローカルストレージ
 thread_local = threading.local()
+_scraper_delay = 0.3  # get_scraper() から参照するグローバル設定
 
 def get_scraper():
     """スレッドローカルなScraperインスタンスを取得"""
     if not hasattr(thread_local, 'scraper'):
-        thread_local.scraper = BeforeInfoScraper(delay=0.3)
+        thread_local.scraper = BeforeInfoScraper(delay=_scraper_delay)
     return thread_local.scraper
 
 
@@ -66,6 +67,9 @@ class ParallelBeforeinfoCsvFetcher:
         self.output_dir = Path(output_dir)
         self.delay = delay
         self.max_workers = max_workers
+        # get_scraper() のグローバル設定に反映（スレッドローカルインスタンスに渡すため）
+        global _scraper_delay
+        _scraper_delay = delay
         self.batch_size = batch_size
 
         # 出力ディレクトリ作成
@@ -122,8 +126,22 @@ class ParallelBeforeinfoCsvFetcher:
             pass  # Windows環境ではSIGTERMが使えない場合がある
         self.logger.info("シグナルハンドラ設定完了（Ctrl+Cで優雅に終了）")
 
+    def get_already_fetched_race_ids(self):
+        """CSV内の収集済みrace_idセットを返す（再起動耐性用）"""
+        if not self.csv_path.exists():
+            return set()
+        fetched = set()
+        try:
+            with open(self.csv_path, encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    fetched.add(int(row['race_id']))
+        except Exception:
+            pass
+        return fetched
+
     def get_races_to_fetch(self, start_date, end_date):
-        """未取得レースを取得（DBチェック）"""
+        """未取得レースを取得（CSV既収集分をスキップ・再起動耐性あり）"""
         conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
 
@@ -131,28 +149,23 @@ class ParallelBeforeinfoCsvFetcher:
             SELECT r.id, r.venue_code, r.race_date, r.race_number
             FROM races r
             WHERE r.race_date BETWEEN ? AND ?
-              AND NOT EXISTS (
-                  SELECT 1 FROM race_details rd
-                  WHERE rd.race_id = r.id AND rd.prev_race_rank IS NOT NULL
-                  LIMIT 1
-              )
             ORDER BY r.race_date, r.venue_code, r.race_number
         """
         try:
             cursor.execute(query, (start_date, end_date))
             races = cursor.fetchall()
         except sqlite3.DatabaseError:
-            # race_detailsにDBページ破損がある場合のフォールバック: 全レースを対象とする
-            self.logger.warning("race_detailsアクセスでDBエラー。全レースを対象に収集します（フォールバック）")
-            fallback_query = """
-                SELECT r.id, r.venue_code, r.race_date, r.race_number
-                FROM races r
-                WHERE r.race_date BETWEEN ? AND ?
-                ORDER BY r.race_date, r.venue_code, r.race_number
-            """
-            cursor.execute(fallback_query, (start_date, end_date))
-            races = cursor.fetchall()
+            self.logger.warning("DBエラー。全レースを対象に収集します（フォールバック）")
+            races = []
         conn.close()
+
+        # CSV内の既収集race_idをスキップ（再起動・再実行時の重複防止）
+        already_fetched = self.get_already_fetched_race_ids()
+        if already_fetched:
+            before = len(races)
+            races = [r for r in races if r[0] not in already_fetched]
+            self.logger.info(f"CSV既収集: {len(already_fetched):,}件スキップ → 残り{len(races):,}件（全{before:,}件中）")
+
         return races
 
     def save_batch_to_csv(self, batch_data):
