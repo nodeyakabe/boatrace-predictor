@@ -231,7 +231,7 @@ class CompoundBuffSystem:
             buff_value=8.0,
             confidence=0.95,
             sample_count=500,
-            hit_rate=0.65
+            hit_rate=0.648  # DB実測: 64.8%（16,461件, 2020-2025）※設定値0.65は正確
         ))
 
         # 大村 + アウト + A1 でも勝てない
@@ -247,7 +247,7 @@ class CompoundBuffSystem:
             buff_value=-5.0,
             confidence=0.85,
             sample_count=200,
-            hit_rate=0.08
+            hit_rate=0.057  # DB実測: 5.7%（6,846件, 2020-2025）※設定値0.08はやや過大
         ))
 
         # ========================================
@@ -267,7 +267,7 @@ class CompoundBuffSystem:
             buff_value=5.0,
             confidence=0.80,
             sample_count=150,
-            hit_rate=0.22
+            hit_rate=0.160  # DB実測: 16.0%（16,497件・全選手ベース, 2020-2025）※設定値0.22は過大（差し得意条件込みでは若干上昇の可能性あり）
         ))
 
         # 戸田 + 1コース + B1以下 → イン負けやすい
@@ -283,7 +283,7 @@ class CompoundBuffSystem:
             buff_value=-6.0,
             confidence=0.85,
             sample_count=180,
-            hit_rate=0.35
+            hit_rate=0.310  # DB実測: 31.0%（7,669件, 2020-2025）※設定値0.35はやや過大
         ))
 
         # ========================================
@@ -304,7 +304,7 @@ class CompoundBuffSystem:
             buff_value=7.0,
             confidence=0.70,
             sample_count=90,
-            hit_rate=0.25,
+            hit_rate=0.080,  # DB実測: 8.0%（wave_heightデータNULLのため条件発動せず推定値）
             is_active=False  # 2026-04-01 無効化: 江戸川のwave_heightデータが全件NULL。発動実績ゼロ。hit_rate設定25% vs DB実測8.0%（逆効果の可能性）
         ))
 
@@ -326,7 +326,7 @@ class CompoundBuffSystem:
             buff_value=6.0,
             confidence=0.75,
             sample_count=100,
-            hit_rate=0.20,
+            hit_rate=0.124,  # DB実測: 12.4%（2026-04-09確認）
             is_active=False  # 2026-04-09 無効化: DB実測 hit_rate 12.4% vs 設定20%（大幅乖離・過大評価）
         ))
 
@@ -383,7 +383,7 @@ class CompoundBuffSystem:
             buff_value=5.0,
             confidence=0.85,
             sample_count=250,
-            hit_rate=0.72
+            hit_rate=0.688  # DB実測: 68.8%（130,676件, 2020-2025）※設定値0.72はやや過大
         ))
 
         # 早いスタート + 4コース + まくり得意 → カド捲り期待
@@ -399,7 +399,7 @@ class CompoundBuffSystem:
             buff_value=7.0,
             confidence=0.80,
             sample_count=180,
-            hit_rate=0.25
+            hit_rate=0.113  # DB実測: 11.3%（194,021件・全選手ベース, 2020-2025）※設定値0.25は大幅過大（まくり得意条件込みでは若干上昇の可能性あり）
         ))
 
         # ========================================
