@@ -101,42 +101,47 @@ def acquire_lock():
     """
     global lock_file
 
+    my_pid = os.getpid()
+
+    # ① psutilで既存プロセスを直接確認（ロックファイルより確実・レース競合なし）
+    # python.exe のみ対象（シェルラッパーのcmdlineに daily_scheduler.py が含まれる誤検知を防ぐ）
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        if proc.info['pid'] == my_pid:
+            continue
+        try:
+            proc_name = (proc.info['name'] or '').lower()
+            if 'python' not in proc_name:
+                continue
+            cmdline = ' '.join(proc.info['cmdline'] or [])
+            if 'daily_scheduler.py' in cmdline:
+                print(f"[ERROR] daily_schedulerは既に起動しています (PID: {proc.info['pid']})")
+                return False
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
     lock_path = project_root / "data" / "daily_scheduler.lock"
 
-    # 既存のロックファイルをチェック
+    # 古いロックファイルがあれば削除
     if lock_path.exists():
         try:
             with open(lock_path, 'r') as f:
                 old_pid = int(f.read().strip())
-
-            # プロセスがまだ生きているか確認
-            if psutil.pid_exists(old_pid):
-                try:
-                    proc = psutil.Process(old_pid)
-                    # daily_scheduler.pyを実行しているか確認
-                    cmdline = ' '.join(proc.cmdline())
-                    if 'daily_scheduler.py' in cmdline:
-                        print(f"[ERROR] daily_schedulerは既に起動しています (PID: {old_pid})")
-                        print(f"[ERROR] 既存のプロセスを停止してから再実行してください")
-                        return False
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
-
-            # 古いロックファイルを削除
             print(f"[INFO] 古いロックファイルを削除: PID {old_pid} (プロセス終了済み)")
-            lock_path.unlink()
+        except Exception:
+            pass
+        lock_path.unlink(missing_ok=True)
 
-        except (ValueError, FileNotFoundError):
-            # ロックファイルが壊れている場合は削除
-            lock_path.unlink(missing_ok=True)
-
-    # 新しいロックファイルを作成
+    # ② 排他オープン（'x'フラグ）でアトミックに作成
     try:
         lock_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(lock_path, 'w') as f:
-            f.write(str(os.getpid()))
+        with open(lock_path, 'x') as f:
+            f.write(str(my_pid))
         lock_file = lock_path
         return True
+    except FileExistsError:
+        # 極めて稀なタイミングで別プロセスが同時作成した場合
+        print(f"[ERROR] ロックファイル競合（別プロセスが同時起動）: {lock_path}")
+        return False
     except Exception as e:
         print(f"[ERROR] ロックファイル作成失敗: {e}")
         return False
@@ -298,47 +303,13 @@ def race_monitor_job():
 
 def startup_notification():
     """起動通知"""
-    message = f"""🤖 **ボートレース自動化システム起動（v3.0 - 常駐監視版）**
-
-起動時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-**スケジュール:**
-- 03:00 - Aブロック（前日データ完全収集 + 日次リセット）
-- 06:00 - Cブロック（本日データ収集 + advance予測生成）
-- 08:00 - Eブロック（当日オッズ収集）
-- 08:30 - Dブロック（予想生成・オッズあり状態で通知）
-- 1分ごと - レース監視（オッズ30-50分前再取得、直前情報20分前取得、通知10分前送信）
-
-**ブロック詳細:**
-Aブロック: 結果→確定オッズ→直前情報→展示→直前予想 + 日次リセット
-Cブロック: レースデータ→advance予測生成
-Dブロック: 予想生成
-Eブロック: 当日オッズ収集（発走1時間前に公式サイトが公開するタイミング）
-レース監視: CANDIDATE→オッズ再取得→TARGET昇格→直前情報取得→通知
-
-システムは正常稼働中です。
-"""
+    message = f"🤖 **起動** {datetime.now().strftime('%m/%d %H:%M')} A:03:00 C:06:00 E:08:00 D:08:30"
     send_discord_notification(message)
 
 
 def shutdown_notification():
     """停止通知"""
-    message = f"""🛑 **ボートレース自動化システム停止（v2）**
-
-停止時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-システムを再起動する場合:
-```
-python scripts/automation/daily_scheduler.py
-```
-
-手動でブロック実行する場合:
-```
-python scripts/automation/block_a_yesterday_data.py
-python scripts/automation/block_c_today_data.py
-python scripts/automation/block_d_today_prediction.py
-```
-"""
+    message = f"🛑 **停止** {datetime.now().strftime('%m/%d %H:%M')}"
     send_discord_notification(message)
 
 

@@ -146,26 +146,10 @@ class BlockARunner:
         status_icon = "✅" if success_count == total_count else "⚠️"
         yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
 
-        message = f"""{status_icon} **Aブロック完了: 前日データ完全収集**
-
-対象日: {yesterday}
-完了時刻: {self.end_time.strftime('%Y-%m-%d %H:%M:%S')}
-
-**結果:**
-- 成功: {success_count}/{total_count}タスク
-- 総所要時間: {int(elapsed // 60)}分{int(elapsed % 60)}秒
-
-**タスク詳細:**
-"""
-
-        for name, result in self.results.items():
-            if result["status"] == "OK":
-                message += f"✅ {name}: {result['count']}件\n"
-            else:
-                message += f"❌ {name}: {result['error'][:50]}\n"
+        message = f"{status_icon} **A完了** {yesterday} {success_count}/{total_count}タスク {int(elapsed // 60)}分{int(elapsed % 60)}秒"
 
         if self.errors:
-            message += f"\n⚠️ エラー {len(self.errors)}件発生"
+            message += "\n" + "\n".join(f"❌ {e[:80]}" for e in self.errors)
 
         # 突合せ結果を別通知で送信
         if self._reconcile_result is not None:

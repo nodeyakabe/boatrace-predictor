@@ -289,80 +289,34 @@ def format_reconcile_message(result: Dict) -> str:
     target_count = result['target_count']
     hit_count = result['hit_count']
     profit = result['profit']
-    total_bet = result['total_bet']
-    total_return = result['total_return']
-    no_result_count = result['no_result_count']
-
-    if target_count == 0 and not result.get('candidate_details'):
-        return f"[前日予想結果] {date}\n購入対象なし（条件不一致）"
-
-    hit_rate = hit_count / target_count * 100 if target_count > 0 else 0
-    profit_sign = '+' if profit >= 0 else ''
-
-    lines = [f"[前日予想結果] {date}", ""]
-
-    if target_count > 0:
-        lines += [
-            f"購入対象: {target_count}件",
-            f"的中: {hit_count}件 ({hit_rate:.0f}%)",
-            f"収支: {profit_sign}{profit:,}円 (賭:{total_bet:,}円 / 払:{total_return:,}円)",
-        ]
-    else:
-        lines.append("購入対象なし（条件不一致）")
-
-    if no_result_count > 0:
-        lines.append(f"※ 結果未取得: {no_result_count}件")
-
-    hits = [d for d in result['details'] if d['status'] == '的中']
-    misses = [d for d in result['details'] if d['status'] == '不的中']
-    no_results = [d for d in result['details'] if d['status'] == '結果未取得']
-
-    if hits:
-        lines.append("")
-        lines.append("[的中]")
-        for d in hits:
-            lines.append(
-                f"[OK] {d['venue']}{d['race_num']}R {d['combinations']} +{d['return_amount']:,}円"
-            )
-
-    if misses:
-        lines.append("")
-        lines.append("[不的中]")
-        for d in misses:
-            lines.append(
-                f"[NG] {d['venue']}{d['race_num']}R 予={d['combinations']} 実={d['actual']}"
-            )
-
-    if no_results:
-        lines.append("")
-        lines.append("[結果未取得]")
-        for d in no_results:
-            lines.append(f"[?] {d['venue']}{d['race_num']}R {d['combinations']}")
-
-    # 候補レース
     candidate_count = result.get('candidate_count', 0)
     candidate_hit_count = result.get('candidate_hit_count', 0)
     candidate_details = result.get('candidate_details', [])
 
+    if target_count == 0 and not candidate_details:
+        return f"📊 {date} 購入なし"
+
+    profit_sign = '+' if profit >= 0 else ''
+    hit_rate = hit_count / target_count * 100 if target_count > 0 else 0
+
+    lines = []
+    if target_count > 0:
+        lines.append(f"📊 **{date}** {hit_count}/{target_count}的中({hit_rate:.0f}%) {profit_sign}{profit:,}円")
+    else:
+        lines.append(f"📊 **{date}** 購入なし")
+
+    # 的中レースのみ表示
+    hits = [d for d in result['details'] if d['status'] == '的中']
+    for d in hits:
+        lines.append(f"✅ {d['venue']}{d['race_num']}R {d['combinations']} +{d['return_amount']:,}円")
+
+    # 候補: 的中のみ表示、サマリーは件数が0でなければ
     if candidate_details:
-        lines.append("")
         cand_hit_rate = candidate_hit_count / candidate_count * 100 if candidate_count > 0 else 0
-        lines.append(f"[候補レース] {candidate_count}件 / 的中: {candidate_hit_count}件 ({cand_hit_rate:.0f}%)")
-
-        cand_hits = [d for d in candidate_details if d['status'] == '的中(候補)']
-        cand_misses = [d for d in candidate_details if d['status'] == '不的中(候補)']
-        cand_no_results = [d for d in candidate_details if d['status'] == '結果未取得(候補)']
-
-        if cand_hits:
-            for d in cand_hits:
+        lines.append(f"候補 {candidate_hit_count}/{candidate_count}的中({cand_hit_rate:.0f}%)")
+        for d in candidate_details:
+            if d['status'] == '的中(候補)':
                 odds_str = f" ({d['odds_reason']})" if d.get('odds_reason') else ''
-                lines.append(f"[候補-OK] {d['venue']}{d['race_num']}R [{d['condition_id']}] {d['combinations']}{odds_str}")
-        if cand_misses:
-            for d in cand_misses:
-                odds_str = f" ({d['odds_reason']})" if d.get('odds_reason') else ''
-                lines.append(f"[候補-NG] {d['venue']}{d['race_num']}R [{d['condition_id']}] 予={d['combinations']} 実={d['actual']}{odds_str}")
-        if cand_no_results:
-            for d in cand_no_results:
-                lines.append(f"[候補-?] {d['venue']}{d['race_num']}R [{d['condition_id']}] {d['combinations']}")
+                lines.append(f"  ✅ {d['venue']}{d['race_num']}R {d['combinations']}{odds_str}")
 
     return "\n".join(lines)

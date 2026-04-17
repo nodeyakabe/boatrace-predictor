@@ -16,54 +16,56 @@ class TideAdjuster:
     """潮位に基づくスコア補正クラス"""
 
     # 観測所名 → 対応会場コードのマッピング
+    # 修正: 2026-04-15 コードが全て1つずれていたバグを修正
     STATION_TO_VENUES = {
-        'Hiroshima': ['16'],          # 宮島
-        'Tokuyama': ['17', '18'],     # 徳山、下関
-        'Hakata': ['21', '22', '23'], # 福岡、芦屋、若松
-        'Sasebo': ['24'],             # 大村
+        'Hiroshima': ['17'],          # 宮島(17)
+        'Tokuyama': ['18', '19'],     # 徳山(18)、下関(19)
+        'Hakata': ['20', '21', '22'], # 若松(20)、芦屋(21)、福岡(22)
+        'Sasebo': ['24'],             # 大村(24)
     }
 
     # 会場別潮位補正係数（分析結果に基づく）
     # 上げ潮時の1号艇勝率差分を基に算出
     # positive = 上げ潮で1コース有利、negative = 下げ潮で1コース有利
+    # 修正: 2026-04-15 キーが全て1つずれていたバグを修正（コメントの会場名は正しかった）
     VENUE_TIDE_COEFFICIENTS = {
-        '17': {  # 徳山: 上げ潮で+14.7%の差
+        '18': {  # 徳山(18): 上げ潮で+14.7%の差
             'rising_course1_bonus': 0.07,      # +7%（差分の半分を適用）
             'falling_course1_penalty': -0.07,  # -7%
             'rising_outer_penalty': -0.02,     # 外コースペナルティ
             'falling_outer_bonus': 0.02,       # 外コースボーナス
         },
-        '16': {  # 宮島: 上げ潮で+9.8%の差
+        '17': {  # 宮島(17): 上げ潮で+9.8%の差
             'rising_course1_bonus': 0.05,      # +5%
             'falling_course1_penalty': -0.05,  # -5%
             'rising_outer_penalty': -0.015,
             'falling_outer_bonus': 0.015,
         },
-        '23': {  # 若松: 下げ潮で+6.6%（逆パターン）
+        '20': {  # 若松(20): 下げ潮で+6.6%（逆パターン）
             'rising_course1_bonus': -0.03,     # -3%（上げ潮で不利）
             'falling_course1_penalty': 0.03,   # +3%（下げ潮で有利）
             'rising_outer_penalty': 0.01,
             'falling_outer_bonus': -0.01,
         },
-        '21': {  # 福岡: 標準パターン
+        '22': {  # 福岡(22): 標準パターン
             'rising_course1_bonus': 0.02,
             'falling_course1_penalty': -0.02,
             'rising_outer_penalty': -0.01,
             'falling_outer_bonus': 0.01,
         },
-        '22': {  # 芦屋: 標準パターン
+        '21': {  # 芦屋(21): 標準パターン
             'rising_course1_bonus': 0.02,
             'falling_course1_penalty': -0.02,
             'rising_outer_penalty': -0.01,
             'falling_outer_bonus': 0.01,
         },
-        '18': {  # 下関: 徳山に準ずる
+        '19': {  # 下関(19): 徳山に準ずる
             'rising_course1_bonus': 0.04,
             'falling_course1_penalty': -0.04,
             'rising_outer_penalty': -0.015,
             'falling_outer_bonus': 0.015,
         },
-        '24': {  # 大村: 標準パターン
+        '24': {  # 大村(24): 標準パターン
             'rising_course1_bonus': 0.02,
             'falling_course1_penalty': -0.02,
             'rising_outer_penalty': -0.01,

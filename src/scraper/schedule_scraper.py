@@ -78,7 +78,7 @@ class ScheduleScraper:
                         hd_match = re.search(r'hd=(\d{8})', href)
 
                         if jcd_match and hd_match:
-                            venue_code = jcd_match.group(1)
+                            venue_code = jcd_match.group(1).zfill(2)
                             date_str = hd_match.group(1)
 
                             # 指定月のデータのみ

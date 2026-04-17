@@ -557,9 +557,50 @@ class BetTargetEvaluator:
                 # 他の条件もチェックするためcontinue
                 continue
 
-            # オッズ範囲チェック（パターンH対応）
+            # オッズ範囲チェック（パターンH/P142対応）
             use_pattern_h = cond.get('use_pattern_h', True)
+            use_pattern_p142 = cond.get('use_pattern_p142', False)
             exclude_p5 = cond.get('pattern_h_exclude_p5', False)
+
+            # p1-p4-p2 パターン（穴狙い）の処理（2026-04-17追加）
+            if use_pattern_p142:
+                # 4位まで予測が必要
+                if not old_prediction or len(old_prediction) < 4:
+                    continue
+                # スコアフィルター（score_min/score_max）
+                score_min_cond = cond.get('score_min')
+                score_max_cond = cond.get('score_max')
+                if score_min_cond is not None or score_max_cond is not None:
+                    # old_predictionのtotal_scoreを確認するため、ここでは既にスコアフィルタ済みと仮定
+                    # （バックテストと一致させるため、scoreはrace_predictionsのtotal_scoreを使用）
+                    pass  # スコアフィルターはevaluate_before()の呼び出し前に適用済みであること
+                # p1-p4-p2 コンビネーション
+                combo_p142 = f"{old_prediction[0]}-{old_prediction[3]}-{old_prediction[1]}"
+                odds_p142 = odds_data.get(combo_p142) if odds_data else None
+                if odds_p142 and odds_min <= odds_p142 < odds_max:
+                    combo = combo_p142
+                    odds = odds_p142
+                else:
+                    continue
+                status = BetStatus.TARGET_CONFIRMED if has_beforeinfo else BetStatus.TARGET_ADVANCE
+                reason_parts = [f'信頼度{confidence}', cond['method'], odds_range, f'1コース{c1_rank}']
+                if 'venue_filter' in cond:
+                    reason_parts.append('高ROI会場')
+                reason_parts.append('p1-p4-p2穴狙い')
+                reason = ' + '.join(reason_parts)
+                return BetTarget(
+                    status=status,
+                    confidence=confidence,
+                    method=cond['method'],
+                    combination=combo,
+                    odds=odds,
+                    odds_range=odds_range,
+                    c1_rank=c1_rank,
+                    expected_roi=cond['expected_roi'],
+                    bet_amount=cond['bet_amount'],
+                    reason=reason,
+                    use_pattern_h=False,
+                )
 
             # パターンH条件だが4位までの予測がない場合は対象外（Tier 2のINNER JOINと同じ動作）
             if use_pattern_h and (not old_prediction or len(old_prediction) < 4):
@@ -641,6 +682,22 @@ class BetTargetEvaluator:
             return first_candidate_target
 
         # オッズが範囲外の場合、候補として返す（直前情報でオッズが変動する可能性）
+        # 月除外チェック（GLOBAL_MONTH_EXCLUDESが適用される月は候補にも含めない）
+        if race_month is not None:
+            _global_excludes = list(GLOBAL_MONTH_EXCLUDES or [])
+            if race_month in _global_excludes:
+                return BetTarget(
+                    status=BetStatus.EXCLUDED,
+                    confidence=confidence,
+                    method='-',
+                    combination='-',
+                    odds=None,
+                    odds_range='-',
+                    c1_rank=c1_rank,
+                    expected_roi=0,
+                    bet_amount=0,
+                    reason=f'{race_month}月は除外月（GLOBAL_MONTH_EXCLUDES）'
+                )
         if not has_beforeinfo and (old_odds or new_odds):
             # 最も近い条件を探す
             best_cond = conditions[0]

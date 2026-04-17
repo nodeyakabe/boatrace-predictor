@@ -124,9 +124,54 @@ def analyze_assigned_races(
 
     # パターンHか1点買いかで投資額・払戻を計算
     use_pattern_h = cond.get('use_pattern_h', False)
+    use_pattern_p142 = cond.get('use_pattern_p142', False)
     placeholders = ','.join(['?'] * len(race_ids))
 
-    if use_pattern_h:
+    if use_pattern_p142:
+        # p1-p4-p2 パターン: 予測1位-予測4位-予測2位の三連単 100円（2026-04-17追加）
+        query = f"""
+        WITH race_bets AS (
+            SELECT
+                r.id as race_id,
+                rp1.pit_number as p1,
+                rp2.pit_number as p2,
+                rp4.pit_number as p4,
+                COALESCE((SELECT o.odds FROM trifecta_odds o WHERE o.race_id = r.id
+                 AND o.combination = CAST(rp1.pit_number AS TEXT) || '-' || CAST(rp4.pit_number AS TEXT) || '-' || CAST(rp2.pit_number AS TEXT)), 0) as odds_142,
+                (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '1') as actual_1st,
+                (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '2') as actual_2nd,
+                (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '3') as actual_3rd
+            FROM races r
+            JOIN race_predictions rp1 ON r.id = rp1.race_id AND rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+            JOIN race_predictions rp2 ON r.id = rp2.race_id AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+            JOIN race_predictions rp4 ON r.id = rp4.race_id AND rp4.prediction_type = 'before' AND rp4.rank_prediction = 4
+            WHERE r.id IN ({placeholders})
+        ),
+        race_payouts AS (
+            SELECT
+                *,
+                CASE WHEN odds_142 >= {cond['odds_min']} AND odds_142 < {cond['odds_max']} THEN 100 ELSE 0 END as bet_amount,
+                CASE
+                    WHEN actual_1st = p1 AND actual_2nd = p4 AND actual_3rd = p2
+                         AND odds_142 >= {cond['odds_min']} AND odds_142 < {cond['odds_max']}
+                    THEN odds_142 * 100 ELSE 0
+                END as payout,
+                CASE
+                    WHEN actual_1st = p1 AND actual_2nd = p4 AND actual_3rd = p2
+                         AND odds_142 >= {cond['odds_min']} AND odds_142 < {cond['odds_max']}
+                    THEN 1 ELSE 0
+                END as is_hit
+            FROM race_bets
+        )
+        SELECT
+            SUM(CASE WHEN bet_amount > 0 THEN 1 ELSE 0 END) as bets,
+            SUM(is_hit) as hits,
+            SUM(bet_amount) as investment,
+            SUM(payout) as payout
+        FROM race_payouts
+        WHERE bet_amount > 0
+        """
+    elif use_pattern_h:
         # パターンH: 3点買い（200円/100円/100円）
         query = f"""
         WITH race_bets AS (
@@ -236,11 +281,29 @@ def analyze_assigned_races(
         WHERE bet_amount > 0
         """
 
-    cursor.execute(query, race_ids)
-    row = cursor.fetchone()
+    # SQLite variable limit対策: 大量race_idsをバッチ処理（上限約900）
+    BATCH_SIZE = 900
+    race_ids_list = list(race_ids)
+    total_bets_sum = 0
+    total_hits_sum = 0
+    total_investment_sum = 0
+    total_payout_sum = 0
 
-    if row and row[0] and row[0] > 0:
-        bets, hits, investment, payout = row
+    for batch_start in range(0, len(race_ids_list), BATCH_SIZE):
+        batch = race_ids_list[batch_start:batch_start + BATCH_SIZE]
+        batch_placeholders = ','.join(['?'] * len(batch))
+        # クエリ内のplaceholdersを実際のバッチサイズに置換
+        batch_query = query.replace(f'({placeholders})', f'({batch_placeholders})')
+        cursor.execute(batch_query, batch)
+        row = cursor.fetchone()
+        if row and row[0]:
+            total_bets_sum += row[0] or 0
+            total_hits_sum += row[1] or 0
+            total_investment_sum += row[2] or 0
+            total_payout_sum += row[3] or 0
+
+    if total_bets_sum > 0:
+        bets, hits, investment, payout = total_bets_sum, total_hits_sum, total_investment_sum, total_payout_sum
         hits = hits or 0
         payout = payout or 0
         roi = 100.0 * payout / investment if investment > 0 else 0

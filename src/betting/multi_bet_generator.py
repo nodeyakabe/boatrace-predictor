@@ -19,6 +19,7 @@ class MultiBetPattern(Enum):
     PATTERN_L = "pattern_l"              # L: 重点買い（300+100）
     PATTERN_I = "pattern_i"              # I: 2点買い（200+100）
     PATTERN_K = "pattern_k"              # K: 総合（150+100+50）- 最低MaxDD
+    PATTERN_P142 = "pattern_p142"        # P142: p1-p4-p2 穴狙い（100円1点）- 2026-04-17追加
 
 
 @dataclass
@@ -144,6 +145,8 @@ class MultiBetGenerator:
             return self._generate_pattern_i(predictions, odds_dict)
         elif pattern == MultiBetPattern.PATTERN_K:
             return self._generate_pattern_k(predictions, odds_dict)
+        elif pattern == MultiBetPattern.PATTERN_P142:
+            return self._generate_pattern_p142(predictions, odds_dict)
         else:
             raise ValueError(f"未知のパターン: {pattern}")
 
@@ -437,6 +440,7 @@ class MultiBetGenerator:
             MultiBetPattern.PATTERN_L: "重点買い（300+100円）",
             MultiBetPattern.PATTERN_I: "2点買い（200+100円）- シンプル",
             MultiBetPattern.PATTERN_K: "総合買い（150+100+50円）- 安全重視",
+            MultiBetPattern.PATTERN_P142: "P142穴狙い（p1-p4-p2 100円1点）",
         }
 
         return {
@@ -447,6 +451,43 @@ class MultiBetGenerator:
             'expected_profit': stats.get('profit', 0),
             'max_drawdown': stats.get('max_dd', 0),
         }
+
+    def _generate_pattern_p142(
+        self, predictions: List[int], odds_dict: Dict[str, float]
+    ) -> MultiBetResult:
+        """
+        パターンP142: p1-p4-p2 穴狙い 100円1点買い（2026-04-17追加）
+
+        【穴狙い条件専用パターン】
+        - 1着: 予測1位（p1）
+        - 2着: 予測4位（p4）← 「サブ崩れ展開」狙い
+        - 3着: 予測2位（p2）
+        - 配分: 100円（1点）
+        条件: A信頼度×スコア80-90×100-300倍×11月除外
+        根拠: スコア80-90帯は教科書展開率9.7%（スコア90+の11.7%より低い）
+              → p1-p2-p3が崩れた際にp4が2着に来る余地が高い
+        """
+        if len(predictions) < 4:
+            raise ValueError("P142パターンには最低4艇の予測が必要です")
+
+        p1, p2, p4 = predictions[0], predictions[1], predictions[3]
+        combo = f"{p1}-{p4}-{p2}"
+        odds = odds_dict.get(combo, 0)
+
+        bets = []
+        if odds > 0:
+            bets.append(MultiBet(combination=combo, odds=odds, bet_amount=100, priority=1))
+
+        total = sum(b.bet_amount for b in bets)
+
+        return MultiBetResult(
+            pattern=MultiBetPattern.PATTERN_P142,
+            bets=bets,
+            total_investment=total,
+            description="パターンP142: p1-p4-p2 穴狙い1点買い（100円）",
+            expected_hit_rate=1.2,   # 6年実績: 1595件/19的中 ≈ 1.2%
+            expected_roi=187.6,      # 6年実績ROI
+        )
 
 
 # 使用例

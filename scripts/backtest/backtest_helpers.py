@@ -177,6 +177,13 @@ def get_race_ids_for_condition(
         """
         avg_st_clause = f"AND e_avgst.avg_st IS NOT NULL AND e_avgst.avg_st <= {cond['p1_avg_st_max']} "
 
+    # スコアフィルター（2026-04-17追加: p1予測のtotal_scoreで絞り込み）
+    score_clause = ""
+    if cond.get('score_min') is not None:
+        score_clause += f"AND rp1.total_score >= {cond['score_min']} "
+    if cond.get('score_max') is not None:
+        score_clause += f"AND rp1.total_score < {cond['score_max']} "
+
     # advance/before 完全一致フィルタ（2026-04-07追加）
     # びわこ(venue_code='11')はフィルタ不適用、advance欠損はパススルー
     advance_match_join = ""
@@ -209,6 +216,7 @@ def get_race_ids_for_condition(
 
     # パターンHの場合は予測が必要（INNER JOINでrp4/rp5まで）
     use_pattern_h = cond.get('use_pattern_h', False)
+    use_pattern_p142 = cond.get('use_pattern_p142', False)
     exclude_p5 = cond.get('pattern_h_exclude_p5', False)
 
     if use_pattern_h:
@@ -247,6 +255,46 @@ def get_race_ids_for_condition(
         {bias_clause}
         {motor_rate_clause}
         {score_gap_clause}
+        {score_clause}
+        {avg_st_clause}
+        {wave_height_clause}
+        {predicted_rank_class_clause}
+        {advance_match_clause}
+        """
+    elif use_pattern_p142:
+        # p1-p4-p2 パターン: 1位・2位・4位の予測が必要（2026-04-17追加）
+        query = f"""
+        SELECT DISTINCT r.id
+        FROM races r
+        JOIN race_predictions rp ON r.id = rp.race_id AND rp.prediction_type = 'before'
+        JOIN race_predictions rp1 ON r.id = rp1.race_id AND rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+        JOIN race_predictions rp2 ON r.id = rp2.race_id AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+        JOIN race_predictions rp4 ON r.id = rp4.race_id AND rp4.prediction_type = 'before' AND rp4.rank_prediction = 4
+        JOIN entries e1 ON r.id = e1.race_id AND e1.pit_number = 1
+        {escape_rate_join}
+        {bias_join}
+        {motor_rate_join}
+        {avg_st_join}
+        {wave_height_join}
+        {advance_match_join}
+        WHERE rp.rank_prediction = 1
+        {confidence_clause}
+        AND e1.racer_rank IN ({c1_ranks_str})
+        AND r.race_date >= '{start_date}'
+        AND r.race_date < '{end_date}'
+        {venue_clause}
+        {motor_clause}
+        {race_exclude_clause}
+        {venue_exclude_clause}
+        {predicted_course_clause}
+        {c1_second_rate_clause}
+        {month_exclude_clause}
+        {venue_month_exclude_clause}
+        {escape_rate_clause}
+        {bias_clause}
+        {motor_rate_clause}
+        {score_gap_clause}
+        {score_clause}
         {avg_st_clause}
         {wave_height_clause}
         {predicted_rank_class_clause}
@@ -287,6 +335,7 @@ def get_race_ids_for_condition(
         {motor_rate_clause}
         {score_gap_clause}
         {score_gap_3_4_clause}
+        {score_clause}
         {avg_st_clause}
         {wave_height_clause}
         {predicted_rank_class_clause}
@@ -299,6 +348,7 @@ def get_race_ids_for_condition(
     # オッズデータの有無をチェック（Tier 3との一致のため）
     if require_odds and race_ids:
         _use_ph = cond.get('use_pattern_h', False)
+        _use_p142 = cond.get('use_pattern_p142', False)
         _excl_p5 = cond.get('pattern_h_exclude_p5', False)
         filtered_race_ids = set()
 
@@ -317,7 +367,10 @@ def get_race_ids_for_condition(
                 continue
 
             # オッズコンビネーションを構築
-            if _use_ph and _excl_p5 and len(pits) >= 4:
+            if _use_p142 and len(pits) >= 4:
+                # p1-p4-p2: 予測1位-予測4位-予測2位
+                combinations = [f"{pits[0]}-{pits[3]}-{pits[1]}"]
+            elif _use_ph and _excl_p5 and len(pits) >= 4:
                 combinations = [
                     f"{pits[0]}-{pits[1]}-{pits[2]}",
                     f"{pits[0]}-{pits[1]}-{pits[3]}",

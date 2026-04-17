@@ -48,6 +48,7 @@ FEATURE_FLAGS = {
 
     # === C,D予想精度向上（2026-01-08追加） ===
     'score_gap_confidence': True,              # スコア差ベースの信頼度判定（混戦レースをC,Dとして適切に分類）
+    'ml_consensus_filter': False,              # MLコンセンサスフィルター（v4b: total_score除外・OOS差+35pt確認済み・2026-04-13不採用: バックテストROI 190.2%→177.8% -12.4pt悪化）
 
     # === 展開指標スコアリング（2026-01-09追加） ===
     'escape_rate_scoring': False,              # 逃げ率スコアリング - 不採用（500レース検証で効果なし）

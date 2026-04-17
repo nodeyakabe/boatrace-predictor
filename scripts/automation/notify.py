@@ -135,41 +135,13 @@ def format_race_notification(
     odds = odds_info['trifecta_odds']
     multi_bets = odds_info.get('multi_bets', None)
 
-    # メッセージ組み立て
-    message = f"""================================
-**レース締切10分前通知**
-
-**{venue} 第{race_num}R**
-締切: {deadline}
-
-【予想】
-買い目: **{bet_info}**
-信頼度: {confidence:.1%}
-
-【オッズ】
-"""
-
-    # パターンHの場合は全買い目のオッズを表示
+    # オッズ文字列
     if multi_bets and len(multi_bets) > 1:
-        for bet in multi_bets:
-            message += f"{bet['combination']}: {bet['odds']:.1f}倍\n"
+        odds_str = ' / '.join(f"{b['combination']}:{b['odds']:.1f}倍" for b in multi_bets)
     else:
-        message += f"3連単: {odds:.1f}倍\n"
+        odds_str = f"{odds:.1f}倍"
 
-    # 直前情報があれば追加
-    if direct_info:
-        message += "\n【直前情報】\n"
-
-        if 'weather_change' in direct_info:
-            message += f"天候変化: {direct_info['weather_change']}\n"
-
-        if 'wind_change' in direct_info:
-            message += f"風向・風速変化: {direct_info['wind_change']}\n"
-
-        if 'exhibition_notes' in direct_info:
-            message += f"展示情報: {direct_info['exhibition_notes']}\n"
-
-    message += "================================"
+    message = f"🎯 **{venue} {race_num}R** ({deadline}) [{confidence:.0%}]\n{bet_info} {odds_str}"
 
     return message
 
@@ -210,38 +182,21 @@ def send_daily_summary(date: str, race_count: int, target_count: int, target_rac
     Returns:
         bool: 送信成功ならTrue
     """
-    message = f"""**本日の予想生成完了**
+    cand_count = len(candidate_races) if candidate_races else 0
 
-日付: {date}
-総レース数: {race_count}レース
-購入対象: {target_count}レース
-候補: {len(candidate_races) if candidate_races else 0}レース
-
-システムは自動監視を開始しました。
-締切10分前に個別通知を送信します。
-"""
-
-    # 購入対象レースの詳細（全件表示）
-    if target_races and len(target_races) > 0:
-        message += "\n**【購入対象レース】**\n"
-        for race in target_races:
-            venue = race.get('venue', '不明')
-            race_num = race.get('race_num', 0)
-            race_time = race.get('race_time', '??:??')
-            combination = race.get('combination', '?-?-?')
-            odds = race.get('odds', 0.0)
-            message += f"- {venue} {race_num}R ({race_time}): {combination} ({odds:.1f}倍)\n"
-
-    # 候補レースの詳細（全件表示）
-    if candidate_races and len(candidate_races) > 0:
-        message += "\n**【候補レース（直前情報次第）】**\n"
-        for race in candidate_races:
-            venue = race.get('venue', '不明')
-            race_num = race.get('race_num', 0)
-            race_time = race.get('race_time', '??:??')
-            combination = race.get('combination', '?-?-?')
-            reason = race.get('reason', '条件付き')
-            message += f"- {venue} {race_num}R ({race_time}): {combination} - {reason}\n"
+    if target_count == 0 and cand_count == 0:
+        message = f"📋 {date} 購入対象なし"
+    else:
+        message = f"📋 **{date} 予想完了** 購入{target_count}件 候補{cand_count}件\n"
+        if target_races:
+            for race in target_races:
+                odds = race.get('odds', 0.0)
+                odds_str = f" {odds:.1f}倍" if odds else ""
+                message += f"- {race.get('venue')} {race.get('race_num')}R ({race.get('race_time')}): {race.get('combination')}{odds_str}\n"
+        if candidate_races:
+            message += "候補:"
+            for race in candidate_races:
+                message += f" {race.get('venue')}{race.get('race_num')}R({race.get('race_time')})"
 
     return send_discord_notification(message)
 
@@ -257,18 +212,7 @@ def send_error_notification(error_type: str, error_message: str) -> bool:
     Returns:
         bool: 送信成功ならTrue
     """
-    message = f"""WARNING️ **システムエラー通知**
-
-エラー種別: {error_type}
-時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-詳細:
-```
-{error_message}
-```
-
-システムログを確認してください。
-"""
+    message = f"⚠️ **{error_type}** {datetime.now().strftime('%H:%M')}\n```\n{error_message[:200]}\n```"
     return send_discord_notification(message)
 
 

@@ -194,48 +194,14 @@ class BlockCRunner:
         today = datetime.now().strftime('%Y-%m-%d')
 
         if data_fetch_failed:
-            message = f"""⚠️ **Cブロック完了: データ取得失敗**
-
-対象日: {today}
-完了時刻: {self.end_time.strftime('%Y-%m-%d %H:%M:%S')}
-
-**警告:** 本日のレースデータが未取得（0件）です。
-ネットワークエラーまたは一時的な取得失敗の可能性があります。
-
-**対応:** 8:00のDブロック実行時に自動的に再収集を試みます。
-"""
+            message = f"⚠️ **C完了** {today} データ取得失敗（Dブロックで再収集）"
         elif is_rest_day:
-            message = f"""ℹ️ **Cブロック完了: 本日はレース休止日**
-
-対象日: {today}
-完了時刻: {self.end_time.strftime('%Y-%m-%d %H:%M:%S')}
-
-本日はレースがありません。
-次回は明日の予定です。
-"""
+            message = f"ℹ️ **C完了** {today} 休止日"
         else:
             status_icon = "✅" if success_count == total_count else "⚠️"
-
-            message = f"""{status_icon} **Cブロック完了: 本日データ収集**
-
-対象日: {today}
-完了時刻: {self.end_time.strftime('%Y-%m-%d %H:%M:%S')}
-
-**結果:**
-- 成功: {success_count}/{total_count}タスク
-- 総所要時間: {int(elapsed // 60)}分{int(elapsed % 60)}秒
-
-**タスク詳細:**
-"""
-
-            for name, result in self.results.items():
-                if result["status"] == "OK":
-                    message += f"✅ {name}: {result['count']}件\n"
-                else:
-                    message += f"❌ {name}: {result['error'][:50]}\n"
-
+            message = f"{status_icon} **C完了** {today} {success_count}/{total_count}タスク {int(elapsed // 60)}分{int(elapsed % 60)}秒"
             if self.errors:
-                message += f"\n⚠️ エラー {len(self.errors)}件発生"
+                message += "\n" + "\n".join(f"❌ {e[:80]}" for e in self.errors)
 
         send_discord_notification(message)
 

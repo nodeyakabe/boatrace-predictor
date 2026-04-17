@@ -185,18 +185,8 @@ class ConditionalRankModel:
             remaining['is_inner_than_pred_first'] = (remaining['course_diff_from_pred_first'] < 0).astype(int)
             remaining['is_outer_than_pred_first'] = (remaining['course_diff_from_pred_first'] > 0).astype(int)
 
-        # === 予想1着の的中フラグを追加（学習時のみ利用可能） ===
-        # 実際の1着と予想1着が一致しているかどうか
-        actual_first = df[df['rank'] == 1][['race_id', 'pit_number']].copy()
-        actual_first.columns = ['race_id', 'actual_first_pit']
-        remaining = remaining.merge(actual_first, on='race_id', how='left')
-
-        if 'actual_first_pit' in remaining.columns and 'predicted_first_pit' in remaining.columns:
-            remaining['pred_first_is_correct'] = (
-                remaining['predicted_first_pit'] == remaining['actual_first_pit']
-            ).astype(int)
-            # 実際の1着情報は削除（予測時には使えない）
-            remaining = remaining.drop(['actual_first_pit'], axis=1, errors='ignore')
+        # pred_first_is_correct は予測時に取得不可（事後情報）のため除外
+        # Phase1-b: リーケージ修正 - 学習特徴量から削除
 
         # ラベル: 実際の2着かどうか
         y = (remaining['rank'] == 2).astype(int).values
@@ -785,25 +775,28 @@ class ConditionalRankModel:
         second_probs_for_pred_first = np.zeros(6)
         remaining_for_second = [i for i in range(6) if i != predicted_first_pos]
 
+        # 相対特徴量のインデックスを特定（学習時の relative_feature_cols と同条件）
+        _rel_kws = ['win_rate', 'score', 'st_', 'motor', 'exhibition', 'course', 'total']
+        _rel_idx = np.array([i for i, c in enumerate(self.feature_names)
+                             if any(kw in c.lower() for kw in _rel_kws)])
+
         if self.models['second'] is not None and self.second_feature_names:
             second_batch_data = []
             for j in remaining_for_second:
-                row_features = np.concatenate([base_features[j], predicted_first_features])
+                candidate = base_features[j]
+                pred_first = predicted_first_features
+                # 差分特徴量（7個）: 候補艇 - 予想1着艇
+                diff_vals = candidate[_rel_idx] - pred_first[_rel_idx]
+                # コース位置関係（3個）
+                c_diff = float(pit_numbers[j]) - float(predicted_first_pit)
+                is_inner = 1.0 if c_diff < 0 else 0.0
+                is_outer = 1.0 if c_diff > 0 else 0.0
+                # pred_first_is_correct は Phase1-b で学習特徴量から除外済み
+                row_features = np.concatenate([
+                    candidate, pred_first, diff_vals,
+                    [c_diff, is_inner, is_outer]
+                ])  # 17+17+7+3=44
                 second_batch_data.append(row_features)
-
-            # 特徴量数が一致しない場合の調整
-            expected_cols = len(self.second_feature_names)
-            actual_cols = len(second_batch_data[0])
-            if actual_cols != expected_cols:
-                # 不足分を0で埋める
-                for i in range(len(second_batch_data)):
-                    if actual_cols < expected_cols:
-                        second_batch_data[i] = np.concatenate([
-                            second_batch_data[i],
-                            np.zeros(expected_cols - actual_cols)
-                        ])
-                    else:
-                        second_batch_data[i] = second_batch_data[i][:expected_cols]
 
             second_batch_df = pd.DataFrame(second_batch_data, columns=self.second_feature_names)
             second_raw_probs = self.models['second'].predict_proba(second_batch_df)[:, 1]
@@ -844,31 +837,36 @@ class ConditionalRankModel:
                 remaining_for_third = [k for k in range(6) if k != i and k != j]
 
                 if self.models['third'] is not None and self.third_feature_names:
-                    # 予想1着と予想2着の特徴量
+                    # 予想2着（スコア2位艇）を固定
                     predicted_second_pos = remaining_for_second[np.argmax([second_probs_for_pred_first[k] for k in remaining_for_second])]
                     predicted_second_features = base_features[predicted_second_pos]
+                    predicted_second_pit = pit_numbers[predicted_second_pos]
 
                     third_batch_data = []
                     for k in remaining_for_third:
+                        candidate = base_features[k]
+                        # 差分特徴量（7個×3種）
+                        diff_first   = candidate[_rel_idx] - predicted_first_features[_rel_idx]
+                        diff_second  = candidate[_rel_idx] - predicted_second_features[_rel_idx]
+                        gap_1st_2nd  = predicted_first_features[_rel_idx] - predicted_second_features[_rel_idx]
+                        # コース位置関係（6個）
+                        c_diff_f = float(pit_numbers[k]) - float(predicted_first_pit)
+                        c_diff_s = float(pit_numbers[k]) - float(predicted_second_pit)
+                        is_inner_f  = 1.0 if c_diff_f < 0 else 0.0
+                        is_outer_f  = 1.0 if c_diff_f > 0 else 0.0
+                        is_inner_s  = 1.0 if c_diff_s < 0 else 0.0
+                        p1, p2, pk  = float(predicted_first_pit), float(predicted_second_pit), float(pit_numbers[k])
+                        is_between  = 1.0 if ((pk > p1 and pk < p2) or (pk < p1 and pk > p2)) else 0.0
                         row_features = np.concatenate([
-                            base_features[k],
-                            predicted_first_features,
-                            predicted_second_features
-                        ])
+                            candidate,                  # 17
+                            predicted_first_features,   # 17
+                            predicted_second_features,  # 17
+                            diff_first,                 # 7
+                            diff_second,                # 7
+                            gap_1st_2nd,                # 7
+                            [c_diff_f, c_diff_s, is_inner_f, is_outer_f, is_inner_s, is_between]  # 6
+                        ])  # 合計 78
                         third_batch_data.append(row_features)
-
-                    # 特徴量数調整
-                    expected_cols = len(self.third_feature_names)
-                    actual_cols = len(third_batch_data[0]) if third_batch_data else 0
-                    if actual_cols != expected_cols and third_batch_data:
-                        for idx in range(len(third_batch_data)):
-                            if actual_cols < expected_cols:
-                                third_batch_data[idx] = np.concatenate([
-                                    third_batch_data[idx],
-                                    np.zeros(expected_cols - actual_cols)
-                                ])
-                            else:
-                                third_batch_data[idx] = third_batch_data[idx][:expected_cols]
 
                     if third_batch_data:
                         third_batch_df = pd.DataFrame(third_batch_data, columns=self.third_feature_names)
