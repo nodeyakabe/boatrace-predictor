@@ -389,11 +389,25 @@ class BeforeSafeScorer:
             for row in cursor.fetchall():
                 exhibition_times[row['pit_number']] = row['exhibition_time']
 
-        # 部品交換情報（今後DBに追加予定）
+        # 部品交換情報（race_detailsから読み込み）
+        cursor.execute("""
+            SELECT pit_number, parts_replacement
+            FROM race_details
+            WHERE race_id = ? AND parts_replacement IS NOT NULL
+        """, (race_id,))
         parts_exchange = {}
+        for row in cursor.fetchall():
+            parts_exchange[row['pit_number']] = row['parts_replacement']
 
-        # 体重調整情報（今後DBに追加予定）
+        # 体重調整情報
+        cursor.execute("""
+            SELECT pit_number, adjusted_weight
+            FROM race_details
+            WHERE race_id = ? AND adjusted_weight IS NOT NULL
+        """, (race_id,))
         weight_adjustments = {}
+        for row in cursor.fetchall():
+            weight_adjustments[row['pit_number']] = row['adjusted_weight']
 
         cursor.close()
 

@@ -692,11 +692,12 @@ class BeforeInfoScraper:
 
                     if existing:
                         # 既存レコードを更新（NULLでない値のみ上書き）
+                        # ※ parts_replacement は NULL（交換なし）も正しい値なので直接上書き
                         cursor.execute("""
                             UPDATE race_details
                             SET exhibition_time = COALESCE(?, exhibition_time),
                                 tilt_angle = COALESCE(?, tilt_angle),
-                                parts_replacement = COALESCE(?, parts_replacement),
+                                parts_replacement = ?,
                                 adjusted_weight = COALESCE(?, adjusted_weight),
                                 exhibition_course = COALESCE(?, exhibition_course),
                                 st_time = COALESCE(?, st_time),

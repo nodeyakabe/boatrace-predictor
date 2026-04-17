@@ -103,6 +103,14 @@ try:
 except ImportError:
     MAKURI_RISK_AVAILABLE = False
 
+# Phase3: ML コンセンサスフィルター（conditional_rank_v4）
+try:
+    from src.ml.conditional_rank_model import ConditionalRankModel as _ConditionalRankModel
+    ML_CONSENSUS_MODEL_NAME = 'conditional_rank_v4b_20260413_160607'  # total_score除外・2025OOS検証済み
+    CONDITIONAL_RANK_AVAILABLE = True
+except ImportError:
+    CONDITIONAL_RANK_AVAILABLE = False
+
 from src.database.batch_data_loader import BatchDataLoader
 from config.venue_characteristics import get_venue_adjustment, get_venue_course_adjustment
 from config.settings import (
@@ -195,6 +203,17 @@ class RacePredictor:
                 self.hierarchical_predictor = HierarchicalPredictor(db_path)
             except Exception as e:
                 print(f"階層的予測モデル初期化エラー: {e}")
+
+        # Phase3: ML コンセンサスフィルター（conditional_rank_v4）
+        self._ml_consensus_model = None
+        if CONDITIONAL_RANK_AVAILABLE and is_feature_enabled('ml_consensus_filter'):
+            try:
+                self._ml_consensus_model = _ConditionalRankModel()
+                self._ml_consensus_model.load(ML_CONSENSUS_MODEL_NAME)
+                print(f"ML コンセンサスモデル読み込み完了: {ML_CONSENSUS_MODEL_NAME}")
+            except Exception as e:
+                print(f"ML コンセンサスモデル初期化エラー: {e}")
+                self._ml_consensus_model = None
 
         # 2着専用スコアリングモデル（アプローチ2: 差し・まくり差し特化）
         self.second_place_scorer = None
@@ -1136,6 +1155,13 @@ class RacePredictor:
             predictions = self._recalculate_race_confidence(predictions)
 
         # ========================================
+        # ML コンセンサスフィルター（Phase3: conditional_rank_v4）
+        # MLがルールベースの1着予測に不同意なら信頼度を1段階下げる
+        # ========================================
+        if is_feature_enabled('ml_consensus_filter') and self._ml_consensus_model is not None:
+            predictions = self._apply_ml_consensus_filter(race_id, predictions)
+
+        # ========================================
         # 2着・3着オッズ校正適用（機能フラグで制御）
         # 市場の2着・3着条件付き確率とML予測を統合
         # 期待効果: 三連単的中率 +2.0pt
@@ -1702,6 +1728,105 @@ class RacePredictor:
             predictions[0]['confidence_reason'] = f'score_gap:{score_gap:.1f}'
         else:
             predictions[0]['confidence_reason'] = 'original'
+
+        return predictions
+
+    def _get_ml_features_for_race(self, race_id: int):
+        """
+        MLコンセンサスフィルター用の特徴量をDBから取得。
+        conditional_rank_v4 の feature_names と同一順序で返す。
+        """
+        import sqlite3
+        import pandas as pd
+        import numpy as np
+
+        query = """
+        SELECT
+            e.pit_number,
+            e.win_rate,
+            e.second_rate,
+            e.third_rate,
+            e.local_win_rate,
+            e.local_second_rate,
+            e.motor_second_rate,
+            e.boat_second_rate,
+            e.avg_st,
+            rd.exhibition_time,
+            rd.st_time        as exhibition_st,
+            rd.exhibition_course,
+            rd.tilt_angle,
+            rc.wind_speed,
+            rc.wave_height,
+            rc.temperature,
+            rc.water_temperature,
+            COALESCE(rp_b.total_score, rp_a.total_score) as total_score
+        FROM entries e
+        LEFT JOIN race_details rd
+            ON e.race_id = rd.race_id AND e.pit_number = rd.pit_number
+        LEFT JOIN race_conditions rc
+            ON e.race_id = rc.race_id
+        LEFT JOIN race_predictions rp_b
+            ON e.race_id = rp_b.race_id
+            AND rp_b.pit_number = e.pit_number
+            AND rp_b.prediction_type = 'before'
+        LEFT JOIN race_predictions rp_a
+            ON e.race_id = rp_a.race_id
+            AND rp_a.pit_number = e.pit_number
+            AND rp_a.prediction_type = 'advance'
+        WHERE e.race_id = ?
+        ORDER BY e.pit_number
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            df = pd.read_sql_query(query, conn, params=(race_id,))
+            conn.close()
+            if len(df) != 6:
+                return None
+            # 欠損値を中央値で補完（簡易）
+            numeric_cols = df.select_dtypes(include=[np.number]).columns
+            for col in numeric_cols:
+                if col != 'pit_number' and df[col].isnull().any():
+                    df[col] = df[col].fillna(df[col].median())
+            return df
+        except Exception:
+            return None
+
+    def _apply_ml_consensus_filter(self, race_id: int, predictions: List[Dict]) -> List[Dict]:
+        """
+        MLコンセンサスフィルター:
+        conditional_rank_v4 が予測1着と不同意なら信頼度を1段階下げる。
+        """
+        import numpy as np
+
+        try:
+            features = self._get_ml_features_for_race(race_id)
+            if features is None or len(features) != 6:
+                return predictions
+
+            model = self._ml_consensus_model
+            X_1st = features.drop(['pit_number'], axis=1, errors='ignore')
+            for col in model.feature_names:
+                if col not in X_1st.columns:
+                    X_1st[col] = 0.0
+            X_1st = X_1st[model.feature_names]
+
+            first_probs = model.models['first'].predict_proba(X_1st)[:, 1]
+            ml_first_pit = int(features.iloc[int(np.argmax(first_probs))]['pit_number'])
+            rule_first_pit = int(predictions[0]['pit_number'])
+
+            if ml_first_pit != rule_first_pit:
+                # 不同意 → 信頼度を1段階下げる
+                confidence_order = {'A': 5, 'B': 4, 'C': 3, 'D': 2, 'E': 1}
+                order_to_conf = {5: 'A', 4: 'B', 3: 'C', 2: 'D', 1: 'E'}
+                cur = predictions[0].get('confidence', 'C')
+                new_level = max(1, confidence_order.get(cur, 3) - 1)
+                predictions[0]['confidence'] = order_to_conf[new_level]
+                predictions[0]['ml_consensus'] = False
+                predictions[0]['ml_predicted_first'] = ml_first_pit
+            else:
+                predictions[0]['ml_consensus'] = True
+        except Exception:
+            pass
 
         return predictions
 
@@ -2659,6 +2784,15 @@ class RacePredictor:
                     # BEFORE_SCOREは逆相関（的中率4.1%）のため完全停止
                     # PRE_SCORE単体で運用（43.3%的中率）
                     final_score = pre_score * 1.0 + before_score * 0.0
+                    # 部品交換ペナルティのみ例外適用（2026-04-16）
+                    # 全BEFOREスコアは無効だが、部品交換は明確なネガティブシグナルのため
+                    # PRE_SCOREに乗算で反映する（重大:-15% / 中程度:-10% / 軽微:-3%）
+                    parts_multiplier = self.beforeinfo_flag_adjuster.get_parts_penalty_multiplier(
+                        race_id, pit_number
+                    )
+                    if parts_multiplier < 1.0:
+                        final_score *= parts_multiplier
+                        pred['parts_penalty_multiplier'] = parts_multiplier
                     pred['integration_mode'] = 'before_disabled'
                     pred['pre_weight'] = 1.0
                     pred['before_weight'] = 0.0

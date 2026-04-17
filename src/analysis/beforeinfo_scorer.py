@@ -950,7 +950,7 @@ if __name__ == "__main__":
         'exhibition_courses': {1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6},
         'tilt_angles': {1: -0.5, 2: -0.5, 3: -0.5, 4: 0.0, 5: -0.5, 6: -0.5},
         'adjusted_weights': {1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0, 5: 1.0, 6: 0.0},
-        'parts_replacements': {1: 'R', 2: 'R', 3: 'R', 4: 'R', 5: 'R', 6: 'R'},
+        'parts_replacements': {5: 'キャブ'},  # 部品交換あり例: 5号艇のキャブレター交換
         'previous_race': {5: {'course': 4, 'st': 0.17, 'rank': 5}},
         'weather': {'temperature': 13.0, 'wind_speed': 1, 'wave_height': 1}
     }

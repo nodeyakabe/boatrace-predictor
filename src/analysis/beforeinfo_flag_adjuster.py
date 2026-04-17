@@ -336,6 +336,37 @@ class BeforeInfoFlagAdjuster:
 
         return result
 
+    def get_parts_penalty_multiplier(self, race_id: int, pit_number: int) -> float:
+        """
+        部品交換ペナルティ乗数のみを返す（before_disabled モード用）。
+
+        他のフラグ（F/L・まくり・進入変化・展示タイム）は適用しない。
+
+        Returns:
+            float: 乗数（1.0=ペナルティなし, 0.97/0.90/0.85=軽微/中程度/重大）
+        """
+        conn = get_connection(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT parts_replacement FROM race_details WHERE race_id = ? AND pit_number = ?",
+                (race_id, pit_number)
+            )
+            row = cursor.fetchone()
+            if not row or not row[0]:
+                return 1.0
+            parts = row[0]
+            _HEAVY = ['ピストン', '電気', 'シリンダ']
+            _MEDIUM = ['ギヤ', 'キャブ', 'シャフト']
+            if any(p in parts for p in _HEAVY):
+                return 0.85
+            elif any(p in parts for p in _MEDIUM):
+                return 0.90
+            else:
+                return 0.97   # リング・キャリボ等の消耗品
+        finally:
+            pass  # 接続プールに返却
+
     def _get_neutral_adjustment(self) -> Dict:
         """
         ニュートラルな調整係数（データなし時）

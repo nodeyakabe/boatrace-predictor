@@ -113,7 +113,7 @@ def import_csv_to_db(csv_file_path: Path, db_path: Path, batch_size: int = 500):
                         ON CONFLICT(race_id, pit_number) DO UPDATE SET
                             exhibition_time = COALESCE(excluded.exhibition_time, race_details.exhibition_time),
                             tilt_angle = COALESCE(excluded.tilt_angle, race_details.tilt_angle),
-                            parts_replacement = COALESCE(excluded.parts_replacement, race_details.parts_replacement),
+                            parts_replacement = excluded.parts_replacement,
                             adjusted_weight = COALESCE(excluded.adjusted_weight, race_details.adjusted_weight),
                             st_time = COALESCE(excluded.st_time, race_details.st_time),
                             exhibition_course = COALESCE(excluded.exhibition_course, race_details.exhibition_course),
@@ -149,7 +149,7 @@ def import_csv_to_db(csv_file_path: Path, db_path: Path, batch_size: int = 500):
                 ON CONFLICT(race_id, pit_number) DO UPDATE SET
                     exhibition_time = COALESCE(excluded.exhibition_time, race_details.exhibition_time),
                     tilt_angle = COALESCE(excluded.tilt_angle, race_details.tilt_angle),
-                    parts_replacement = COALESCE(excluded.parts_replacement, race_details.parts_replacement),
+                    parts_replacement = excluded.parts_replacement,
                     adjusted_weight = COALESCE(excluded.adjusted_weight, race_details.adjusted_weight),
                     st_time = COALESCE(excluded.st_time, race_details.st_time),
                     exhibition_course = COALESCE(excluded.exhibition_course, race_details.exhibition_course),
