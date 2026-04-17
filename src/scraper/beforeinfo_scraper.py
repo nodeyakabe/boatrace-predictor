@@ -13,19 +13,26 @@ from src.utils.retry_handler import retry_with_backoff, SCRAPER_CONFIG
 class BeforeInfoScraper:
     """事前情報ページのスクレイパー"""
 
-    def __init__(self, delay=1.0):
+    def __init__(self, delay=1.0, timeout=10):
         """
         初期化
 
         Args:
             delay: リクエスト間の待機時間（秒）
+            timeout: HTTPタイムアウト（秒）
         """
         self.base_url = "https://www.boatrace.jp/owpc/pc/race/beforeinfo"
         self.delay = delay
+        self.timeout = timeout
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         })
+        # 接続プールをワーカー数に対応できるよう拡張
+        from requests.adapters import HTTPAdapter
+        adapter = HTTPAdapter(pool_connections=4, pool_maxsize=4, max_retries=0)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
 
     def get_race_beforeinfo(self, venue_code, date_str, race_number):
         """
@@ -109,7 +116,7 @@ class BeforeInfoScraper:
         response = self.session.get(
             self.base_url,
             params=params,
-            timeout=30  # タイムアウトを15秒→30秒に延長
+            timeout=self.timeout
         )
         response.raise_for_status()
         return response

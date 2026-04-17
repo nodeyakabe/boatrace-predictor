@@ -40,19 +40,20 @@ from src.scraper.beforeinfo_scraper import BeforeInfoScraper
 
 # スレッドローカルストレージ
 thread_local = threading.local()
-_scraper_delay = 0.3  # get_scraper() から参照するグローバル設定
+_scraper_delay = 0.1   # get_scraper() から参照するグローバル設定
+_scraper_timeout = 10  # HTTPタイムアウト（秒）
 
 def get_scraper():
     """スレッドローカルなScraperインスタンスを取得"""
     if not hasattr(thread_local, 'scraper'):
-        thread_local.scraper = BeforeInfoScraper(delay=_scraper_delay)
+        thread_local.scraper = BeforeInfoScraper(delay=_scraper_delay, timeout=_scraper_timeout)
     return thread_local.scraper
 
 
 class ParallelBeforeinfoCsvFetcher:
     """CSV出力方式の並列直前情報取得クラス"""
 
-    def __init__(self, db_path, output_dir, delay=0.3, max_workers=12, batch_size=50):
+    def __init__(self, db_path, output_dir, delay=0.1, max_workers=16, batch_size=50, timeout=10):
         """
         初期化
 
@@ -62,14 +63,16 @@ class ParallelBeforeinfoCsvFetcher:
             delay: 各スレッドのリクエスト間隔（秒）
             max_workers: 並列スレッド数
             batch_size: バッチ保存サイズ
+            timeout: HTTPタイムアウト（秒）
         """
         self.db_path = db_path
         self.output_dir = Path(output_dir)
         self.delay = delay
         self.max_workers = max_workers
         # get_scraper() のグローバル設定に反映（スレッドローカルインスタンスに渡すため）
-        global _scraper_delay
+        global _scraper_delay, _scraper_timeout
         _scraper_delay = delay
+        _scraper_timeout = timeout
         self.batch_size = batch_size
 
         # 出力ディレクトリ作成
@@ -348,7 +351,9 @@ def main():
     parser.add_argument('--start', type=str, required=True, help='開始日（YYYY-MM-DD）')
     parser.add_argument('--end', type=str, required=True, help='終了日（YYYY-MM-DD）')
     parser.add_argument('--output', type=str, required=True, help='出力ディレクトリ')
-    parser.add_argument('--workers', type=int, default=12, help='並列ワーカー数')
+    parser.add_argument('--workers', type=int, default=16, help='並列ワーカー数（デフォルト: 16）')
+    parser.add_argument('--delay', type=float, default=0.1, help='リクエスト間隔（秒、デフォルト: 0.1）')
+    parser.add_argument('--timeout', type=int, default=10, help='HTTPタイムアウト（秒、デフォルト: 10）')
     parser.add_argument('--batch-size', type=int, default=50, help='バッチサイズ')
 
     args = parser.parse_args()
@@ -358,8 +363,10 @@ def main():
     fetcher = ParallelBeforeinfoCsvFetcher(
         db_path=db_path,
         output_dir=args.output,
+        delay=args.delay,
         max_workers=args.workers,
-        batch_size=args.batch_size
+        batch_size=args.batch_size,
+        timeout=args.timeout
     )
 
     success = fetcher.run(args.start, args.end)
