@@ -127,6 +127,7 @@ def analyze_assigned_races(
     use_pattern_p142 = cond.get('use_pattern_p142', False)
     use_pattern_p143 = cond.get('use_pattern_p143', False)
     use_pattern_p132 = cond.get('use_pattern_p132', False)
+    use_pattern_p124 = cond.get('use_pattern_p124', False)
     placeholders = ','.join(['?'] * len(race_ids))
 
     if use_pattern_p143:
@@ -249,6 +250,50 @@ def analyze_assigned_races(
                 CASE
                     WHEN actual_1st = p1 AND actual_2nd = p4 AND actual_3rd = p2
                          AND odds_142 >= {cond['odds_min']} AND odds_142 < {cond['odds_max']}
+                    THEN 1 ELSE 0
+                END as is_hit
+            FROM race_bets
+        )
+        SELECT
+            SUM(CASE WHEN bet_amount > 0 THEN 1 ELSE 0 END) as bets,
+            SUM(is_hit) as hits,
+            SUM(bet_amount) as investment,
+            SUM(payout) as payout
+        FROM race_payouts
+        WHERE bet_amount > 0
+        """
+    elif use_pattern_p124:
+        # p1-p2-p4 パターン: 予測1位-予測2位-予測4位の三連単 100円（2026-04-20追加）
+        query = f"""
+        WITH race_bets AS (
+            SELECT
+                r.id as race_id,
+                rp1.pit_number as p1,
+                rp2.pit_number as p2,
+                rp4.pit_number as p4,
+                COALESCE((SELECT o.odds FROM trifecta_odds o WHERE o.race_id = r.id
+                 AND o.combination = CAST(rp1.pit_number AS TEXT) || '-' || CAST(rp2.pit_number AS TEXT) || '-' || CAST(rp4.pit_number AS TEXT)), 0) as odds_124,
+                (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '1') as actual_1st,
+                (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '2') as actual_2nd,
+                (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '3') as actual_3rd
+            FROM races r
+            JOIN race_predictions rp1 ON r.id = rp1.race_id AND rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+            JOIN race_predictions rp2 ON r.id = rp2.race_id AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+            JOIN race_predictions rp4 ON r.id = rp4.race_id AND rp4.prediction_type = 'before' AND rp4.rank_prediction = 4
+            WHERE r.id IN ({placeholders})
+        ),
+        race_payouts AS (
+            SELECT
+                *,
+                CASE WHEN odds_124 >= {cond['odds_min']} AND odds_124 < {cond['odds_max']} THEN 100 ELSE 0 END as bet_amount,
+                CASE
+                    WHEN actual_1st = p1 AND actual_2nd = p2 AND actual_3rd = p4
+                         AND odds_124 >= {cond['odds_min']} AND odds_124 < {cond['odds_max']}
+                    THEN odds_124 * 100 ELSE 0
+                END as payout,
+                CASE
+                    WHEN actual_1st = p1 AND actual_2nd = p2 AND actual_3rd = p4
+                         AND odds_124 >= {cond['odds_min']} AND odds_124 < {cond['odds_max']}
                     THEN 1 ELSE 0
                 END as is_hit
             FROM race_bets

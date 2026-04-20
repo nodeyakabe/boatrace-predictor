@@ -219,6 +219,7 @@ def get_race_ids_for_condition(
     use_pattern_p142 = cond.get('use_pattern_p142', False)
     use_pattern_p143 = cond.get('use_pattern_p143', False)
     use_pattern_p132 = cond.get('use_pattern_p132', False)
+    use_pattern_p124 = cond.get('use_pattern_p124', False)
     exclude_p5 = cond.get('pattern_h_exclude_p5', False)
 
     if use_pattern_h:
@@ -343,6 +344,45 @@ def get_race_ids_for_condition(
         """
     elif use_pattern_p142:
         # p1-p4-p2 パターン: 1位・2位・4位の予測が必要（2026-04-17追加）
+        query = f"""
+        SELECT DISTINCT r.id
+        FROM races r
+        JOIN race_predictions rp ON r.id = rp.race_id AND rp.prediction_type = 'before'
+        JOIN race_predictions rp1 ON r.id = rp1.race_id AND rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+        JOIN race_predictions rp2 ON r.id = rp2.race_id AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+        JOIN race_predictions rp4 ON r.id = rp4.race_id AND rp4.prediction_type = 'before' AND rp4.rank_prediction = 4
+        JOIN entries e1 ON r.id = e1.race_id AND e1.pit_number = 1
+        {escape_rate_join}
+        {bias_join}
+        {motor_rate_join}
+        {avg_st_join}
+        {wave_height_join}
+        {advance_match_join}
+        WHERE rp.rank_prediction = 1
+        {confidence_clause}
+        AND e1.racer_rank IN ({c1_ranks_str})
+        AND r.race_date >= '{start_date}'
+        AND r.race_date < '{end_date}'
+        {venue_clause}
+        {motor_clause}
+        {race_exclude_clause}
+        {venue_exclude_clause}
+        {predicted_course_clause}
+        {c1_second_rate_clause}
+        {month_exclude_clause}
+        {venue_month_exclude_clause}
+        {escape_rate_clause}
+        {bias_clause}
+        {motor_rate_clause}
+        {score_gap_clause}
+        {score_clause}
+        {avg_st_clause}
+        {wave_height_clause}
+        {predicted_rank_class_clause}
+        {advance_match_clause}
+        """
+    elif use_pattern_p124:
+        # p1-p2-p4 パターン: 1位・2位・4位の予測が必要（2026-04-20追加）
         query = f"""
         SELECT DISTINCT r.id
         FROM races r
