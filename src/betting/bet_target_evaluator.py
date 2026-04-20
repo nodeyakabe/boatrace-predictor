@@ -557,10 +557,78 @@ class BetTargetEvaluator:
                 # 他の条件もチェックするためcontinue
                 continue
 
-            # オッズ範囲チェック（パターンH/P142対応）
+            # オッズ範囲チェック（パターンH/P142/P143/P132対応）
             use_pattern_h = cond.get('use_pattern_h', True)
             use_pattern_p142 = cond.get('use_pattern_p142', False)
+            use_pattern_p143 = cond.get('use_pattern_p143', False)
+            use_pattern_p132 = cond.get('use_pattern_p132', False)
             exclude_p5 = cond.get('pattern_h_exclude_p5', False)
+
+            # p1-p4-p3 パターン（4位2着・3位3着穴狙い）の処理（2026-04-17追加）
+            if use_pattern_p143:
+                # 4位まで予測が必要
+                if not old_prediction or len(old_prediction) < 4:
+                    continue
+                # p1-p4-p3 コンビネーション
+                combo_p143 = f"{old_prediction[0]}-{old_prediction[3]}-{old_prediction[2]}"
+                odds_p143 = odds_data.get(combo_p143) if odds_data else None
+                if odds_p143 and odds_min <= odds_p143 < odds_max:
+                    combo = combo_p143
+                    odds = odds_p143
+                else:
+                    continue
+                status = BetStatus.TARGET_CONFIRMED if has_beforeinfo else BetStatus.TARGET_ADVANCE
+                reason_parts = [f'信頼度{confidence}', cond['method'], odds_range, f'1コース{c1_rank}']
+                if 'venue_filter' in cond:
+                    reason_parts.append('高ROI会場')
+                reason_parts.append('p1-p4-p3穴狙い')
+                reason = ' + '.join(reason_parts)
+                return BetTarget(
+                    status=status,
+                    confidence=confidence,
+                    method=cond['method'],
+                    combination=combo,
+                    odds=odds,
+                    odds_range=odds_range,
+                    c1_rank=c1_rank,
+                    expected_roi=cond['expected_roi'],
+                    bet_amount=cond['bet_amount'],
+                    reason=reason,
+                    use_pattern_h=False,
+                )
+
+            # p1-p3-p2 パターン（2-3着入れ替わり穴狙い）の処理（2026-04-17追加）
+            if use_pattern_p132:
+                # 3位まで予測が必要
+                if not old_prediction or len(old_prediction) < 3:
+                    continue
+                # p1-p3-p2 コンビネーション
+                combo_p132 = f"{old_prediction[0]}-{old_prediction[2]}-{old_prediction[1]}"
+                odds_p132 = odds_data.get(combo_p132) if odds_data else None
+                if odds_p132 and odds_min <= odds_p132 < odds_max:
+                    combo = combo_p132
+                    odds = odds_p132
+                else:
+                    continue
+                status = BetStatus.TARGET_CONFIRMED if has_beforeinfo else BetStatus.TARGET_ADVANCE
+                reason_parts = [f'信頼度{confidence}', cond['method'], odds_range, f'1コース{c1_rank}']
+                if 'venue_filter' in cond:
+                    reason_parts.append('高ROI会場')
+                reason_parts.append('p1-p3-p2穴狙い')
+                reason = ' + '.join(reason_parts)
+                return BetTarget(
+                    status=status,
+                    confidence=confidence,
+                    method=cond['method'],
+                    combination=combo,
+                    odds=odds,
+                    odds_range=odds_range,
+                    c1_rank=c1_rank,
+                    expected_roi=cond['expected_roi'],
+                    bet_amount=cond['bet_amount'],
+                    reason=reason,
+                    use_pattern_h=False,
+                )
 
             # p1-p4-p2 パターン（穴狙い）の処理（2026-04-17追加）
             if use_pattern_p142:

@@ -311,8 +311,176 @@ def build_condition_query(cond: Dict, date_start: str, date_end: str) -> str:
         score_clause += f"AND rp1.total_score < {cond['score_max']} "
 
     use_pattern_p142 = cond.get('use_pattern_p142', False)
+    use_pattern_p143 = cond.get('use_pattern_p143', False)
+    use_pattern_p132 = cond.get('use_pattern_p132', False)
 
-    if use_pattern_p142:
+    if use_pattern_p143:
+        # p1-p4-p3 パターン: 予測1位-予測4位-予測3位の三連単 100円（2026-04-17追加）
+        query = f'''
+        WITH race_base AS (
+            SELECT
+                r.id as race_id,
+                r.race_date,
+                r.venue_code,
+                rp.confidence,
+                e1.racer_rank as c1_rank,
+                rp1.pit_number as p1,
+                rp3.pit_number as p3,
+                rp4.pit_number as p4
+            FROM races r
+            JOIN race_predictions rp ON r.id = rp.race_id AND rp.prediction_type = 'before'
+            JOIN race_predictions rp1 ON r.id = rp1.race_id AND rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+            JOIN race_predictions rp3 ON r.id = rp3.race_id AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+            JOIN race_predictions rp4 ON r.id = rp4.race_id AND rp4.prediction_type = 'before' AND rp4.rank_prediction = 4
+            JOIN entries e1 ON r.id = e1.race_id AND e1.pit_number = 1
+            {escape_rate_join}
+            {bias_join}
+            {motor_rate_join}
+            {wave_height_join}
+            WHERE rp.rank_prediction = 1
+            {confidence_clause}
+            AND e1.racer_rank IN ('{c1_rank_str}')
+            AND r.race_date >= '{date_start}'
+            AND r.race_date < '{date_end}'
+            {venue_clause}
+            {motor_clause}
+            {race_exclude_clause}
+            {venue_exclude_clause}
+            {predicted_course_clause}
+            {c1_second_rate_clause}
+            {month_exclude_clause}
+            {venue_month_exclude_clause}
+            {escape_rate_clause}
+            {bias_clause}
+            {motor_rate_clause}
+            {wave_height_clause}
+            {predicted_rank_class_clause}
+            {score_clause}
+        ),
+        race_bets AS (
+            SELECT
+                rb.*,
+                -- p1-p4-p3 オッズ取得
+                COALESCE((SELECT o.odds FROM trifecta_odds o WHERE o.race_id = rb.race_id
+                          AND o.combination = CAST(rb.p1 AS TEXT) || '-' || CAST(rb.p4 AS TEXT) || '-' || CAST(rb.p3 AS TEXT)), 0) as odds_143,
+                -- 実際の結果
+                (SELECT pit_number FROM results WHERE race_id = rb.race_id AND rank = '1') as actual_1st,
+                (SELECT pit_number FROM results WHERE race_id = rb.race_id AND rank = '2') as actual_2nd,
+                (SELECT pit_number FROM results WHERE race_id = rb.race_id AND rank = '3') as actual_3rd
+            FROM race_base rb
+        ),
+        race_payouts AS (
+            SELECT
+                rb.*,
+                -- 1点買い: 100円
+                CASE WHEN odds_143 >= {cond['odds_min']} AND odds_143 < {cond['odds_max']} THEN 100 ELSE 0 END as bet_amount,
+                -- 的中判定・払戻
+                CASE
+                    WHEN actual_1st = p1 AND actual_2nd = p4 AND actual_3rd = p3
+                         AND odds_143 >= {cond['odds_min']} AND odds_143 < {cond['odds_max']}
+                    THEN odds_143 * 100 ELSE 0
+                END as payout,
+                -- 的中フラグ
+                CASE
+                    WHEN actual_1st = p1 AND actual_2nd = p4 AND actual_3rd = p3
+                         AND odds_143 >= {cond['odds_min']} AND odds_143 < {cond['odds_max']}
+                    THEN 1 ELSE 0
+                END as is_hit
+            FROM race_bets rb
+        )
+        SELECT
+            COUNT(*) as races,
+            SUM(CASE WHEN bet_amount > 0 THEN 1 ELSE 0 END) as bets,
+            SUM(is_hit) as hits,
+            SUM(bet_amount) as total_investment,
+            SUM(payout) as total_payout
+        FROM race_payouts
+        WHERE bet_amount > 0
+        '''
+    elif use_pattern_p132:
+        # p1-p3-p2 パターン: 予測1位-予測3位-予測2位の三連単 100円（2026-04-17追加）
+        query = f'''
+        WITH race_base AS (
+            SELECT
+                r.id as race_id,
+                r.race_date,
+                r.venue_code,
+                rp.confidence,
+                e1.racer_rank as c1_rank,
+                rp1.pit_number as p1,
+                rp2.pit_number as p2,
+                rp3.pit_number as p3
+            FROM races r
+            JOIN race_predictions rp ON r.id = rp.race_id AND rp.prediction_type = 'before'
+            JOIN race_predictions rp1 ON r.id = rp1.race_id AND rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+            JOIN race_predictions rp2 ON r.id = rp2.race_id AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+            JOIN race_predictions rp3 ON r.id = rp3.race_id AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+            JOIN entries e1 ON r.id = e1.race_id AND e1.pit_number = 1
+            {escape_rate_join}
+            {bias_join}
+            {motor_rate_join}
+            {wave_height_join}
+            WHERE rp.rank_prediction = 1
+            {confidence_clause}
+            AND e1.racer_rank IN ('{c1_rank_str}')
+            AND r.race_date >= '{date_start}'
+            AND r.race_date < '{date_end}'
+            {venue_clause}
+            {motor_clause}
+            {race_exclude_clause}
+            {venue_exclude_clause}
+            {predicted_course_clause}
+            {c1_second_rate_clause}
+            {month_exclude_clause}
+            {venue_month_exclude_clause}
+            {escape_rate_clause}
+            {bias_clause}
+            {motor_rate_clause}
+            {wave_height_clause}
+            {predicted_rank_class_clause}
+            {score_clause}
+        ),
+        race_bets AS (
+            SELECT
+                rb.*,
+                -- p1-p3-p2 オッズ取得
+                COALESCE((SELECT o.odds FROM trifecta_odds o WHERE o.race_id = rb.race_id
+                          AND o.combination = CAST(rb.p1 AS TEXT) || '-' || CAST(rb.p3 AS TEXT) || '-' || CAST(rb.p2 AS TEXT)), 0) as odds_132,
+                -- 実際の結果
+                (SELECT pit_number FROM results WHERE race_id = rb.race_id AND rank = '1') as actual_1st,
+                (SELECT pit_number FROM results WHERE race_id = rb.race_id AND rank = '2') as actual_2nd,
+                (SELECT pit_number FROM results WHERE race_id = rb.race_id AND rank = '3') as actual_3rd
+            FROM race_base rb
+        ),
+        race_payouts AS (
+            SELECT
+                rb.*,
+                -- 1点買い: 100円
+                CASE WHEN odds_132 >= {cond['odds_min']} AND odds_132 < {cond['odds_max']} THEN 100 ELSE 0 END as bet_amount,
+                -- 的中判定・払戻
+                CASE
+                    WHEN actual_1st = p1 AND actual_2nd = p3 AND actual_3rd = p2
+                         AND odds_132 >= {cond['odds_min']} AND odds_132 < {cond['odds_max']}
+                    THEN odds_132 * 100 ELSE 0
+                END as payout,
+                -- 的中フラグ
+                CASE
+                    WHEN actual_1st = p1 AND actual_2nd = p3 AND actual_3rd = p2
+                         AND odds_132 >= {cond['odds_min']} AND odds_132 < {cond['odds_max']}
+                    THEN 1 ELSE 0
+                END as is_hit
+            FROM race_bets rb
+        )
+        SELECT
+            COUNT(*) as races,
+            SUM(CASE WHEN bet_amount > 0 THEN 1 ELSE 0 END) as bets,
+            SUM(is_hit) as hits,
+            SUM(bet_amount) as total_investment,
+            SUM(payout) as total_payout
+        FROM race_payouts
+        WHERE bet_amount > 0
+        '''
+    elif use_pattern_p142:
         # p1-p4-p2 パターン: 予測1位-予測4位-予測2位の三連単 100円（2026-04-17追加）
         query = f'''
         WITH race_base AS (

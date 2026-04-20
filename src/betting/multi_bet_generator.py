@@ -20,6 +20,8 @@ class MultiBetPattern(Enum):
     PATTERN_I = "pattern_i"              # I: 2点買い（200+100）
     PATTERN_K = "pattern_k"              # K: 総合（150+100+50）- 最低MaxDD
     PATTERN_P142 = "pattern_p142"        # P142: p1-p4-p2 穴狙い（100円1点）- 2026-04-17追加
+    PATTERN_P143 = "pattern_p143"        # P143: p1-p4-p3 穴狙い（100円1点）- 2026-04-17追加
+    PATTERN_P132 = "pattern_p132"        # P132: p1-p3-p2 穴狙い（100円1点）- 2026-04-17追加
 
 
 @dataclass
@@ -147,6 +149,10 @@ class MultiBetGenerator:
             return self._generate_pattern_k(predictions, odds_dict)
         elif pattern == MultiBetPattern.PATTERN_P142:
             return self._generate_pattern_p142(predictions, odds_dict)
+        elif pattern == MultiBetPattern.PATTERN_P143:
+            return self._generate_pattern_p143(predictions, odds_dict)
+        elif pattern == MultiBetPattern.PATTERN_P132:
+            return self._generate_pattern_p132(predictions, odds_dict)
         else:
             raise ValueError(f"未知のパターン: {pattern}")
 
@@ -441,6 +447,8 @@ class MultiBetGenerator:
             MultiBetPattern.PATTERN_I: "2点買い（200+100円）- シンプル",
             MultiBetPattern.PATTERN_K: "総合買い（150+100+50円）- 安全重視",
             MultiBetPattern.PATTERN_P142: "P142穴狙い（p1-p4-p2 100円1点）",
+            MultiBetPattern.PATTERN_P143: "P143穴狙い（p1-p4-p3 100円1点）",
+            MultiBetPattern.PATTERN_P132: "P132穴狙い（p1-p3-p2 100円1点）",
         }
 
         return {
@@ -487,6 +495,78 @@ class MultiBetGenerator:
             description="パターンP142: p1-p4-p2 穴狙い1点買い（100円）",
             expected_hit_rate=1.2,   # 6年実績: 1595件/19的中 ≈ 1.2%
             expected_roi=187.6,      # 6年実績ROI
+        )
+
+    def _generate_pattern_p132(
+        self, predictions: List[int], odds_dict: Dict[str, float]
+    ) -> MultiBetResult:
+        """
+        パターンP132: p1-p3-p2 穴狙い 100円1点買い（2026-04-17追加）
+
+        【穴狙い条件専用パターン】
+        - 1着: 予測1位（p1）
+        - 2着: 予測3位（p3）← 「2-3着入れ替わり展開」狙い
+        - 3着: 予測2位（p2）
+        - 配分: 100円（1点）
+        条件: C信頼度×スコア74-84×200-300倍
+        根拠: スコア74-84帯は教科書展開率5.2% → 2-3着の入れ替わりが起きやすい
+              200-300倍帯: 40組み合わせスキャンでIS/OOS両方ROI100%超の唯一候補
+        """
+        if len(predictions) < 3:
+            raise ValueError("P132パターンには最低3艇の予測が必要です")
+
+        p1, p2, p3 = predictions[0], predictions[1], predictions[2]
+        combo = f"{p1}-{p3}-{p2}"
+        odds = odds_dict.get(combo, 0)
+
+        bets = []
+        if odds > 0:
+            bets.append(MultiBet(combination=combo, odds=odds, bet_amount=100, priority=1))
+
+        total = sum(b.bet_amount for b in bets)
+
+        return MultiBetResult(
+            pattern=MultiBetPattern.PATTERN_P132,
+            bets=bets,
+            total_investment=total,
+            description="パターンP132: p1-p3-p2 穴狙い1点買い（100円）",
+            expected_hit_rate=None,  # Tier2テスト後に更新
+            expected_roi=None,       # Tier2テスト後に更新
+        )
+
+    def _generate_pattern_p143(
+        self,
+        predictions: List[int],
+        odds_dict: Dict[str, float]
+    ) -> MultiBetResult:
+        """P143パターン生成（p1-p4-p3）
+        - 1着: 予測1位（p1）
+        - 2着: 予測4位（p4）← 4位が2着に台頭する展開
+        - 3着: 予測3位（p3）
+        - 配分: 100円（1点）
+        条件: D信頼度×200-300倍
+        根拠: IS/OOS両方ROI100%超、5/6年黒字
+        """
+        if len(predictions) < 4:
+            raise ValueError("P143パターンには最低4艇の予測が必要です")
+
+        p1, p3, p4 = predictions[0], predictions[2], predictions[3]
+        combo = f"{p1}-{p4}-{p3}"
+        odds = odds_dict.get(combo, 0)
+
+        bets = []
+        if odds > 0:
+            bets.append(MultiBet(combination=combo, odds=odds, bet_amount=100, priority=1))
+
+        total = sum(b.bet_amount for b in bets)
+
+        return MultiBetResult(
+            pattern=MultiBetPattern.PATTERN_P143,
+            bets=bets,
+            total_investment=total,
+            description="パターンP143: p1-p4-p3 穴狙い1点買い（100円）",
+            expected_hit_rate=None,
+            expected_roi=None,
         )
 
 
