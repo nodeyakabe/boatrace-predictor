@@ -468,7 +468,7 @@ def run_unique_backtest(year: int = 2025, full_test: bool = False) -> Dict:
 
     # 期間設定
     if full_test:
-        years = [2020, 2021, 2022, 2023, 2024, 2025]
+        years = [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]
         year_start = f"{years[0]}-01-01"
         year_end = f"{years[-1] + 1}-01-01"
     else:
@@ -487,7 +487,7 @@ def run_unique_backtest(year: int = 2025, full_test: bool = False) -> Dict:
     results = {
         'test_type': 'unique',
         'date': datetime.now().isoformat(),
-        'param_desc': f"standard_backtest_unique {'full(2020-2025)' if full_test else str(year)}",
+        'param_desc': f"standard_backtest_unique {'full(2018-2025)' if full_test else str(year)}",
         'conditions': [],
         'total': {},
     }

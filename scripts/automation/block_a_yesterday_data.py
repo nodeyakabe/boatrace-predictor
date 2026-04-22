@@ -144,9 +144,10 @@ class BlockARunner:
     def _send_notification(self, success_count: int, total_count: int, elapsed: float):
         """Discord通知送信"""
         status_icon = "✅" if success_count == total_count else "⚠️"
-        yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        yesterday = (datetime.now() - timedelta(days=1)).strftime('%m/%d')
+        elapsed_str = f"{int(elapsed // 60)}分{int(elapsed % 60)}秒"
 
-        message = f"{status_icon} **A完了** {yesterday} {success_count}/{total_count}タスク {int(elapsed // 60)}分{int(elapsed % 60)}秒"
+        message = f"{status_icon} **A完了** {yesterday}  {success_count}/{total_count}タスク  {elapsed_str}"
 
         if self.errors:
             message += "\n" + "\n".join(f"❌ {e[:80]}" for e in self.errors)

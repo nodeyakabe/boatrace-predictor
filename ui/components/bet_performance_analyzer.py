@@ -417,6 +417,8 @@ def render_bet_performance_analyzer():
 
             # セッションステートに保存
             st.session_state['perf_analysis_result'] = result
+            st.session_state['perf_analysis_start'] = start_date.strftime("%Y-%m-%d")
+            st.session_state['perf_analysis_end'] = end_date.strftime("%Y-%m-%d")
 
     # 分析結果が存在する場合のみ表示
     if 'perf_analysis_result' not in st.session_state:
@@ -501,6 +503,16 @@ def render_bet_performance_analyzer():
 
     with detail_tab2:
         _render_race_detail_table(result['candidate_races'], "候補")
+
+    # ============ 条件別月次収支サマリー ============
+    st.markdown("---")
+    _analysis_start = st.session_state.get('perf_analysis_start', start_date.strftime("%Y-%m-%d"))
+    _analysis_end = st.session_state.get('perf_analysis_end', end_date.strftime("%Y-%m-%d"))
+    render_monthly_condition_summary(_analysis_start, _analysis_end)
+
+    # ============ 的中レース詳細リスト ============
+    st.markdown("---")
+    render_hit_races_detail(_analysis_start, _analysis_end)
 
 
 def _render_comparison_chart(target_stats: Dict, candidate_stats: Dict, all_candidates_stats: Dict):
@@ -729,3 +741,408 @@ def _render_race_detail_table(races: List[Dict], title: str):
         st.metric("総投資額", f"{total_investment:,.0f}円")
     with col4:
         st.metric("総払戻額", f"{total_payout:,.0f}円", f"{total_payout-total_investment:+,.0f}円")
+
+
+# ============================================================
+# 条件別月次収支サマリー
+# ============================================================
+
+# 組み合わせ式マップ（SQLで使用）
+_COMBO_SQL_EXPRS = {
+    'p123': "CAST(rp1.pit_number AS TEXT)||'-'||CAST(rp2.pit_number AS TEXT)||'-'||CAST(rp3.pit_number AS TEXT)",
+    'p124': "CAST(rp1.pit_number AS TEXT)||'-'||CAST(rp2.pit_number AS TEXT)||'-'||CAST(rp4.pit_number AS TEXT)",
+    'p132': "CAST(rp1.pit_number AS TEXT)||'-'||CAST(rp3.pit_number AS TEXT)||'-'||CAST(rp2.pit_number AS TEXT)",
+    'p142': "CAST(rp1.pit_number AS TEXT)||'-'||CAST(rp4.pit_number AS TEXT)||'-'||CAST(rp2.pit_number AS TEXT)",
+    'p143': "CAST(rp1.pit_number AS TEXT)||'-'||CAST(rp4.pit_number AS TEXT)||'-'||CAST(rp3.pit_number AS TEXT)",
+}
+
+
+def _get_cond_patterns(cond: Dict) -> List[Tuple[str, int]]:
+    """条件から (買い目パターンキー, ベット金額) のリストを返す"""
+    if cond.get('use_pattern_h'):
+        # PATTERN_H2 (pattern_h_exclude_p5=True) → p1-p2-p3 (200円) + p1-p2-p4 (100円)
+        # multi_bet_generator.py: PATTERN_H2 は bet_amounts=[200, 100]
+        return [('p123', 200), ('p124', 100)]
+    elif cond.get('use_pattern_p142'):
+        return [('p142', 100)]
+    elif cond.get('use_pattern_p132'):
+        return [('p132', 100)]
+    elif cond.get('use_pattern_p143'):
+        return [('p143', 100)]
+    elif cond.get('use_pattern_p124'):
+        return [('p124', 100)]
+    else:
+        return [('p123', 100)]
+
+
+def _build_cond_where(cond: Dict, start_date: str, end_date: str, gvme: List[Tuple]) -> Tuple[str, list]:
+    """条件のWHERE句とパラメータを生成"""
+    where_parts = ["r.race_date BETWEEN ? AND ?"]
+    params = [start_date, end_date]
+
+    if cond.get('venue_filter'):
+        # venue_code はDB上ゼロパディング文字列（例: '07'）なので整数は変換する
+        venue_strs = [f"{v:02d}" if isinstance(v, int) else str(v).zfill(2)
+                      for v in cond['venue_filter']]
+        phs = ','.join('?' * len(venue_strs))
+        where_parts.append(f"r.venue_code IN ({phs})")
+        params.extend(venue_strs)
+
+    if cond.get('month_exclude'):
+        phs = ','.join('?' * len(cond['month_exclude']))
+        where_parts.append(
+            f"CAST(strftime('%m', r.race_date) AS INTEGER) NOT IN ({phs})"
+        )
+        params.extend(cond['month_exclude'])
+
+    for vc, mo in gvme:
+        # GLOBAL_VENUE_MONTH_EXCLUDES の venue_code も整数なのでゼロパディング変換
+        vc_str = f"{vc:02d}" if isinstance(vc, int) else str(vc).zfill(2)
+        where_parts.append(
+            "NOT (r.venue_code=? AND CAST(strftime('%m', r.race_date) AS INTEGER)=?)"
+        )
+        params.extend([vc_str, mo])
+
+    if cond.get('confidence'):
+        where_parts.append("rp1.confidence=?")
+        params.append(cond['confidence'])
+
+    if cond.get('c1_rank'):
+        phs = ','.join('?' * len(cond['c1_rank']))
+        where_parts.append(f"e1.racer_rank IN ({phs})")
+        params.extend(cond['c1_rank'])
+
+    if cond.get('odds_min') is not None:
+        where_parts.append("t.odds>=?")
+        params.append(cond['odds_min'])
+    if cond.get('odds_max') is not None:
+        # バックテストと合わせて「未満（<）」を使用
+        where_parts.append("t.odds<?")
+        params.append(cond['odds_max'])
+
+    if cond.get('score_min') is not None:
+        where_parts.append("rp1.total_score>=?")
+        params.append(cond['score_min'])
+    if cond.get('score_max') is not None:
+        # バックテストと合わせて「未満（<）」を使用
+        where_parts.append("rp1.total_score<?")
+        params.append(cond['score_max'])
+
+    return " AND ".join(where_parts), params
+
+
+@st.cache_data(ttl=600)
+def _load_condition_monthly_stats(start_date: str, end_date: str) -> Dict:
+    """条件別×月の収支データをSQLで集計（近似値・advance/before一致フィルタ未適用）"""
+    from config.bet_conditions import STANDARD_BET_CONDITIONS, GLOBAL_VENUE_MONTH_EXCLUDES
+
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    all_results = {}
+
+    for cond in STANDARD_BET_CONDITIONS:
+        cond_id = cond['id']
+        patterns = _get_cond_patterns(cond)
+        month_stats: Dict[str, Dict] = {}
+
+        for combo_key, bet_amount in patterns:
+            combo_expr = _COMBO_SQL_EXPRS[combo_key]
+            needs_rp4 = combo_key in ('p124', 'p142', 'p143')
+
+            rp4_join = (
+                "LEFT JOIN race_predictions rp4 "
+                "ON r.id=rp4.race_id AND rp4.prediction_type='before' AND rp4.rank_prediction=4"
+            ) if needs_rp4 else ""
+
+            where_sql, params = _build_cond_where(
+                cond, start_date, end_date, GLOBAL_VENUE_MONTH_EXCLUDES
+            )
+
+            sql = f"""
+                SELECT
+                    strftime('%Y-%m', r.race_date) AS ym,
+                    COUNT(*) AS bets,
+                    SUM(CASE WHEN pay.amount IS NOT NULL THEN 1 ELSE 0 END) AS hits,
+                    SUM(COALESCE(pay.amount, 0) * ? / 100) AS total_return
+                FROM races r
+                JOIN race_predictions rp1
+                    ON r.id=rp1.race_id AND rp1.prediction_type='before' AND rp1.rank_prediction=1
+                JOIN race_predictions rp2
+                    ON r.id=rp2.race_id AND rp2.prediction_type='before' AND rp2.rank_prediction=2
+                JOIN race_predictions rp3
+                    ON r.id=rp3.race_id AND rp3.prediction_type='before' AND rp3.rank_prediction=3
+                {rp4_join}
+                JOIN entries e1 ON r.id=e1.race_id AND e1.pit_number=1
+                JOIN trifecta_odds t
+                    ON r.id=t.race_id AND t.combination=({combo_expr})
+                LEFT JOIN payouts pay
+                    ON r.id=pay.race_id AND pay.bet_type='trifecta'
+                    AND pay.combination=({combo_expr})
+                WHERE {where_sql}
+                GROUP BY strftime('%Y-%m', r.race_date)
+                ORDER BY ym
+            """
+
+            try:
+                # bet_amount を先頭パラメータに追加（SUM内の * ? / 100 用）
+                cursor.execute(sql, [bet_amount] + list(params))
+                for row in cursor.fetchall():
+                    ym, bets, hits, total_return = row
+                    if ym not in month_stats:
+                        month_stats[ym] = {'bets': 0, 'hits': 0, 'invest': 0, 'return': 0}
+                    month_stats[ym]['bets'] += bets
+                    month_stats[ym]['hits'] += hits
+                    month_stats[ym]['invest'] += bets * bet_amount
+                    month_stats[ym]['return'] += total_return
+            except Exception:
+                pass
+
+        all_results[cond_id] = {
+            'name': cond.get('name', cond_id),
+            'monthly': month_stats,
+        }
+
+    conn.close()
+    return all_results
+
+
+def render_monthly_condition_summary(start_date: str, end_date: str):
+    """条件別月次収支サマリーを表示"""
+    st.markdown("### 📅 条件別月次収支サマリー")
+    st.caption(
+        "各条件・月のROI（100円ベット基準）を色分け表示。"
+        "🟢 ≥150% ／ 🟩 ≥100% ／ 🟨 黒字 ／ 🟥 赤字　"
+        "※SQLベース近似値（advance/before一致フィルタ未適用）"
+    )
+
+    with st.spinner("月次データ集計中..."):
+        data = _load_condition_monthly_stats(start_date, end_date)
+
+    all_months = sorted(set(
+        m for cd in data.values() for m in cd['monthly'].keys()
+    ))
+
+    if not all_months:
+        st.info("期間内に対象データがありません")
+        return
+
+    # 表示月数選択
+    month_options = [12, 24, 36]
+    if len(all_months) not in month_options:
+        month_options.append(len(all_months))
+    month_options = sorted(set(month_options))
+
+    col_sel, _ = st.columns([1, 3])
+    with col_sel:
+        max_months = st.selectbox(
+            "表示月数",
+            month_options,
+            format_func=lambda x: f"直近{x}ヶ月" if x < len(all_months) else f"全期間（{x}ヶ月）",
+            key="monthly_cond_max_months"
+        )
+    display_months = all_months[-max_months:]
+
+    # ピボットテーブル作成
+    rows = []
+    for cond_id, cond_data in data.items():
+        row: Dict = {'条件': cond_id}
+        t_invest = t_return = t_bets = t_hits = 0
+
+        for m in display_months:
+            md = cond_data['monthly'].get(m)
+            if md and md['invest'] > 0:
+                roi = md['return'] / md['invest'] * 100
+                row[m] = round(roi, 1)
+                t_invest += md['invest']
+                t_return += md['return']
+                t_bets += md['bets']
+                t_hits += md['hits']
+            else:
+                row[m] = float('nan')
+
+        if t_invest > 0:
+            row['全ROI'] = round(t_return / t_invest * 100, 1)
+            row['収支'] = int(t_return - t_invest)
+            row['件数'] = t_bets
+            row['的中'] = t_hits
+        else:
+            row['全ROI'] = float('nan')
+            row['収支'] = 0
+            row['件数'] = 0
+            row['的中'] = 0
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+
+    # セル色付け（ROI値ベース）
+    def _color_roi_col(col):
+        styles = []
+        for val in col:
+            try:
+                v = float(val)
+                if v != v:  # NaN check
+                    styles.append('color: #bbbbbb')
+                elif v >= 150:
+                    styles.append('background-color: #66bb6a; color: white; font-weight: bold')
+                elif v >= 100:
+                    styles.append('background-color: #c8e6c9')
+                elif v > 0:
+                    styles.append('background-color: #fff9c4')
+                else:
+                    styles.append('background-color: #ffcdd2')
+            except (TypeError, ValueError):
+                styles.append('color: #bbbbbb')
+        return styles
+
+    roi_cols = display_months + ['全ROI']
+    styled = df.style.apply(_color_roi_col, subset=roi_cols)
+
+    # フォーマット
+    fmt: Dict = {m: lambda x: f"{int(x)}%" if x == x else '-' for m in display_months}
+    fmt['全ROI'] = lambda x: f"{x:.1f}%" if x == x else '-'
+    fmt['収支'] = lambda x: f"{x:+,}円"
+    styled = styled.format(fmt, na_rep='-')
+
+    st.dataframe(styled, use_container_width=True,
+                 height=min(500, 60 + len(rows) * 38))
+    st.caption(
+        f"表示期間: {display_months[0]} ～ {display_months[-1]}　"
+        f"条件数: {len(rows)}件"
+    )
+
+
+# ============================================================
+# 的中レース詳細リスト
+# ============================================================
+
+@st.cache_data(ttl=600)
+def _load_hit_races_detail(start_date: str, end_date: str) -> List[Dict]:
+    """全条件の的中レースを一覧取得し払戻降順で返す"""
+    from config.bet_conditions import STANDARD_BET_CONDITIONS, GLOBAL_VENUE_MONTH_EXCLUDES
+
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    hit_races = []
+
+    for cond in STANDARD_BET_CONDITIONS:
+        cond_id = cond['id']
+        patterns = _get_cond_patterns(cond)
+
+        for combo_key, _bet_amount in patterns:
+            combo_expr = _COMBO_SQL_EXPRS[combo_key]
+            needs_rp4 = combo_key in ('p124', 'p142', 'p143')
+
+            rp4_join = (
+                "LEFT JOIN race_predictions rp4 "
+                "ON r.id=rp4.race_id AND rp4.prediction_type='before' AND rp4.rank_prediction=4"
+            ) if needs_rp4 else ""
+
+            where_sql, params = _build_cond_where(
+                cond, start_date, end_date, GLOBAL_VENUE_MONTH_EXCLUDES
+            )
+
+            # INNER JOIN payouts → 的中のみ
+            sql = f"""
+                SELECT
+                    r.race_date,
+                    r.venue_code,
+                    r.race_number,
+                    r.id AS race_id,
+                    ({combo_expr}) AS combination,
+                    t.odds,
+                    pay.amount AS payout
+                FROM races r
+                JOIN race_predictions rp1
+                    ON r.id=rp1.race_id AND rp1.prediction_type='before' AND rp1.rank_prediction=1
+                JOIN race_predictions rp2
+                    ON r.id=rp2.race_id AND rp2.prediction_type='before' AND rp2.rank_prediction=2
+                JOIN race_predictions rp3
+                    ON r.id=rp3.race_id AND rp3.prediction_type='before' AND rp3.rank_prediction=3
+                {rp4_join}
+                JOIN entries e1 ON r.id=e1.race_id AND e1.pit_number=1
+                JOIN trifecta_odds t
+                    ON r.id=t.race_id AND t.combination=({combo_expr})
+                JOIN payouts pay
+                    ON r.id=pay.race_id AND pay.bet_type='trifecta'
+                    AND pay.combination=({combo_expr})
+                WHERE {where_sql}
+                ORDER BY r.race_date, r.venue_code, r.race_number
+            """
+
+            try:
+                cursor.execute(sql, params)
+                for row in cursor.fetchall():
+                    race_date, venue_code, race_number, race_id, combination, odds, payout = row
+                    hit_races.append({
+                        'condition_id': cond_id,
+                        'race_date': race_date,
+                        'venue_code': venue_code,
+                        'venue_name': get_venue_name(venue_code),
+                        'race_number': race_number,
+                        'race_id': race_id,
+                        'combination': combination,
+                        'odds': odds,
+                        'payout': payout or 0,
+                    })
+            except Exception:
+                pass
+
+    conn.close()
+    hit_races.sort(key=lambda x: x['payout'], reverse=True)
+    return hit_races
+
+
+def render_hit_races_detail(start_date: str, end_date: str):
+    """的中レース詳細リスト（払戻降順）"""
+    st.markdown("### 🏆 的中レース詳細リスト")
+    st.caption(
+        "全条件の的中レースを払戻金額の高い順に表示。"
+        "🥇 ≥30,000円 ／ 🟢 ≥10,000円　※SQLベース近似値"
+    )
+
+    with st.spinner("的中データ取得中..."):
+        hits = _load_hit_races_detail(start_date, end_date)
+
+    if not hits:
+        st.info("期間内に的中レースはありません")
+        return
+
+    total_hits = len(hits)
+    total_payout = sum(h['payout'] for h in hits)
+    max_payout = max(h['payout'] for h in hits)
+    avg_payout = total_payout / total_hits if total_hits > 0 else 0
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("的中件数", f"{total_hits}件")
+    col2.metric("最高払戻", f"{max_payout:,.0f}円")
+    col3.metric("平均払戻", f"{avg_payout:,.0f}円")
+    col4.metric("総払戻合計", f"{total_payout:,.0f}円")
+
+    df = pd.DataFrame(hits)
+    # _payout_num は数値列として保持（色付け判定に使用）
+    display_df = pd.DataFrame({
+        '日付': df['race_date'],
+        '会場': df['venue_name'],
+        'R': df['race_number'],
+        '条件': df['condition_id'],
+        '買い目': df['combination'],
+        'オッズ': df['odds'].apply(lambda x: f"{x:.1f}倍" if x else '-'),
+        '払戻': df['payout'].apply(lambda x: f"{x:,.0f}円"),
+        '_payout_num': df['payout'],  # 色付け用数値列
+    })
+
+    def _color_hit_row(row):
+        try:
+            p = float(row['_payout_num'])
+        except (TypeError, ValueError):
+            return [''] * len(row)
+        if p >= 30000:
+            return ['background-color: #ffd700; font-weight: bold'] * len(row)
+        elif p >= 10000:
+            return ['background-color: #c8e6c9'] * len(row)
+        return [''] * len(row)
+
+    styled = display_df.style.apply(_color_hit_row, axis=1).hide(axis='columns', subset=['_payout_num'])
+
+    st.dataframe(styled, use_container_width=True,
+                 height=min(600, 60 + total_hits * 36))

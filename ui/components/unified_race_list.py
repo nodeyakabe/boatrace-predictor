@@ -266,6 +266,18 @@ def _render_bet_targets():
                 odds_by_race[race_id] = {}
             odds_by_race[race_id][combination] = odds
 
+        # advance予測（initial）のtop3を一括取得（advance/before一致フィルタ用）
+        advance_top3_by_race = {}
+        for race_id, data in race_data_by_id.items():
+            if data['initial'] is not None:
+                init_top3 = data['initial']['top3']
+                if len(init_top3) >= 3:
+                    advance_top3_by_race[race_id] = [
+                        init_top3[0]['pit_number'],
+                        init_top3[1]['pit_number'],
+                        init_top3[2]['pit_number'],
+                    ]
+
         conn.close()
 
         # 購入対象を評価
@@ -301,10 +313,17 @@ def _render_bet_targets():
             # オッズ
             odds_data = odds_by_race.get(race_id, {})
 
+            # advance/before一致フィルタ用: before予測がある場合のみadvance_top3を渡す
+            # （before予測がない場合はadvance予測そのものを評価するのでNoneでパススルー）
+            advance_top3 = advance_top3_by_race.get(race_id) if has_beforeinfo else None
+
             # race_dataを構築（evaluate_race用）
             race_data_for_eval = {
                 'venue_code': data['venue_code'],
                 'entries': entries_by_race.get(race_id, []),
+                'race_date': data['race_date'],
+                'race_number': data['race_number'],
+                'id': race_id,
             }
 
             # predictions辞書を構築
@@ -320,7 +339,8 @@ def _render_bet_targets():
                 race_data=race_data_for_eval,
                 predictions=predictions_for_eval,
                 odds_data=odds_data if odds_data else None,
-                has_beforeinfo=has_beforeinfo
+                has_beforeinfo=has_beforeinfo,
+                advance_top3=advance_top3,
             )
 
             bet_targets.append({
@@ -634,7 +654,7 @@ def _render_race_card_enhanced(t: Dict, key_prefix: str, is_candidate: bool = Fa
             bet_lines.append(line)
         bet_html = "".join(bet_lines)
         total_bet = multi_bet.total_investment
-        multi_bet_badge = '<span style="background:#1976d2;color:white;padding:2px 6px;border-radius:4px;font-size:0.7em;margin-left:8px;">パターンH</span>'
+        multi_bet_badge = '<span style="background:#1976d2;color:white;padding:2px 6px;border-radius:4px;font-size:0.7em;margin-left:8px;">' + _get_pattern_label(multi_bet) + '</span>'
         odds_section = ""  # 複数点買いの場合はオッズセクション不要
     else:
         # 1点買い表示
@@ -646,7 +666,8 @@ def _render_race_card_enhanced(t: Dict, key_prefix: str, is_candidate: bool = Fa
     # 条件分岐の値を事前に計算
     beforeinfo_bg = '#e53935' if t['has_beforeinfo'] else '#bdbdbd'
     beforeinfo_text = '直前済' if t['has_beforeinfo'] else '事前'
-    bet_label = '買い目 (3点)' if has_multi_bet else '買い目'
+    n_bets = len(multi_bet.bets) if has_multi_bet else 0
+    bet_label = f'買い目 ({n_bets}点)' if has_multi_bet else '買い目'
     investment_label = '投資計' if has_multi_bet else '賭け金'
     roi_value = f"{target.expected_roi:.0f}"
 
@@ -705,6 +726,28 @@ def _render_race_card_enhanced(t: Dict, key_prefix: str, is_candidate: bool = Fa
             }
             st.session_state.show_detail = True
             st.rerun()
+
+
+def _get_pattern_label(multi_bet_result) -> str:
+    """MultiBetResultからUIに表示するパターン名を返す"""
+    try:
+        from src.betting.multi_bet_generator import MultiBetPattern
+        pattern = multi_bet_result.pattern
+        labels = {
+            MultiBetPattern.PATTERN_H:    'パターンH',
+            MultiBetPattern.PATTERN_H2:   'パターンH2',
+            MultiBetPattern.PATTERN_B:    'パターンB',
+            MultiBetPattern.PATTERN_L:    'パターンL',
+            MultiBetPattern.PATTERN_I:    'パターンI',
+            MultiBetPattern.PATTERN_K:    'パターンK',
+            MultiBetPattern.PATTERN_P142: 'P142穴狙い',
+            MultiBetPattern.PATTERN_P143: 'P143穴狙い',
+            MultiBetPattern.PATTERN_P132: 'P132穴狙い',
+            MultiBetPattern.PATTERN_P124: 'P124穴狙い',
+        }
+        return labels.get(pattern, 'マルチベット')
+    except Exception:
+        return 'マルチベット'
 
 
 def _render_race_card_compact(t: Dict, key_prefix: str):

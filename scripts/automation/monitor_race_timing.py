@@ -19,7 +19,9 @@ sys.path.insert(0, str(project_root))
 
 from scripts.automation.notify import (
     send_race_notification,
-    send_error_notification
+    send_error_notification,
+    send_discord_notification,
+    format_race_notification,
 )
 from src.betting.bet_target_evaluator import BetTargetEvaluator, BetStatus
 from src.betting.multi_bet_generator import MultiBetPattern
@@ -206,7 +208,8 @@ class RaceMonitor:
             SELECT
                 pit_number,
                 rank_prediction,
-                confidence
+                confidence,
+                total_score
             FROM race_predictions
             WHERE race_id = ?
               AND prediction_type = 'before'
@@ -221,7 +224,8 @@ class RaceMonitor:
                 SELECT
                     pit_number,
                     rank_prediction,
-                    confidence
+                    confidence,
+                    total_score
                 FROM race_predictions
                 WHERE race_id = ?
                   AND prediction_type = 'advance'
@@ -249,6 +253,7 @@ class RaceMonitor:
 
         return {
             'confidence': predictions[0]['confidence'],
+            'total_score': predictions[0].get('total_score'),  # スコアフィルター用（2026-04-21追加）
             'old_prediction': all_pred,
             'new_prediction': all_pred,  # 事前予測の段階では同じ
             'first_racer_number': first_racer_number
@@ -303,6 +308,54 @@ class RaceMonitor:
         """
         deadline_datetime_str = f"{date_str} {deadline_str}"
         return datetime.strptime(deadline_datetime_str, '%Y-%m-%d %H:%M')
+
+    def _notify_promotion(self, race: Dict, bet_target, label: str) -> None:
+        """候補レースが購入対象に昇格した際の即時Discord通知"""
+        race_id = race['race_id']
+        try:
+            venue_name = self.get_venue_name(race['venue_code'])
+            race_info = {
+                'venue': venue_name,
+                'race_number': race['race_number'],
+                'deadline': race['deadline'],
+                'race_id': race_id
+            }
+
+            if bet_target.multi_bet_result and bet_target.multi_bet_result.bets:
+                pit_numbers = [
+                    [int(x) for x in bet.combination.split('-')]
+                    for bet in bet_target.multi_bet_result.bets
+                ]
+                odds_info = {
+                    'trifecta_odds': bet_target.odds if bet_target.odds else 10.0,
+                    'multi_bets': [
+                        {'combination': bet.combination, 'odds': bet.odds}
+                        for bet in bet_target.multi_bet_result.bets
+                    ]
+                }
+            else:
+                if not bet_target.combination:
+                    print(f"[WARNING] 昇格通知スキップ（組み合わせ未設定）: {race_id}")
+                    return
+                pit_numbers = [[int(x) for x in bet_target.combination.split('-')]]
+                odds_info = {'trifecta_odds': bet_target.odds if bet_target.odds else 10.0}
+
+            prediction = {
+                'pit_numbers': pit_numbers,
+                'confidence': (
+                    _CONFIDENCE_FLOAT_MAP.get(bet_target.confidence, 0.70)
+                    if isinstance(bet_target.confidence, str)
+                    else (float(bet_target.confidence) if bet_target.confidence is not None else 0.70)
+                )
+            }
+
+            base_msg = format_race_notification(race_info, prediction, odds_info)
+            msg = f"🔔 **{label}** {base_msg}"
+            send_discord_notification(msg)
+            print(f"  昇格通知送信: {race_id}")
+
+        except Exception as e:
+            print(f"[ERROR] 昇格通知送信失敗: {race_id} - {e}")
 
     def _fetch_beforeinfo_for_race(self, race: Dict) -> bool:
         """
@@ -442,8 +495,9 @@ class RaceMonitor:
                 # ステータス変化をログ出力
                 if old_status != new_status:
                     print(f"  レース{race_id}: {old_status.value} → {new_status.value}")
-                    if old_status == BetStatus.CANDIDATE and new_status in [BetStatus.TARGET_CONFIRMED]:
+                    if old_status == BetStatus.CANDIDATE and new_status == BetStatus.TARGET_CONFIRMED:
                         print(f"  候補レースが購入対象に昇格: {race_id}")
+                        self._notify_promotion(race, bet_target, "候補→対象確定(直前情報)")
 
                 # ステータス変化に関わらず常にキャッシュ更新（has_beforeinfo=True の評価結果を反映）
                 race['bet_target'] = bet_target
@@ -459,16 +513,16 @@ class RaceMonitor:
         """直前予測を含む予測データを取得"""
         # 事前予測
         cursor.execute("""
-            SELECT pit_number, rank_prediction, confidence
+            SELECT pit_number, rank_prediction, confidence, total_score
             FROM race_predictions
             WHERE race_id = ? AND prediction_type = 'advance'
             ORDER BY rank_prediction
         """, (race_id,))
         advance_preds = [dict(row) for row in cursor.fetchall()]
 
-        # 直前予測
+        # 直前予測（total_scoreはbefore予測から取得 - スコアフィルター用）
         cursor.execute("""
-            SELECT pit_number, rank_prediction
+            SELECT pit_number, rank_prediction, total_score
             FROM race_predictions
             WHERE race_id = ? AND prediction_type = 'before'
             ORDER BY rank_prediction
@@ -481,6 +535,12 @@ class RaceMonitor:
         # 全件返却（パターンH用に5位以上必要）
         old_pred = [p['pit_number'] for p in advance_preds]
         new_pred = [p['pit_number'] for p in before_preds] if len(before_preds) >= 3 else old_pred
+
+        # total_scoreはbefore予測優先、なければadvance予測から取得（スコアフィルター用・2026-04-22修正）
+        if before_preds and before_preds[0].get('total_score') is not None:
+            total_score = before_preds[0]['total_score']
+        else:
+            total_score = advance_preds[0].get('total_score') if advance_preds else None
 
         # 1着予測選手の登録番号を取得（逃げ率・バイアス指数フィルター用）
         first_pred_pit = old_pred[0] if old_pred else None
@@ -496,6 +556,7 @@ class RaceMonitor:
 
         return {
             'confidence': advance_preds[0]['confidence'],
+            'total_score': total_score,  # スコアフィルター用（2026-04-22追加）
             'old_prediction': old_pred,
             'new_prediction': new_pred,
             'first_racer_number': first_racer_number
@@ -525,7 +586,9 @@ class RaceMonitor:
         """
         オッズ再取得が必要かチェックし、必要なら取得して再評価
 
-        締切30-50分前に、オッズ未取得(CANDIDATE)のレースのオッズを再取得する
+        締切30-50分前に、CANDIDATE または TARGET_ADVANCE のレースのオッズを再取得する。
+        TARGET_ADVANCE は Eブロック（08:00）で一度収集済みだが、三連単オッズは締切直前まで
+        大きく変動するため、直前に再取得して最新値に更新する。
 
         Args:
             race: レース情報
@@ -539,9 +602,10 @@ class RaceMonitor:
         if race_id in self.fetched_odds_races:
             return False
 
-        # CANDIDATE以外はスキップ（オッズ不明でないので不要）
+        # CANDIDATE または TARGET_ADVANCE のみ対象
+        # TARGET_ADVANCE: Eブロック(08:00)で取得済みだが締切前に大きく変動するため再取得が必要
         bet_target = race['bet_target']
-        if bet_target.status != BetStatus.CANDIDATE:
+        if bet_target.status not in (BetStatus.CANDIDATE, BetStatus.TARGET_ADVANCE):
             return False
 
         deadline = self.parse_deadline(race['date'], race['deadline'])
@@ -634,6 +698,8 @@ class RaceMonitor:
 
                 if old_status != new_status:
                     print(f"  オッズ取得後ステータス変化: {race_id}: {old_status.value} → {new_status.value}")
+                    if old_status == BetStatus.CANDIDATE and new_status in [BetStatus.TARGET_ADVANCE, BetStatus.TARGET_CONFIRMED]:
+                        self._notify_promotion(race, bet_target, "候補→対象(オッズ確認)")
 
                 race['bet_target'] = bet_target
                 self._bet_target_cache[race_id] = race

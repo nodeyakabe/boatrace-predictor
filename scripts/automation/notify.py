@@ -135,13 +135,16 @@ def format_race_notification(
     odds = odds_info['trifecta_odds']
     multi_bets = odds_info.get('multi_bets', None)
 
-    # オッズ文字列
     if multi_bets and len(multi_bets) > 1:
-        odds_str = ' / '.join(f"{b['combination']}:{b['odds']:.1f}倍" for b in multi_bets)
+        # パターンH（複数点買い）: 1買い目1行
+        lines = [f"🎯 **{venue} {race_num}R** {deadline}  {len(multi_bets)}点買い"]
+        for bet in multi_bets:
+            amount = bet.get('amount', 100)
+            lines.append(f"`{bet['combination']}`  {bet['odds']:.1f}倍 ({amount}円)")
+        message = "\n".join(lines)
     else:
-        odds_str = f"{odds:.1f}倍"
-
-    message = f"🎯 **{venue} {race_num}R** ({deadline}) [{confidence:.0%}]\n{bet_info} {odds_str}"
+        # 1点買い
+        message = f"🎯 **{venue} {race_num}R** {deadline}\n`{combinations[0]}`  {odds:.1f}倍  [{confidence:.0%}]"
 
     return message
 
@@ -184,19 +187,33 @@ def send_daily_summary(date: str, race_count: int, target_count: int, target_rac
     """
     cand_count = len(candidate_races) if candidate_races else 0
 
+    # 日付を MM/DD に短縮
+    try:
+        from datetime import datetime as _dt
+        short_date = _dt.strptime(date, '%Y-%m-%d').strftime('%m/%d')
+    except Exception:
+        short_date = date
+
     if target_count == 0 and cand_count == 0:
-        message = f"📋 {date} 購入対象なし"
+        message = f"📋 **{short_date}** 購入対象なし"
     else:
-        message = f"📋 **{date} 予想完了** 購入{target_count}件 候補{cand_count}件\n"
+        parts = []
+        if target_count > 0:
+            parts.append(f"購入 {target_count}件")
+        if cand_count > 0:
+            parts.append(f"候補 {cand_count}件")
+        message = f"📋 **{short_date} 予想完了**  {' / '.join(parts)}"
         if target_races:
             for race in target_races:
                 odds = race.get('odds', 0.0)
-                odds_str = f" {odds:.1f}倍" if odds else ""
-                message += f"- {race.get('venue')} {race.get('race_num')}R ({race.get('race_time')}): {race.get('combination')}{odds_str}\n"
+                odds_str = f"  {odds:.1f}倍" if odds else ""
+                message += f"\n🎯 {race.get('venue')} {race.get('race_num')}R  {race.get('race_time')}  `{race.get('combination')}`{odds_str}"
         if candidate_races:
-            message += "候補:"
-            for race in candidate_races:
-                message += f" {race.get('venue')}{race.get('race_num')}R({race.get('race_time')})"
+            cands = " / ".join(
+                f"{r.get('venue')}{r.get('race_num')}R {r.get('race_time')}"
+                for r in candidate_races
+            )
+            message += f"\n\n💤 {cands}"
 
     return send_discord_notification(message)
 
@@ -212,7 +229,7 @@ def send_error_notification(error_type: str, error_message: str) -> bool:
     Returns:
         bool: 送信成功ならTrue
     """
-    message = f"⚠️ **{error_type}** {datetime.now().strftime('%H:%M')}\n```\n{error_message[:200]}\n```"
+    message = f"⚠️ **エラー: {error_type}** {datetime.now().strftime('%m/%d %H:%M')}\n```\n{error_message[:200]}\n```"
     return send_discord_notification(message)
 
 

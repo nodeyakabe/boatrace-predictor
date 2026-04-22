@@ -81,7 +81,7 @@ def get_race_data(cursor, race_id: str) -> Optional[Dict]:
 def get_predictions(cursor, race_id: str) -> Optional[Dict]:
     """予測データを取得（実運用と同じ形式）"""
     cursor.execute("""
-        SELECT pit_number, rank_prediction, confidence, racer_number
+        SELECT pit_number, rank_prediction, confidence, racer_number, total_score
         FROM race_predictions
         WHERE race_id = ? AND prediction_type = 'before'
         ORDER BY rank_prediction
@@ -96,6 +96,7 @@ def get_predictions(cursor, race_id: str) -> Optional[Dict]:
     first_racer_number = predictions[0]['racer_number']
     return {
         'confidence': predictions[0]['confidence'],
+        'total_score': predictions[0].get('total_score'),  # スコアフィルター用（2026-04-22追加）
         'old_prediction': old_pred,
         'new_prediction': old_pred,
         'first_racer_number': first_racer_number

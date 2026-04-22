@@ -1603,12 +1603,33 @@ class ExtendedScorer:
                 'recent_win_rate': None,
                 'recent_avg_rank': None,
                 'trend': 'unknown',
+                'feature_date': None,
                 'description': '直近成績データなし'
             }
 
         (avg_rank_3, avg_rank_5, avg_rank_10,
          win_rate_3, win_rate_5, win_rate_10,
          total_races, feature_date) = row
+
+        # 鮮度チェック: feature_dateがrace_dateより14日以上古い場合は中間値を返す
+        # （長期休場後の復帰選手などで古いトレンドデータが使われるのを防ぐ）
+        if feature_date:
+            try:
+                from datetime import datetime as _dt
+                _feat = _dt.strptime(str(feature_date), '%Y-%m-%d')
+                _race = _dt.strptime(str(race_date), '%Y-%m-%d')
+                _age = (_race - _feat).days
+                if _age > 14:
+                    return {
+                        'score': max_score * 0.5,
+                        'recent_win_rate': None,
+                        'recent_avg_rank': None,
+                        'trend': 'unknown',
+                        'description': f'直近成績データ古過ぎ({feature_date}/{_age}日前)',
+                        'feature_date': feature_date
+                    }
+            except Exception:
+                pass
 
         recent_win_rate = win_rate_5 if win_rate_5 is not None else (win_rate_3 or win_rate_10 or 0)
         recent_avg_rank = avg_rank_5 if avg_rank_5 is not None else (avg_rank_3 or avg_rank_10 or 3.5)
@@ -1641,6 +1662,7 @@ class ExtendedScorer:
             'recent_win_rate': recent_win_rate,
             'recent_avg_rank': recent_avg_rank,
             'trend': trend,
+            'feature_date': feature_date,
             'description': f'直近5走: 勝率{recent_win_rate:.0f}%, 平均{recent_avg_rank:.1f}着（{trend_desc}）'
         }
 
@@ -2156,10 +2178,13 @@ class ExtendedScorer:
             )
 
         # 16. モーター2連対率スコア
+        # motor_result（analyze_motor_characteristics, max=5）が主要モータースコア。
+        # motor_second_rateはその補助シグナルとして控えめに設定（max=2.0）。
+        # 50%超→+2.0, 45-50%→+1.2, 35-45%→0, 30-35%→-1.0, <30%→-2.0, NULL/0→0
         motor_second_rate = entry.get('motor_second_rate')
         motor_second_rate_result = self.calculate_motor_second_rate_score(
             motor_second_rate,
-            max_score=0.0
+            max_score=2.0
         )
 
         # 総合スコア計算
@@ -2242,12 +2267,13 @@ class ExtendedScorer:
                 'description': str
             }
         """
-        if motor_second_rate is None:
+        if motor_second_rate is None or motor_second_rate == 0.0:
+            # 0.0は節初日など実績未記録の場合（NULLと同等扱い）
             return {
                 'score': 0.0,
-                'motor_second_rate': None,
+                'motor_second_rate': motor_second_rate,
                 'level': 'unknown',
-                'description': 'モーター2連対率データなし'
+                'description': 'モーター2連対率データなし（未記録）'
             }
 
         # モーター2連対率の基準

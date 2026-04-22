@@ -194,11 +194,16 @@ def get_race_ids_for_condition(
         LEFT JOIN race_predictions adv2 ON r.id = adv2.race_id AND adv2.prediction_type = 'advance' AND adv2.rank_prediction = 2
         LEFT JOIN race_predictions adv3 ON r.id = adv3.race_id AND adv3.prediction_type = 'advance' AND adv3.rank_prediction = 3
         """
+        # サブクエリでbeforeの1-2-3位を取得（パターン条件はrp2/rp3を持たない場合があるため）
         advance_match_clause = """
         AND (
             r.venue_code = '11'
             OR adv1.pit_number IS NULL
-            OR (adv1.pit_number = rp1.pit_number AND adv2.pit_number = rp2.pit_number AND adv3.pit_number = rp3.pit_number)
+            OR (
+                adv1.pit_number = (SELECT pit_number FROM race_predictions WHERE race_id = r.id AND prediction_type = 'before' AND rank_prediction = 1 LIMIT 1)
+                AND adv2.pit_number = (SELECT pit_number FROM race_predictions WHERE race_id = r.id AND prediction_type = 'before' AND rank_prediction = 2 LIMIT 1)
+                AND adv3.pit_number = (SELECT pit_number FROM race_predictions WHERE race_id = r.id AND prediction_type = 'before' AND rank_prediction = 3 LIMIT 1)
+            )
         )
         """
 

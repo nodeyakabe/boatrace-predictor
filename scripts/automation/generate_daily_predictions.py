@@ -206,7 +206,7 @@ def _get_predictions_for_eval(cursor, race_id: int):
     """
     for prediction_type in ('before', 'advance'):
         cursor.execute("""
-            SELECT pit_number, rank_prediction, confidence
+            SELECT pit_number, rank_prediction, confidence, total_score
             FROM race_predictions
             WHERE race_id = ? AND prediction_type = ?
             ORDER BY rank_prediction
@@ -228,6 +228,7 @@ def _get_predictions_for_eval(cursor, race_id: int):
 
             return {
                 'confidence': rows[0]['confidence'],
+                'total_score': rows[0].get('total_score'),  # スコアフィルター用（2026-04-21追加）
                 'old_prediction': all_pred,
                 'new_prediction': all_pred,
                 'first_racer_number': first_racer_number,

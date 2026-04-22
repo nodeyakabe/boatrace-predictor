@@ -7,6 +7,7 @@ import requests
 from bs4 import BeautifulSoup
 import time
 import re
+from datetime import datetime
 from src.utils.retry_handler import retry_with_backoff, SCRAPER_CONFIG
 
 
@@ -742,6 +743,7 @@ class BeforeInfoScraper:
 
                 # データがあればUPSERT
                 if any([temp, water_temp, wind_speed, wave_height, weather_text, wind_dir_text]):
+                    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                     cursor.execute("""
                         SELECT id FROM race_conditions WHERE race_id = ?
                     """, (race_id,))
@@ -756,20 +758,22 @@ class BeforeInfoScraper:
                                 wind_speed = COALESCE(?, wind_speed),
                                 wave_height = COALESCE(?, wave_height),
                                 weather = COALESCE(?, weather),
-                                wind_direction = COALESCE(?, wind_direction)
+                                wind_direction = COALESCE(?, wind_direction),
+                                collected_at = ?
                             WHERE race_id = ?
                         """, (temp, water_temp, wind_speed, wave_height,
-                              weather_text, wind_dir_text, race_id))
+                              weather_text, wind_dir_text, now_str, race_id))
                     else:
                         # 新規挿入
                         cursor.execute("""
                             INSERT INTO race_conditions (
                                 race_id, temperature, water_temperature,
-                                wind_speed, wave_height, weather, wind_direction
+                                wind_speed, wave_height, weather, wind_direction,
+                                collected_at
                             )
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         """, (race_id, temp, water_temp, wind_speed, wave_height,
-                              weather_text, wind_dir_text))
+                              weather_text, wind_dir_text, now_str))
 
             conn.commit()
             conn.close()

@@ -84,6 +84,7 @@ from scripts.automation.block_a_yesterday_data import BlockARunner
 from scripts.automation.block_c_today_data import BlockCRunner
 from scripts.automation.block_d_today_prediction import BlockDRunner
 from scripts.automation.fetch_today_odds import fetch_todays_odds
+from scripts.maintenance.run_racer_features_recompute import recompute_racer_features
 
 
 # グローバル変数
@@ -121,11 +122,23 @@ def acquire_lock():
 
     lock_path = project_root / "data" / "daily_scheduler.lock"
 
-    # 古いロックファイルがあれば削除
+    # 古いロックファイルがあれば、PIDが生存中か確認してから削除
     if lock_path.exists():
         try:
             with open(lock_path, 'r') as f:
                 old_pid = int(f.read().strip())
+
+            # PIDが実際に生存しているか確認
+            if psutil.pid_exists(old_pid):
+                try:
+                    proc = psutil.Process(old_pid)
+                    cmdline = ' '.join(proc.cmdline() or [])
+                    if 'daily_scheduler.py' in cmdline:
+                        print(f"[ERROR] ロックファイルのプロセスが起動中: PID {old_pid}")
+                        return False
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass  # プロセス消滅済み → 削除してよい
+
             print(f"[INFO] 古いロックファイルを削除: PID {old_pid} (プロセス終了済み)")
         except Exception:
             pass
@@ -196,6 +209,21 @@ def block_a_job():
         error_msg = f"Aブロック実行中にエラー: {str(e)}"
         print(f"[ERROR] {error_msg}")
         send_error_notification("Aブロックエラー", error_msg)
+
+
+def racer_features_job():
+    """毎週月曜・木曜04:00: racer_features / racer_venue_features 週2回更新"""
+    print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] racer_features 更新開始（最大遅延3日）")
+    try:
+        success = recompute_racer_features()
+        if success:
+            print(f"[OK] racer_features 更新完了")
+        else:
+            send_error_notification("racer_features更新エラー", "週2回更新が失敗しました")
+    except Exception as e:
+        error_msg = f"racer_features更新エラー: {str(e)}"
+        print(f"[ERROR] {error_msg}")
+        send_error_notification("racer_features更新エラー", error_msg)
 
 
 def block_c_job():
@@ -303,13 +331,16 @@ def race_monitor_job():
 
 def startup_notification():
     """起動通知"""
-    message = f"🤖 **起動** {datetime.now().strftime('%m/%d %H:%M')} A:03:00 C:06:00 E:08:00 D:08:30"
+    message = (
+        f"🤖 **システム起動** {datetime.now().strftime('%m/%d %H:%M')}\n"
+        f"A 03:00 → C 06:00 → E 08:00 → D 08:30"
+    )
     send_discord_notification(message)
 
 
 def shutdown_notification():
     """停止通知"""
-    message = f"🛑 **停止** {datetime.now().strftime('%m/%d %H:%M')}"
+    message = f"🛑 **システム停止** {datetime.now().strftime('%m/%d %H:%M')}"
     send_discord_notification(message)
 
 
@@ -384,6 +415,12 @@ def main():
     # 1分ごとにレース監視（20分前取得、10分前通知）
     schedule.every(1).minutes.do(race_monitor_job)
     print("[OK] 1分ごと - レース監視（直前情報20分前取得、通知10分前送信）")
+
+    # 毎週月曜・木曜04:00にracer_features更新（Aブロック完了後）
+    # 最大遅延6日→3日に短縮（直近5走のトレンド精度向上のため週2回）
+    schedule.every().monday.at("04:00").do(racer_features_job)
+    schedule.every().thursday.at("04:00").do(racer_features_job)
+    print("[OK] 毎週月曜・木曜 4:00 - racer_features / racer_venue_features 週2回更新")
 
     print("\nシステム稼働開始...\n")
 

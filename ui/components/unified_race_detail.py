@@ -118,79 +118,79 @@ def _render_bet_target_summary(race_id, race_date_str, venue_code, race_number, 
     c1_rank_df = safe_query_to_df(c1_rank_query, params=(int(race_id),))
     c1_rank = c1_rank_df['racer_rank'].iloc[0] if c1_rank_df is not None and not c1_rank_df.empty else 'B1'
 
-    # 予測を取得
-    prediction_query = """
+    # advance予測を取得（信頼度・top3取得 & advance/before一致フィルタ用）
+    advance_query = """
         SELECT pit_number, rank_prediction, confidence, total_score
         FROM race_predictions
         WHERE race_id = ? AND prediction_type = 'advance'
         ORDER BY rank_prediction
     """
-    pred_df = safe_query_to_df(prediction_query, params=(int(race_id),))
+    advance_df = safe_query_to_df(advance_query, params=(int(race_id),))
 
-    if pred_df is None or pred_df.empty:
+    if advance_df is None or advance_df.empty:
         st.warning("予測データがありません。AI予測タブで予測を実行してください。")
         return
 
-    # 予測情報を取得
-    confidence = pred_df['confidence'].iloc[0] if 'confidence' in pred_df.columns else 'D'
-    old_pred = pred_df['pit_number'].tolist()[:3]
-    old_combo = f"{old_pred[0]}-{old_pred[1]}-{old_pred[2]}" if len(old_pred) >= 3 else "1-2-3"
+    advance_pits = advance_df['pit_number'].tolist()
+    advance_top3 = advance_pits[:3] if len(advance_pits) >= 3 else None
 
-    # 新方式の予測を取得（SecondFeaturesGeneratorとCompoundRuleFinder使用）
-    try:
-        from src.second_model import SecondFeaturesGenerator
-        from src.analysis import CompoundRuleFinder
+    # before予測を取得（直前情報あり時はこちらが評価対象）
+    before_query = """
+        SELECT pit_number, rank_prediction, confidence, total_score
+        FROM race_predictions
+        WHERE race_id = ? AND prediction_type = 'before'
+        ORDER BY rank_prediction
+    """
+    before_df = safe_query_to_df(before_query, params=(int(race_id),))
+    has_beforeinfo = before_df is not None and not before_df.empty
 
-        second_gen = SecondFeaturesGenerator()
-        rule_finder = CompoundRuleFinder()
+    # 評価に使う予測を決定（before優先）
+    eval_df = before_df if has_beforeinfo else advance_df
+    confidence = eval_df['confidence'].iloc[0] if 'confidence' in eval_df.columns else 'D'
+    eval_pits = eval_df['pit_number'].tolist()
+    if len(eval_pits) < 3:
+        st.warning("予測データが不足しています（3位以上の予測が必要）。")
+        return
 
-        # 新方式で1着を決定
-        old_1st = old_pred[0] if old_pred else 1
-        new_1st = old_1st
-        rules = rule_finder.get_applicable_rules(race_id, old_1st)
-        best_score = max([r.hit_rate for r in rules], default=0)
+    top3_pits = eval_pits[:3]
+    full_prediction = eval_pits[:6]
+    # 6位まで補填
+    for i in range(1, 7):
+        if i not in full_prediction:
+            full_prediction.append(i)
 
-        for pit in range(1, 7):
-            if pit == old_1st:
-                continue
-            other_rules = rule_finder.get_applicable_rules(race_id, pit)
-            for rule in other_rules:
-                if rule.hit_rate > best_score + 0.05:
-                    new_1st = pit
-                    best_score = rule.hit_rate
+    old_combo = f"{top3_pits[0]}-{top3_pits[1]}-{top3_pits[2]}"
 
-        # 2着3着を決定
-        candidates = second_gen.rank_second_candidates(race_id, new_1st)
-        if candidates and len(candidates) >= 2:
-            new_2nd, new_3rd = candidates[0][0], candidates[1][0]
-        else:
-            new_2nd, new_3rd = old_pred[1] if len(old_pred) > 1 else 2, old_pred[2] if len(old_pred) > 2 else 3
-
-        new_combo = f"{new_1st}-{new_2nd}-{new_3rd}"
-    except Exception as e:
-        new_combo = old_combo
-        new_1st, new_2nd, new_3rd = old_pred[0] if old_pred else 1, old_pred[1] if len(old_pred) > 1 else 2, old_pred[2] if len(old_pred) > 2 else 3
-
-    # オッズを取得
+    # オッズを取得（fetched_atも取得して鮮度確認用）
     odds_query = """
-        SELECT combination, odds FROM trifecta_odds
+        SELECT combination, odds, MAX(fetched_at) as fetched_at FROM trifecta_odds
         WHERE race_id = ?
+        GROUP BY combination, odds
     """
     odds_df = safe_query_to_df(odds_query, params=(int(race_id),))
     odds_data = {row['combination']: row['odds'] for _, row in odds_df.iterrows()} if odds_df is not None and not odds_df.empty else {}
 
+    # オッズ取得時刻を確認（最新のfetched_atを使用）
+    odds_fetched_at = None
+    if odds_df is not None and not odds_df.empty and 'fetched_at' in odds_df.columns:
+        fetched_vals = odds_df['fetched_at'].dropna()
+        if not fetched_vals.empty:
+            odds_fetched_at = fetched_vals.max()
+
     old_odds = odds_data.get(old_combo, 0)
-    new_odds = odds_data.get(new_combo, 0)
 
-    # 直前情報の有無を確認
-    beforeinfo_query = """
-        SELECT COUNT(*) as cnt FROM race_details
-        WHERE race_id = ? AND exhibition_time IS NOT NULL
+    # エントリー情報を取得（evaluate_race用）
+    entries_query = """
+        SELECT pit_number, racer_rank FROM entries WHERE race_id = ?
     """
-    bi_df = safe_query_to_df(beforeinfo_query, params=(int(race_id),))
-    has_beforeinfo = bi_df is not None and not bi_df.empty and bi_df['cnt'].iloc[0] > 0
+    entries_df = safe_query_to_df(entries_query, params=(int(race_id),))
+    entries_list = (
+        [{'pit_number': r['pit_number'], 'racer_rank': r['racer_rank']}
+         for _, r in entries_df.iterrows()]
+        if entries_df is not None and not entries_df.empty else []
+    )
 
-    # 購入対象判定（Discord通知・レース監視と統一）
+    # 購入対象判定（evaluate_race: config/bet_conditions.py の全条件・advance_top3を使用）
     evaluator = BetTargetEvaluator(
         use_multi_bet=True,
         multi_bet_pattern=MultiBetPattern.PATTERN_H,
@@ -198,15 +198,32 @@ def _render_bet_target_summary(race_id, race_date_str, venue_code, race_number, 
         enable_venue_course_adjustment=True,
         db_path=DATABASE_PATH
     )
-    bet_target = evaluator.evaluate(
-        confidence=confidence,
-        c1_rank=c1_rank,
-        old_combo=old_combo,
-        new_combo=new_combo,
-        old_odds=old_odds if old_odds else None,
-        new_odds=new_odds if new_odds else None,
-        has_beforeinfo=has_beforeinfo
+    race_data_for_eval = {
+        'venue_code': int(venue_code),
+        'entries': entries_list,
+        'race_date': race_date_str,
+        'race_number': int(race_number),
+        'id': int(race_id),
+    }
+    predictions_for_eval = {
+        'confidence': confidence,
+        'old_prediction': top3_pits,
+        'new_prediction': top3_pits,
+        'full_prediction': full_prediction,
+    }
+    # before予測がある場合のみadvance_top3を渡してフィルタを有効化
+    adv_top3_param = advance_top3 if has_beforeinfo else None
+    bet_target = evaluator.evaluate_race(
+        race_data=race_data_for_eval,
+        predictions=predictions_for_eval,
+        odds_data=odds_data if odds_data else None,
+        has_beforeinfo=has_beforeinfo,
+        advance_top3=adv_top3_param,
     )
+
+    # 詳細表示用に旧変数名を維持
+    new_combo = old_combo
+    new_odds = old_odds
 
     # 判定結果の表示
     st.markdown("### 判定結果")
@@ -234,18 +251,41 @@ def _render_bet_target_summary(race_id, race_date_str, venue_code, race_number, 
         # 方式の説明
         st.info("""
         **予測方式について:**
-        - **事前予測**: レース前日までの情報（選手成績、モーター性能など）で予測
-        - **直前予測**: 展示タイム・STタイミングなど直前情報を加えて予測
-        - **両方式**: 事前予測と直前予測のオッズを比較して高い方を選択
+        - **advance（事前）予測**: レース前日までの情報（選手成績、モーター性能など）で予測
+        - **before（直前）予測**: 展示タイム・STタイミングなど直前情報を加えて予測
+        - **advance/before一致フィルタ**: 両予測のtop3が一致する場合のみ購入対象（一部条件に適用）
         """)
+
+        # advance/before一致フィルタの状態を表示
+        if has_beforeinfo and advance_top3 is not None:
+            adv_str = '-'.join(map(str, advance_top3))
+            bef_str = '-'.join(map(str, top3_pits))
+            match_ok = adv_str == bef_str
+            match_label = f"✅ 一致（{adv_str}）" if match_ok else f"⚠️ 不一致（advance: {adv_str} / before: {bef_str}）"
+        else:
+            match_label = "—（beforeなし・パススルー）"
+
+        # オッズ取得時刻の警告
+        odds_freshness_note = ""
+        if odds_fetched_at:
+            try:
+                from datetime import datetime as _dt
+                fetched_dt = _dt.fromisoformat(str(odds_fetched_at))
+                minutes_ago = (_dt.now() - fetched_dt).total_seconds() / 60
+                if minutes_ago > 30:
+                    odds_freshness_note = f" ⚠️ **{int(minutes_ago)}分前のデータ（要更新）**"
+                else:
+                    odds_freshness_note = f" （{int(minutes_ago)}分前取得）"
+            except Exception:
+                pass
 
         st.markdown(f"""
         **検証項目:**
         - 信頼度: **{confidence}**
         - 1コース級別: **{c1_rank}**
-        - 事前予測買い目オッズ: **{old_combo}** → **{old_odds:.1f}倍**
-        - 直前予測買い目オッズ: **{new_combo}** → **{new_odds:.1f}倍**
-        - 直前情報: **{'取得済み' if has_beforeinfo else '未取得'}**
+        - 評価予測（{'before' if has_beforeinfo else 'advance'}）: **{old_combo}** → オッズ **{old_odds:.1f}倍**{odds_freshness_note}
+        - advance/before一致: **{match_label}**
+        - 直前情報: **{'取得済み（before予測で評価）' if has_beforeinfo else '未取得（advance予測で評価）'}**
         """)
 
         # 適用された法則を表示

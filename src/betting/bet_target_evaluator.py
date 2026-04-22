@@ -177,6 +177,17 @@ class BetTargetEvaluator:
             'venue_filter', 'month_exclude', 'escape_rate_min', 'predicted_course',
             'bias_max', 'c1_second_rate_min', 'c1_second_rate_max',
             'predicted_rank_has_class', 'predicted_rank_range',
+            # スコアフィルター（2026-04-21追加）
+            'score_min', 'score_max',
+            # パターン種別フラグ（2026-04-21追加）
+            'use_pattern_p142', 'use_pattern_p143', 'use_pattern_p132', 'use_pattern_p124',
+            'pattern_h_exclude_p5',
+            # その他フィルター（2026-04-21追加）
+            'venue_codes', 'venue_exclude', 'race_exclude',
+            'motor_min', 'sashi_rate_min', 'makuri_rate_min',
+            'wave_height_max', 'wave_height_min',
+            # advance/beforeフィルター（2026-04-22追加: per-condition方式）
+            'advance_before_match',
         ]
         for field in optional_fields:
             value = cond.get(field)
@@ -313,7 +324,9 @@ class BetTargetEvaluator:
         bias_index: Optional[float] = None,  # 1着予測選手のバイアス指数 - 2026-01-13追加
         odds_data: Optional[Dict] = None,  # 全オッズデータ（パターンH用）- 2026-02-13追加
         old_prediction: Optional[List[int]] = None,  # 予測順位（ピット番号のリスト、パターンH用）- 2026-02-16追加
-        wave_height: Optional[float] = None  # 波高フィルター用（cm）- 2026-04-06追加
+        wave_height: Optional[float] = None,  # 波高フィルター用（cm）- 2026-04-06追加
+        total_score: Optional[float] = None,  # スコアフィルター用（score_min/score_max）- 2026-04-21追加
+        advance_before_match: bool = True   # advance/before一致フラグ - 2026-04-22追加（per-condition適用）
     ) -> BetTarget:
         """
         購入対象を判定する
@@ -405,6 +418,11 @@ class BetTargetEvaluator:
         first_candidate_target = None
 
         for i, cond in enumerate(sorted_conditions):
+            # advance/before一致チェック（advance_before_match: Trueの条件のみ適用）
+            # パターン条件（p132/p143等）はデフォルト不要。通常条件は advance_before_match: True を持つ
+            if cond.get('advance_before_match') and not advance_before_match:
+                continue
+
             # 級別チェック
             if c1_rank not in cond['c1_rank']:
                 continue
@@ -537,8 +555,18 @@ class BetTargetEvaluator:
             odds_max = cond['odds_max']
             odds_range = f"{odds_min}倍+" if odds_max >= 9999 else f"{odds_min}-{odds_max}倍"
 
+            # オッズ範囲チェック（パターンH/P142/P143/P132対応）
+            use_pattern_h = cond.get('use_pattern_h', True)
+            use_pattern_p142 = cond.get('use_pattern_p142', False)
+            use_pattern_p143 = cond.get('use_pattern_p143', False)
+            use_pattern_p132 = cond.get('use_pattern_p132', False)
+            use_pattern_p124 = cond.get('use_pattern_p124', False)
+
             # オッズが不明な場合
-            if odds is None or odds == 0:
+            # パターン条件（p142/p143/p132/p124）は odds_data から自前でオッズを取得するため
+            # old_odds/new_odds が None でもパターンブロックに進む（2026-04-21修正）
+            is_pattern_cond = use_pattern_p142 or use_pattern_p143 or use_pattern_p132 or use_pattern_p124
+            if (odds is None or odds == 0) and not is_pattern_cond:
                 # 直前情報がまだなら「候補」として記録（全条件チェック後に返す）
                 if not has_beforeinfo and first_candidate_target is None:
                     first_candidate_target = BetTarget(
@@ -556,19 +584,19 @@ class BetTargetEvaluator:
                     )
                 # 他の条件もチェックするためcontinue
                 continue
-
-            # オッズ範囲チェック（パターンH/P142/P143/P132対応）
-            use_pattern_h = cond.get('use_pattern_h', True)
-            use_pattern_p142 = cond.get('use_pattern_p142', False)
-            use_pattern_p143 = cond.get('use_pattern_p143', False)
-            use_pattern_p132 = cond.get('use_pattern_p132', False)
-            use_pattern_p124 = cond.get('use_pattern_p124', False)
             exclude_p5 = cond.get('pattern_h_exclude_p5', False)
 
             # p1-p4-p3 パターン（4位2着・3位3着穴狙い）の処理（2026-04-17追加）
             if use_pattern_p143:
                 # 4位まで予測が必要
                 if not old_prediction or len(old_prediction) < 4:
+                    continue
+                # スコアフィルター（score_min/score_max）- 2026-04-21追加
+                score_min_c = cond.get('score_min')
+                score_max_c = cond.get('score_max')
+                if score_min_c is not None and (total_score is None or total_score < score_min_c):
+                    continue
+                if score_max_c is not None and (total_score is None or total_score >= score_max_c):
                     continue
                 # p1-p4-p3 コンビネーション
                 combo_p143 = f"{old_prediction[0]}-{old_prediction[3]}-{old_prediction[2]}"
@@ -603,6 +631,13 @@ class BetTargetEvaluator:
                 # 3位まで予測が必要
                 if not old_prediction or len(old_prediction) < 3:
                     continue
+                # スコアフィルター（score_min/score_max）- 2026-04-21追加
+                score_min_c = cond.get('score_min')
+                score_max_c = cond.get('score_max')
+                if score_min_c is not None and (total_score is None or total_score < score_min_c):
+                    continue
+                if score_max_c is not None and (total_score is None or total_score >= score_max_c):
+                    continue
                 # p1-p3-p2 コンビネーション
                 combo_p132 = f"{old_prediction[0]}-{old_prediction[2]}-{old_prediction[1]}"
                 odds_p132 = odds_data.get(combo_p132) if odds_data else None
@@ -636,13 +671,13 @@ class BetTargetEvaluator:
                 # 4位まで予測が必要
                 if not old_prediction or len(old_prediction) < 4:
                     continue
-                # スコアフィルター（score_min/score_max）
-                score_min_cond = cond.get('score_min')
-                score_max_cond = cond.get('score_max')
-                if score_min_cond is not None or score_max_cond is not None:
-                    # old_predictionのtotal_scoreを確認するため、ここでは既にスコアフィルタ済みと仮定
-                    # （バックテストと一致させるため、scoreはrace_predictionsのtotal_scoreを使用）
-                    pass  # スコアフィルターはevaluate_before()の呼び出し前に適用済みであること
+                # スコアフィルター（score_min/score_max）- 2026-04-21修正（passから実装に変更）
+                score_min_c = cond.get('score_min')
+                score_max_c = cond.get('score_max')
+                if score_min_c is not None and (total_score is None or total_score < score_min_c):
+                    continue
+                if score_max_c is not None and (total_score is None or total_score >= score_max_c):
+                    continue
                 # p1-p4-p2 コンビネーション
                 combo_p142 = f"{old_prediction[0]}-{old_prediction[3]}-{old_prediction[1]}"
                 odds_p142 = odds_data.get(combo_p142) if odds_data else None
@@ -675,6 +710,13 @@ class BetTargetEvaluator:
             if use_pattern_p124:
                 # 4位まで予測が必要
                 if not old_prediction or len(old_prediction) < 4:
+                    continue
+                # スコアフィルター（score_min/score_max）- 2026-04-21追加
+                score_min_c = cond.get('score_min')
+                score_max_c = cond.get('score_max')
+                if score_min_c is not None and (total_score is None or total_score < score_min_c):
+                    continue
+                if score_max_c is not None and (total_score is None or total_score >= score_max_c):
                     continue
                 # p1-p2-p4 コンビネーション
                 combo_p124 = f"{old_prediction[0]}-{old_prediction[1]}-{old_prediction[3]}"
@@ -888,6 +930,7 @@ class BetTargetEvaluator:
         confidence = predictions.get('confidence', 'D')
         old_pred = predictions.get('old_prediction', [1, 2, 3])
         new_pred = predictions.get('new_prediction', [1, 2, 3])
+        total_score = predictions.get('total_score')  # スコアフィルター用（2026-04-21追加）
 
         # 風速・会場フィルター（2024-2025年分析ベース）
         if self.enable_venue_wind_filter and venue_code and wind_speed is not None:
@@ -967,27 +1010,17 @@ class BetTargetEvaluator:
             bias_index = self._get_player_bias_index(str(first_pred_racer))
 
         # ============================================================
-        # advance/before 完全一致フィルタ（2026-04-07追加）
+        # advance/before 一致状態を変数に保存（2026-04-07追加、2026-04-22修正）
         # びわこ(venue_code=11)はフィルタ不適用
         # advance_top3=Noneはパススルー（advance予測欠損）
-        # advance/before不一致の場合はEXCLUDED
+        # 注意: グローバル除外ではなく、条件側の advance_before_match: True を持つ
+        #       条件にのみフィルターを適用する方式に変更（パターン条件は不一致でも機能する）
         # ============================================================
         BIWAKO_VENUE_CODE = 11
+        advance_before_match = True  # デフォルトはパススルー
         if venue_code != BIWAKO_VENUE_CODE and advance_top3 is not None:
             before_top3 = old_pred[:3]
-            if list(advance_top3[:3]) != list(before_top3):
-                return BetTarget(
-                    status=BetStatus.EXCLUDED,
-                    confidence=confidence,
-                    method='-',
-                    combination='-',
-                    odds=None,
-                    odds_range='-',
-                    c1_rank=c1_rank,
-                    expected_roi=0,
-                    bet_amount=0,
-                    reason=f'advance/before不一致: adv={advance_top3[:3]} bef={before_top3}'
-                )
+            advance_before_match = (list(advance_top3[:3]) == list(before_top3))
 
         # ============================================================
         # B2級特別条件チェック（2026-02-12追加、2026-02-13一時無効化）
@@ -1021,7 +1054,9 @@ class BetTargetEvaluator:
             bias_index=bias_index,  # バイアス指数フィルター用（2026-01-28追加）
             odds_data=odds_data,  # パターンH用全オッズ（2026-02-13追加）
             old_prediction=old_pred,  # パターンH用予測順位（2026-02-16追加）
-            wave_height=wave_height  # 波高フィルター用（2026-04-06追加）
+            wave_height=wave_height,  # 波高フィルター用（2026-04-06追加）
+            total_score=total_score,  # スコアフィルター用（2026-04-21追加）
+            advance_before_match=advance_before_match  # per-condition advance/beforeフィルター（2026-04-22追加）
         )
 
         # 会場×コース別調整を適用

@@ -180,7 +180,8 @@ class PreInfoScorer:
         """
         全国成績スコア（15点満点）
 
-        racer_featuresテーブルの全国勝率を使用
+        racer_featuresテーブルの直近勝率を使用
+        ※ racer_featuresに win_rate カラムは存在しないため recent_win_rate_5 を使用
         """
         max_score = self.SCORE_WEIGHTS['overall']
 
@@ -189,7 +190,7 @@ class PreInfoScorer:
             cursor = conn.cursor()
 
             cursor.execute('''
-                SELECT win_rate
+                SELECT recent_win_rate_5, race_date
                 FROM racer_features
                 WHERE racer_number = ? AND race_date <= ?
                 ORDER BY race_date DESC
@@ -202,7 +203,16 @@ class PreInfoScorer:
             if not row or row[0] is None:
                 return max_score * 0.5  # データなしは中間値
 
-            win_rate = row[0]
+            win_rate, feature_date = row[0], row[1]
+
+            # 鮮度チェック: 14日以上古いデータは中間値にフォールバック
+            if feature_date:
+                try:
+                    from datetime import datetime as _dt
+                    if (_dt.strptime(str(race_date), '%Y-%m-%d') - _dt.strptime(str(feature_date), '%Y-%m-%d')).days > 14:
+                        return max_score * 0.5
+                except Exception:
+                    pass
 
             # 勝率16.7%（1/6）を基準に、30%で満点
             normalized_rate = min(win_rate / 30.0, 1.0)
@@ -309,7 +319,7 @@ class PreInfoScorer:
             cursor = conn.cursor()
 
             cursor.execute('''
-                SELECT recent_win_rate_5, recent_avg_rank_5
+                SELECT recent_win_rate_5, recent_avg_rank_5, race_date
                 FROM racer_features
                 WHERE racer_number = ? AND race_date <= ?
                 ORDER BY race_date DESC
@@ -322,8 +332,17 @@ class PreInfoScorer:
             if not row or row[0] is None:
                 return max_score * 0.5
 
-            recent_win_rate = row[0]
-            recent_avg_rank = row[1] if row[1] else 3.5
+            recent_win_rate, recent_avg_rank, feature_date = row[0], row[1], row[2]
+            recent_avg_rank = recent_avg_rank if recent_avg_rank else 3.5
+
+            # 鮮度チェック: 14日以上古いデータは中間値にフォールバック
+            if feature_date:
+                try:
+                    from datetime import datetime as _dt
+                    if (_dt.strptime(str(race_date), '%Y-%m-%d') - _dt.strptime(str(feature_date), '%Y-%m-%d')).days > 14:
+                        return max_score * 0.5
+                except Exception:
+                    pass
 
             # 勝率ベース（60%の重み）
             win_rate_score = min(recent_win_rate / 30.0, 1.0) * max_score * 0.6
@@ -630,6 +649,8 @@ class PreInfoScorer:
         連対率スコア（5点満点）
 
         2連対率・3連対率を評価
+        ※ racer_featuresにはsecond_rate/third_rateカラムが存在しないため
+          entriesテーブルから最新の出走時連対率を取得する（毎日更新・鮮度チェック不要）
         """
         max_score = self.SCORE_WEIGHTS['rentai']
 
@@ -637,11 +658,16 @@ class PreInfoScorer:
             conn = get_connection(self.db_path)
             cursor = conn.cursor()
 
+            # entriesテーブルから当該選手の直近出走での連対率を取得
+            # second_rate / third_rate はパーセント形式（0〜100）で格納されている
             cursor.execute('''
-                SELECT second_rate, third_rate
-                FROM racer_features
-                WHERE racer_number = ? AND race_date <= ?
-                ORDER BY race_date DESC
+                SELECT e.second_rate, e.third_rate
+                FROM entries e
+                JOIN races r ON e.race_id = r.id
+                WHERE e.racer_number = ?
+                  AND r.race_date <= ?
+                  AND e.second_rate IS NOT NULL
+                ORDER BY r.race_date DESC, r.race_number DESC
                 LIMIT 1
             ''', (racer_number, race_date))
 
@@ -651,15 +677,15 @@ class PreInfoScorer:
             if not row or row[0] is None:
                 return max_score * 0.5
 
-            second_rate = row[0] or 0.333
-            third_rate = row[1] or 0.5
+            second_rate = row[0] or 33.3   # パーセント形式: 平均33.3%
+            third_rate  = row[1] or 50.0   # パーセント形式: 平均50.0%
 
-            # 2連対率を重視（60%の重み）
-            avg_second = 0.333
+            # 2連対率を重視（60%の重み）。全国平均33.3%を基準に評価
+            avg_second = 33.3
             second_score = (second_rate / avg_second) * (max_score * 0.6)
 
-            # 3連対率（40%の重み）
-            avg_third = 0.5
+            # 3連対率（40%の重み）。全国平均50.0%を基準に評価
+            avg_third = 50.0
             third_score = (third_rate / avg_third) * (max_score * 0.4)
 
             return min(max_score, second_score + third_score)
