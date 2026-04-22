@@ -1019,7 +1019,7 @@ class BetTargetEvaluator:
         BIWAKO_VENUE_CODE = 11
         advance_before_match = True  # デフォルトはパススルー
         if venue_code != BIWAKO_VENUE_CODE and advance_top3 is not None:
-            before_top3 = old_pred[:3]
+            before_top3 = new_pred[:3]  # before予測を使用（2026-04-22修正: old_pred→new_pred）
             advance_before_match = (list(advance_top3[:3]) == list(before_top3))
 
         # ============================================================
