@@ -15,6 +15,10 @@ Last Updated: 2026-04-22
   IS期間で完全0的中（551件/0的中）→ 構造的根拠あり（後付け境界には注意）
   改善後: 1,507件/ROI 235.8%/+204,690円 (+14,980円)
 
+- D_P143_200_300再修正: odds_max 300→275（275-300倍帯が統計的死に帯）
+  IS(2020-22) 0/561=0.0%（p=0.93%）・IS+OOS合計 4/1,102=0.36% vs ランダム0.83%（p≈1.03%）
+  275-300帯をカットして的中率改善・ROI維持が目標
+
 - advance/beforeフィルター修正: グローバル除外→条件別（per-condition）方式に変更
   背景: パターン条件はadvance≠beforeの方が高ROI。D信頼度の73%がブロックされていた
   実装: bet_target_evaluator.py（production）とbacktest_helpers.py（backtest）両方修正・整合性確認済み
@@ -1150,8 +1154,8 @@ STANDARD_BET_CONDITIONS = [
         'added_date': '2026-04-17',
         'modified_date': '2026-04-22',  # odds_min 100→125（100-125帯がROI52.6%の死に帯と判明）
         'backtest_period': '2020-2025',
-        'backtest_roi': 187.6,
-        'backtest_profit': 139740,
+        'backtest_roi': 220.7,   # v2.54.0実測(unique): 736件/ROI 220.7%/+88,820円（odds_min 125変更後）
+        'backtest_profit': 88820,
         'backtest_black_years': '6/6',
     },
     # ----------------------------------------------------------------
@@ -1202,22 +1206,22 @@ STANDARD_BET_CONDITIONS = [
     {
         'id': 'D_P143_200_300',
         'priority': 28,
-        'name': 'D×p1-p4-p3×200-300倍×スコア~75',
+        'name': 'D×p1-p4-p3×200-275倍×スコア~75',
         'confidence': 'D',
         'c1_rank': ['A1', 'A2', 'B1', 'B2'],
         'odds_min': 200,
-        'odds_max': 300,
+        'odds_max': 275,
         'score_max': 75,
         'use_pattern_h': False,
         'use_pattern_p143': True,  # p1-p4-p3 三連単 100円1点買い
-        'description': 'D信頼度×p1-p4-p3×200-300倍×スコア75以下（4位2着・3位3着穴狙い）',
-        'version': '2.0',
+        'description': 'D信頼度×p1-p4-p3×200-275倍×スコア75以下（4位2着・3位3着穴狙い）',
+        'version': '2.1',
         'added_date': '2026-04-17',
-        'modified_date': '2026-04-22',  # score_max=75追加（75-85帯がROI0-61%の死に帯と判明）
+        'modified_date': '2026-04-23',  # odds_max 300→275（275-300帯が IS:0/561の統計的死に帯・p≈1%）
         'backtest_period': '2020-2025',
-        'backtest_roi': 164.2,
-        'backtest_profit': 176710,
-        'backtest_black_years': '5/6',
+        'backtest_roi': 226.4,   # v2.54.0実測(non-unique): 1,570件/ROI 226.4%/+198,390円（score_max=75追加後）
+        'backtest_profit': 198390,
+        'backtest_black_years': '6/6',
     },
     # ----------------------------------------------------------------
     # v2.52.0 追加: C×p1-p2-p4×150-200倍×スコア90-98点 穴狙い
