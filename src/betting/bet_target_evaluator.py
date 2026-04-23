@@ -1053,7 +1053,7 @@ class BetTargetEvaluator:
             escape_rate=escape_rate,  # 逃げ率フィルター用（2026-01-09追加）
             bias_index=bias_index,  # バイアス指数フィルター用（2026-01-28追加）
             odds_data=odds_data,  # パターンH用全オッズ（2026-02-13追加）
-            old_prediction=old_pred,  # パターンH用予測順位（2026-02-16追加）
+            old_prediction=new_pred if has_beforeinfo else old_pred,  # before時はbefore順位でコンビネーション生成（バックテストと整合・2026-04-23修正）
             wave_height=wave_height,  # 波高フィルター用（2026-04-06追加）
             total_score=total_score,  # スコアフィルター用（2026-04-21追加）
             advance_before_match=advance_before_match  # per-condition advance/beforeフィルター（2026-04-22追加）

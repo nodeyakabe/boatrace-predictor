@@ -520,9 +520,9 @@ class RaceMonitor:
         """, (race_id,))
         advance_preds = [dict(row) for row in cursor.fetchall()]
 
-        # 直前予測（total_scoreはbefore予測から取得 - スコアフィルター用）
+        # 直前予測（before予測から順位・スコア・confidence取得 - 2026-04-23修正）
         cursor.execute("""
-            SELECT pit_number, rank_prediction, total_score
+            SELECT pit_number, rank_prediction, total_score, confidence
             FROM race_predictions
             WHERE race_id = ? AND prediction_type = 'before'
             ORDER BY rank_prediction
@@ -542,8 +542,15 @@ class RaceMonitor:
         else:
             total_score = advance_preds[0].get('total_score') if advance_preds else None
 
+        # confidenceはbefore予測優先、なければadvance予測から取得（バックテストはbefore由来・2026-04-23修正）
+        if before_preds and before_preds[0].get('confidence') is not None:
+            confidence = before_preds[0]['confidence']
+        else:
+            confidence = advance_preds[0]['confidence']
+
         # 1着予測選手の登録番号を取得（逃げ率・バイアス指数フィルター用）
-        first_pred_pit = old_pred[0] if old_pred else None
+        # before予測優先（バックテストのrp1.pit_numberはbefore由来・2026-04-23修正）
+        first_pred_pit = new_pred[0] if new_pred else old_pred[0] if old_pred else None
         first_racer_number = None
         if first_pred_pit:
             cursor.execute("""
@@ -555,8 +562,8 @@ class RaceMonitor:
                 first_racer_number = racer_row['racer_number']
 
         return {
-            'confidence': advance_preds[0]['confidence'],
-            'total_score': total_score,  # スコアフィルター用（2026-04-22追加）
+            'confidence': confidence,  # before予測優先（2026-04-23修正）
+            'total_score': total_score,  # before予測優先（2026-04-22修正）
             'old_prediction': old_pred,
             'new_prediction': new_pred,
             'first_racer_number': first_racer_number
