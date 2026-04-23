@@ -1089,8 +1089,8 @@ class BetTargetEvaluator:
                 # 予測の全順位を取得（最低4艇必要）
                 full_prediction = predictions.get('full_prediction')
                 if full_prediction is None:
-                    # old_predictionから推測（拡張が必要な場合）
-                    full_prediction = list(old_pred)
+                    # before予測から推測（バックテストはrp4/rp5もbefore由来・2026-04-23修正）
+                    full_prediction = list(new_pred)
                     # 不足分は1-6から補填
                     for i in range(1, 7):
                         if i not in full_prediction:
