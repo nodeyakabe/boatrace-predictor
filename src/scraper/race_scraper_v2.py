@@ -75,6 +75,13 @@ class RaceScraperV2(BaseScraperV2):
         # レース距離を取得
         race_distance = self._extract_race_distance(tree)
 
+        # ナイター判定（専用会場は全レースナイター）
+        is_nighter = 1 if str(venue_code).zfill(2) in self.NIGHTER_VENUES else 0
+
+        # 女子戦・新人戦判定（gradeと同じ combined_text を再利用）
+        is_ladies = self._extract_is_ladies(tree)
+        is_rookie = self._extract_is_rookie(tree)
+
         race_data = {
             "venue_code": venue_code,
             "race_date": race_date,
@@ -82,6 +89,9 @@ class RaceScraperV2(BaseScraperV2):
             "race_time": race_time,
             "race_grade": race_grade,
             "race_distance": race_distance,
+            "is_nighter": is_nighter,
+            "is_ladies": is_ladies,
+            "is_rookie": is_rookie,
             "entries": []
         }
 
@@ -467,6 +477,9 @@ class RaceScraperV2(BaseScraperV2):
         lines = [line.strip() for line in full_text.split('\n') if line.strip()]
         return separator.join(lines)
 
+    # ナイター専用会場コード（2桁）
+    NIGHTER_VENUES = {'01', '02', '06', '07', '12', '17', '20', '21', '24'}
+
     def _extract_race_grade(self, tree):
         """
         レースグレードを抽出
@@ -479,31 +492,79 @@ class RaceScraperV2(BaseScraperV2):
             例: 'SG', 'G1', 'G2', 'G3', '一般', 'ルーキーシリーズ'
         """
         try:
-            # ページタイトルまたはh2タグからグレード情報を取得
-            # 例: 「スカパー！・ＪＬＣ杯ルーキーシリーズ第１４戦」
-            title_elem = tree.css_first('h2')
-            if title_elem:
-                title_text = title_elem.text(strip=True)
+            # Step 1: CSSクラスベースの検出（最優先・確実）
+            # 公式サイトは is-SG / is-G1 / is-G2 / is-G3 クラスを使用
+            for css_class, grade in [
+                ('.is-SG', 'SG'), ('.is-G1', 'G1'), ('.is-G2', 'G2'), ('.is-G3', 'G3'),
+            ]:
+                if tree.css_first(css_class):
+                    return grade
 
-                # グレード判定（優先度順）
-                if 'SG' in title_text or 'スペシャルグレード' in title_text:
-                    return 'SG'
-                elif 'G1' in title_text or 'プレミアムＧⅠ' in title_text:
-                    return 'G1'
-                elif 'G2' in title_text:
-                    return 'G2'
-                elif 'G3' in title_text:
-                    return 'G3'
-                elif 'ルーキーシリーズ' in title_text:
-                    return 'ルーキーシリーズ'
-                else:
-                    return '一般'
+            # Step 2: テキストベースの検出（複数セレクタ）
+            # h1, h2, h3, title, .heading1_title 等を対象にテキスト全体を結合して検索
+            candidate_selectors = ['h1', 'h2', 'h3', '.heading1_title', '.titleTop', '.is-title1']
+            combined_text = ''
+            for sel in candidate_selectors:
+                elem = tree.css_first(sel)
+                if elem:
+                    combined_text += elem.text(strip=True)
+
+            # 半角・全角両方対応（優先度順）
+            if not combined_text and tree.body:
+                # 上記で取れない場合はbody全体から短い範囲で取得
+                combined_text = tree.body.text(deep=True)[:500]
+
+            grade_patterns = [
+                # SG
+                (['SG', 'ＳＧ', 'スペシャルグレード'], 'SG'),
+                # G1（全角・旧表記含む）
+                (['G1', 'Ｇ１', 'ＧⅠ', 'プレミアムＧⅠ', 'グレードワン'], 'G1'),
+                # G2
+                (['G2', 'Ｇ２', 'ＧⅡ'], 'G2'),
+                # G3
+                (['G3', 'Ｇ３', 'ＧⅢ'], 'G3'),
+                # ルーキー
+                (['ルーキーシリーズ'], 'ルーキーシリーズ'),
+            ]
+            for patterns, grade in grade_patterns:
+                if any(p in combined_text for p in patterns):
+                    return grade
 
             return '一般'  # デフォルト
 
         except Exception as e:
             print(f"グレード抽出エラー: {e}")
-            return None
+            return '一般'
+
+    def _extract_is_ladies(self, tree) -> int:
+        """女子戦かを判定（レース一覧ページのタイトルから）"""
+        try:
+            combined_text = ''
+            for sel in ['h1', 'h2', 'h3', '.heading1_title', '.heading2_titleName']:
+                elem = tree.css_first(sel)
+                if elem:
+                    combined_text += elem.text(strip=True)
+            if not combined_text and tree.body:
+                combined_text = tree.body.text(deep=True)[:500]
+            ladies_patterns = ['女子', 'レディース', 'LADIES', 'オールレディース', 'ヴィーナスシリーズ']
+            return 1 if any(p in combined_text for p in ladies_patterns) else 0
+        except Exception:
+            return 0
+
+    def _extract_is_rookie(self, tree) -> int:
+        """新人戦かを判定"""
+        try:
+            combined_text = ''
+            for sel in ['h1', 'h2', 'h3', '.heading1_title', '.heading2_titleName']:
+                elem = tree.css_first(sel)
+                if elem:
+                    combined_text += elem.text(strip=True)
+            if not combined_text and tree.body:
+                combined_text = tree.body.text(deep=True)[:500]
+            rookie_patterns = ['新人', 'ルーキー', 'フレッシュ', 'ジュニア']
+            return 1 if any(p in combined_text for p in rookie_patterns) else 0
+        except Exception:
+            return 0
 
     def _extract_race_distance(self, tree):
         """
