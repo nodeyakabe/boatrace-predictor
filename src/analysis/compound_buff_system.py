@@ -494,11 +494,12 @@ class CompoundBuffSystem:
             context["motor_rank"] = "下位"
 
         # 直近調子
+        # recent_win_rate は racer_features から fraction(0-1) で渡される（0.25 = 25%）
         recent_form = racer_analysis.get("recent_form", {})
-        recent_win_rate = recent_form.get("recent_win_rate", 0)
-        if recent_win_rate >= 25:
+        recent_win_rate = recent_form.get("recent_win_rate", 0) or 0
+        if recent_win_rate >= 0.25:
             context["recent_form"] = "好調"
-        elif recent_win_rate <= 10:
+        elif recent_win_rate <= 0.10:
             context["recent_form"] = "不調"
         else:
             context["recent_form"] = "普通"
@@ -510,12 +511,13 @@ class CompoundBuffSystem:
                 context["kimarite_skill"] = best_kimarite
 
         # 当地経験
+        # venue_win_rate は racer_analyzer から fraction(0-1) で渡される（0.20 = 20%）
         venue_stats = racer_analysis.get("venue_stats", {})
         venue_races = venue_stats.get("total_races", 0)
         venue_win_rate = venue_stats.get("win_rate", 0)
-        if venue_races >= 20 and venue_win_rate >= 20:
+        if venue_races >= 20 and venue_win_rate >= 0.20:
             context["venue_exp"] = "得意"
-        elif venue_races >= 10 and venue_win_rate <= 5:
+        elif venue_races >= 10 and venue_win_rate <= 0.05:
             context["venue_exp"] = "苦手"
         else:
             context["venue_exp"] = "普通"
