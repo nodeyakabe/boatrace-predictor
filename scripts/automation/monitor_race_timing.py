@@ -44,11 +44,16 @@ class RaceMonitor:
         self.notified_races = set()  # 通知済みレースID
         self.fetched_direct_info = set()  # 直前情報取得済みレースID
         self.fetched_odds_races = set()   # オッズ再取得済みレースID
+        self.fetched_direct_info_universal = set()  # Gap1対応: 全レース直前情報チェック済み
         self._bet_target_cache = {}       # {race_id: race_dict} - 購入判定キャッシュ
         self._cache_date = None           # キャッシュの日付
 
         # BetTargetEvaluatorを初期化（標準設定を使用 - generate_daily_predictions.py と同じ設定）
         self.bet_evaluator = create_standard_evaluator(db_path=db_path)
+
+        # PredictionUpdaterを起動時に1回だけ初期化（モデルの繰り返しロードを防ぐ）
+        from src.analysis.prediction_updater import PredictionUpdater
+        self.prediction_updater = PredictionUpdater(db_path=db_path)
 
     def get_connection(self) -> sqlite3.Connection:
         """DB接続を取得"""
@@ -70,6 +75,7 @@ class RaceMonitor:
         # 日付が変わったらキャッシュをリセット
         if self._cache_date != today:
             self._bet_target_cache = {}
+            self.fetched_direct_info_universal = set()
             self._cache_date = today
 
         conn = self.get_connection()
@@ -149,6 +155,40 @@ class RaceMonitor:
         finally:
             conn.close()
 
+    def _get_all_today_races_simple(self) -> List[Dict]:
+        """
+        本日の全レースを最小限の情報で取得（Gap1対応）
+
+        Returns:
+            List[Dict]: race_id / race_date / venue_code / race_number / race_time
+        """
+        today = datetime.now().strftime('%Y-%m-%d')
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT r.id AS race_id, r.race_date, r.venue_code, r.race_number, r.race_time
+                FROM races r
+                WHERE r.race_date = ?
+                ORDER BY r.race_time
+            """, (today,))
+            return [
+                {
+                    'race_id': row['race_id'],
+                    'race_date': row['race_date'],
+                    'venue_code': (
+                        f"{row['venue_code']:02d}"
+                        if isinstance(row['venue_code'], int)
+                        else str(row['venue_code']).zfill(2)
+                    ),
+                    'race_number': row['race_number'],
+                    'race_time': row['race_time'],
+                }
+                for row in cursor.fetchall()
+            ]
+        finally:
+            conn.close()
+
     def _get_race_data(self, cursor, race_id: int) -> Optional[Dict]:
         """レースデータを取得"""
         cursor.execute("""
@@ -157,7 +197,9 @@ class RaceMonitor:
                 r.venue_code,
                 r.race_number,
                 r.race_date,
-                r.race_time
+                r.race_time,
+                r.race_grade,
+                r.is_rookie
             FROM races r
             WHERE r.id = ?
         """, (race_id,))
@@ -198,6 +240,8 @@ class RaceMonitor:
             'race_number': race_row['race_number'],
             'race_date': race_row['race_date'],
             'race_time': race_row['race_time'],
+            'race_grade': race_row['race_grade'],
+            'is_rookie': race_row['is_rookie'] or 0,
             'wind_speed': wind_speed,
             'entries': entries
         }
@@ -357,6 +401,18 @@ class RaceMonitor:
         except Exception as e:
             print(f"[ERROR] 昇格通知送信失敗: {race_id} - {e}")
 
+    def _notify_demotion(self, race: Dict, new_status, label: str) -> None:
+        """暫定購入対象が降格した際のDiscord通知"""
+        race_id = race['race_id']
+        try:
+            venue_name = self.get_venue_name(race['venue_code'])
+            status_str = "候補" if new_status == BetStatus.CANDIDATE else "対象外"
+            msg = f"🔕 **{label}** {venue_name} {race['race_number']}R {race['deadline']}  before予測で{status_str}に変更"
+            send_discord_notification(msg)
+            print(f"  降格通知送信: {race_id}")
+        except Exception as e:
+            print(f"[ERROR] 降格通知送信失敗: {race_id} - {e}")
+
     def _fetch_beforeinfo_for_race(self, race: Dict) -> bool:
         """
         特定レースの直前情報を取得してDBに保存
@@ -447,6 +503,113 @@ class RaceMonitor:
 
         return False
 
+    def _check_universal_beforeinfo(self, race_simple: Dict) -> bool:
+        """
+        Gap1対応: watchlistに入っていないレースにも直前情報取得・before予測生成・再評価を行う。
+        advance予測では対象外だったレースが before予測後にTARGET_CONFIRMEDになる場合に通知する。
+
+        Args:
+            race_simple: {'race_id', 'race_date', 'venue_code', 'race_number', 'race_time'}
+
+        Returns:
+            bool: 直前情報取得を試みたらTrue
+        """
+        race_id = race_simple['race_id']
+
+        # watchlist経由で既に処理済みならスキップ
+        if race_id in self.fetched_direct_info:
+            return False
+        # universal経由で既に処理済みならスキップ
+        if race_id in self.fetched_direct_info_universal:
+            return False
+
+        # 締切15-25分前のみ対象
+        deadline = self.parse_deadline(race_simple['race_date'], race_simple['race_time'])
+        now = datetime.now()
+        time_until = (deadline - now).total_seconds() / 60
+        if not (15 <= time_until <= 25):
+            return False
+
+        print(f"[GAP1] 直前情報取得: race_id={race_id} 会場{race_simple['venue_code']} {race_simple['race_number']}R (締切まで{time_until:.0f}分)")
+
+        # beforeinfo取得（失敗時はフラグを立てず次サイクルで再試行）
+        race_for_scraper = {
+            'race_id': race_id,
+            'venue_code': race_simple['venue_code'],
+            'date': race_simple['race_date'],
+            'race_number': race_simple['race_number'],
+        }
+        if not self._fetch_beforeinfo_for_race(race_for_scraper):
+            print(f"  [GAP1] beforeinfo未公開または取得失敗: race_id={race_id}")
+            return True
+        # 取得成功後にチェック済みフラグを立てる（失敗時は次サイクルで再試行可能）
+        self.fetched_direct_info_universal.add(race_id)
+
+        # batch_loader の日次データが未ロードなら初期化（初回呼び出し時のみ）
+        today = datetime.now().strftime('%Y-%m-%d')
+        try:
+            bl = self.prediction_updater.predictor.batch_loader
+            if bl and getattr(bl, '_loaded_date', None) != today:
+                bl.load_daily_data(today)
+                bl._loaded_date = today
+        except Exception:
+            pass
+
+        # before予測生成
+        try:
+            self.prediction_updater.update_to_before_prediction(race_id, force=False)
+        except Exception as e:
+            print(f"  [GAP1][WARNING] before予測生成エラー: race_id={race_id} - {e}")
+            return True
+
+        # before予測でBetTargetEvaluator再評価
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            race_data = self._get_race_data(cursor, race_id)
+            if not race_data:
+                return True
+            predictions = self._get_predictions_with_beforeinfo(cursor, race_id)
+            if not predictions:
+                return True
+            odds_data = self._get_odds_data(cursor, race_id, predictions)
+            advance_top3 = self._get_advance_top3(cursor, race_id)
+
+            bet_target = self.bet_evaluator.evaluate_race(
+                race_data=race_data,
+                predictions=predictions,
+                odds_data=odds_data,
+                has_beforeinfo=True,
+                advance_top3=advance_top3
+            )
+
+            print(f"  [GAP1] 評価結果: race_id={race_id} → {bet_target.status.value}")
+
+            if bet_target.status in (BetStatus.TARGET_CONFIRMED, BetStatus.CANDIDATE):
+                # Gap1捕捉: watchlistに追加（TARGET_CONFIRMEDは即通知、CANDIDATEは以降のオッズ更新で昇格可能）
+                race_info = {
+                    'race_id': race_id,
+                    'date': race_simple['race_date'],
+                    'venue_code': race_simple['venue_code'],
+                    'race_number': race_simple['race_number'],
+                    'deadline': race_simple['race_time'],
+                    'bet_target': bet_target,
+                    'race_data': race_data,
+                    'predictions': predictions,
+                }
+                self._bet_target_cache[race_id] = race_info
+                self.fetched_direct_info.add(race_id)
+                if bet_target.status == BetStatus.TARGET_CONFIRMED:
+                    print(f"  [GAP1] 購入対象昇格: race_id={race_id}")
+                    self._notify_promotion(race_info, bet_target, "Gap1-before昇格")
+                else:
+                    print(f"  [GAP1] 候補昇格（オッズ更新待ち）: race_id={race_id}")
+
+        finally:
+            conn.close()
+
+        return True
+
     def _reevaluate_after_beforeinfo(self, race: Dict) -> None:
         """
         直前情報取得後に購入判定を再評価
@@ -457,6 +620,14 @@ class RaceMonitor:
         race_id = race['race_id']
 
         try:
+            # before予測を自動生成（直前情報取得後・未生成の場合のみ）
+            try:
+                updated = self.prediction_updater.update_to_before_prediction(race_id, force=False)
+                if updated:
+                    print(f"  [INFO] before予測生成完了: {race_id}")
+            except Exception as e:
+                print(f"  [WARNING] before予測生成エラー: {race_id} - {e}")
+
             # 直前予測を取得
             conn = self.get_connection()
             try:
@@ -498,6 +669,10 @@ class RaceMonitor:
                     if old_status == BetStatus.CANDIDATE and new_status == BetStatus.TARGET_CONFIRMED:
                         print(f"  候補レースが購入対象に昇格: {race_id}")
                         self._notify_promotion(race, bet_target, "候補→対象確定(直前情報)")
+                    elif old_status == BetStatus.TARGET_ADVANCE and new_status in [BetStatus.EXCLUDED, BetStatus.CANDIDATE]:
+                        demotion_label = "暫定→候補" if new_status == BetStatus.CANDIDATE else "暫定→対象外"
+                        print(f"  暫定購入対象が降格: {race_id} ({demotion_label})")
+                        self._notify_demotion(race, new_status, demotion_label)
 
                 # ステータス変化に関わらず常にキャッシュ更新（has_beforeinfo=True の評価結果を反映）
                 race['bet_target'] = bet_target
@@ -593,9 +768,9 @@ class RaceMonitor:
         """
         オッズ再取得が必要かチェックし、必要なら取得して再評価
 
-        締切30-50分前に、CANDIDATE または TARGET_ADVANCE のレースのオッズを再取得する。
-        TARGET_ADVANCE は Eブロック（08:00）で一度収集済みだが、三連単オッズは締切直前まで
-        大きく変動するため、直前に再取得して最新値に更新する。
+        締切13-25分前に、CANDIDATE または TARGET_ADVANCE のレースのオッズを再取得する。
+        直前情報取得（15-25分前）と同タイミングのため、ループ内でオッズ再取得が先に実行され、
+        続くbefore予測の再評価で最新オッズが使われる。
 
         Args:
             race: レース情報
@@ -619,8 +794,8 @@ class RaceMonitor:
         now = datetime.now()
         time_until_deadline = (deadline - now).total_seconds() / 60  # 分
 
-        # 締切30-50分前にオッズ再取得（直前情報取得の前）
-        if 28 <= time_until_deadline <= 55:
+        # 締切13-25分前にオッズ再取得（直前情報取得と同タイミング・ループ内でオッズが先に処理されるため最新値でbefore再評価される）
+        if 13 <= time_until_deadline <= 25:
             print(f"オッズ再取得: {race_id} (締切まであと{time_until_deadline:.0f}分)")
 
             try:
@@ -683,11 +858,15 @@ class RaceMonitor:
                 if not race_data:
                     return
 
-                predictions = race.get('predictions') or self._get_predictions(cursor, race_id)
+                has_beforeinfo = race_id in self.fetched_direct_info
+
+                # before予測取得済みならbefore/advance両方を含む predictions を使う（advance/beforeフィルタが正しく機能するため）
+                if has_beforeinfo:
+                    predictions = self._get_predictions_with_beforeinfo(cursor, race_id)
+                else:
+                    predictions = race.get('predictions') or self._get_predictions(cursor, race_id)
                 if not predictions:
                     return
-
-                has_beforeinfo = race_id in self.fetched_direct_info
 
                 # advance予測の1-2-3位を取得（advance/beforeフィルタ用・before時のみ意味あり）
                 advance_top3 = self._get_advance_top3(cursor, race_id) if has_beforeinfo else None
@@ -836,13 +1015,13 @@ class RaceMonitor:
             # 各レースをチェック
             for race in races:
                 try:
-                    # オッズ再取得チェック（締切30-50分前、CANDIDATE対象）
-                    if self._check_and_fetch_odds(race):
-                        stats['odds_fetched'] += 1
-
-                    # 直前情報取得チェック（締切15-25分前、取得後に再評価も実行）
+                    # 直前情報取得チェック（締切15-25分前、取得後にbefore予測生成+再評価）
                     if self.check_and_fetch_direct_info(race):
                         stats['direct_info_fetched'] += 1
+
+                    # オッズ再取得チェック（締切13-25分前、直前情報取得後に実行してbefore予測+最新オッズで再評価）
+                    if self._check_and_fetch_odds(race):
+                        stats['odds_fetched'] += 1
 
                     # 通知チェック（締切8-12分前、再評価後のステータスで判定）
                     if self.check_and_notify(race):
@@ -851,6 +1030,18 @@ class RaceMonitor:
                 except Exception as e:
                     print(f"[ERROR] レース処理エラー: {race['race_id']} - {e}")
                     stats['errors'] += 1
+
+            # Gap1対応: watchlist外の全レースの直前情報チェック
+            # advance予測では対象外でも、before予測で購入対象になるレースを捕捉する
+            all_today_races = self._get_all_today_races_simple()
+            for race_simple in all_today_races:
+                if race_simple['race_id'] not in self.fetched_direct_info:
+                    try:
+                        if self._check_universal_beforeinfo(race_simple):
+                            stats['direct_info_fetched'] += 1
+                    except Exception as e:
+                        print(f"[ERROR] Gap1チェックエラー: race_id={race_simple['race_id']} - {e}")
+                        stats['errors'] += 1
 
         except Exception as e:
             print(f"[ERROR] 監視サイクルエラー: {e}")

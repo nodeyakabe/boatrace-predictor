@@ -15,7 +15,6 @@ from typing import Dict, List, Tuple
 
 from config.settings import DATABASE_PATH, VENUES
 from src.betting.bet_target_evaluator import BetTargetEvaluator, BetStatus
-from src.betting.multi_bet_generator import MultiBetPattern
 
 
 def get_venue_name(venue_code: str) -> str:
@@ -57,13 +56,8 @@ def analyze_bet_performance(
         }
     """
 
-    evaluator = BetTargetEvaluator(
-        use_multi_bet=True,
-        multi_bet_pattern=MultiBetPattern.PATTERN_H,
-        enable_venue_wind_filter=True,
-        enable_venue_course_adjustment=True,
-        db_path=DATABASE_PATH
-    )
+    from src.betting.evaluator_helpers import create_standard_evaluator
+    evaluator = create_standard_evaluator(db_path=DATABASE_PATH)
 
     conn = sqlite3.connect(DATABASE_PATH)
     conn.row_factory = sqlite3.Row
@@ -103,24 +97,28 @@ def analyze_bet_performance(
         if not race_data:
             continue
 
-        # 予測データを取得
+        # 予測データを取得（generate_daily_predictions.pyと同じ形式）
         predictions = _get_predictions(cursor, race_id, prediction_type)
         if not predictions:
             continue
 
-        # オッズデータを取得
-        odds_data = _get_odds_data(cursor, race_id, predictions)
+        # オッズデータを取得（全組み合わせ）
+        odds_data = _get_odds_data_all(cursor, race_id)
 
         # 直前情報の有無
-        has_beforeinfo = _check_beforeinfo(cursor, race_id)
+        has_beforeinfo = prediction_type == 'before'
+
+        # advance予測のtop3を取得（advance/beforeフィルタ用・before時のみ意味あり）
+        advance_top3 = _get_advance_top3(cursor, race_id) if has_beforeinfo else None
 
         # BetTargetEvaluatorで判定
         try:
             bet_target = evaluator.evaluate_race(
                 race_data=race_data,
                 predictions=predictions,
-                odds_data=odds_data,
-                has_beforeinfo=has_beforeinfo
+                odds_data=odds_data if odds_data else None,
+                has_beforeinfo=has_beforeinfo,
+                advance_top3=advance_top3,
             )
 
             # 結果を取得
@@ -235,7 +233,7 @@ def _get_race_data(cursor, race_id: int) -> Dict:
 
 
 def _get_predictions(cursor, race_id: int, prediction_type: str) -> Dict:
-    """予測データを取得（BetTargetEvaluator形式）"""
+    """予測データを取得（generate_daily_predictions.pyと同じ形式）"""
     cursor.execute("""
         SELECT pit_number, rank_prediction, confidence, total_score
         FROM race_predictions
@@ -247,51 +245,53 @@ def _get_predictions(cursor, race_id: int, prediction_type: str) -> Dict:
     if len(rows) < 3:
         return None
 
-    # BetTargetEvaluatorが期待する形式に変換
-    # confidence: 信頼度ランク (A+, A, B, C, D)
-    # old_pred/new_pred: 予測順位の辞書 {pit_number: rank}
+    all_pred = [row['pit_number'] for row in rows]  # 全件（パターンH用に5位以上が必要）
 
-    # 信頼度を取得（1位予想の信頼度を使用）
-    confidence = rows[0]['confidence'] if rows[0]['confidence'] else 'D'
-
-    # 予測順位の辞書を作成
-    pred_dict = {}
-    for row in rows:
-        pred_dict[row['pit_number']] = row['rank_prediction']
+    # 1着予測選手の登録番号を取得（逃げ率/バイアスフィルター用）
+    first_racer_number = None
+    if all_pred:
+        cursor.execute(
+            "SELECT racer_number FROM entries WHERE race_id = ? AND pit_number = ?",
+            (race_id, all_pred[0])
+        )
+        row = cursor.fetchone()
+        if row:
+            first_racer_number = row['racer_number']
 
     return {
-        'confidence': confidence,
-        'old_pred': pred_dict,  # advance予測として使用
-        'new_pred': pred_dict if prediction_type == 'before' else None  # before予測
+        'confidence': rows[0]['confidence'] if rows[0]['confidence'] else 'D',
+        'total_score': rows[0]['total_score'] if rows[0]['total_score'] else None,  # スコアフィルター用
+        'old_prediction': all_pred,  # 全6位まで（p143/p142等の4位以上参照に必要）
+        'new_prediction': all_pred,
+        'first_racer_number': first_racer_number,  # 逃げ率/バイアスフィルター用
     }
 
 
-def _get_odds_data(cursor, race_id: int, predictions: Dict) -> Dict:
-    """オッズデータを取得"""
-    if not predictions or 'old_pred' not in predictions:
-        return {}
+def _get_odds_data_all(cursor, race_id: int) -> Dict:
+    """オッズデータを取得（全組み合わせ - パターンH用）"""
+    cursor.execute(
+        "SELECT combination, odds FROM trifecta_odds WHERE race_id = ?",
+        (race_id,)
+    )
+    result = {row['combination']: row['odds'] for row in cursor.fetchall() if row['odds']}
+    return result if result else None
 
-    # 予測順位から1-2-3位の枠番を取得
-    pred_dict = predictions['old_pred']
-    sorted_pits = sorted(pred_dict.items(), key=lambda x: x[1])
 
-    if len(sorted_pits) < 3:
-        return {}
-
-    pred_1 = sorted_pits[0][0]  # 1位予想
-    pred_2 = sorted_pits[1][0]  # 2位予想
-    pred_3 = sorted_pits[2][0]  # 3位予想
-    combination = f"{pred_1}-{pred_2}-{pred_3}"
-
+def _get_advance_top3(cursor, race_id: int):
+    """advance予測の1-2-3位ピット番号を取得（advance/beforeフィルタ用）"""
     cursor.execute("""
-        SELECT odds FROM trifecta_odds
-        WHERE race_id = ? AND combination = ?
-    """, (race_id, combination))
-
-    row = cursor.fetchone()
-    if row:
-        return {combination: row['odds']}
-    return {}
+        SELECT pit_number, rank_prediction
+        FROM race_predictions
+        WHERE race_id = ? AND prediction_type = 'advance' AND rank_prediction IN (1, 2, 3)
+        ORDER BY rank_prediction
+    """, (race_id,))
+    rows = cursor.fetchall()
+    if len(rows) < 3:
+        return None
+    rank_to_pit = {row['rank_prediction']: row['pit_number'] for row in rows}
+    if 1 in rank_to_pit and 2 in rank_to_pit and 3 in rank_to_pit:
+        return [rank_to_pit[1], rank_to_pit[2], rank_to_pit[3]]
+    return None
 
 
 def _check_beforeinfo(cursor, race_id: int) -> bool:

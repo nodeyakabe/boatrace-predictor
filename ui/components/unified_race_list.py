@@ -171,7 +171,8 @@ def _render_bet_targets():
                 r.race_date,
                 rp.confidence,
                 rp.prediction_type,
-                GROUP_CONCAT(rp.pit_number || ':' || rp.rank_prediction, '|') as predictions_data
+                GROUP_CONCAT(rp.pit_number || ':' || rp.rank_prediction, '|') as predictions_data,
+                MAX(rp.total_score) as total_score
             FROM races r
             JOIN race_predictions rp ON r.id = rp.race_id
             WHERE r.race_date = ? AND rp.rank_prediction <= 6
@@ -187,19 +188,14 @@ def _render_bet_targets():
             conn.close()
             return
 
-        # 評価器を初期化（Discord通知と同じ設定）
-        evaluator = BetTargetEvaluator(
-            use_multi_bet=True,
-            multi_bet_pattern=MultiBetPattern.PATTERN_H,
-            enable_venue_wind_filter=True,
-            enable_venue_course_adjustment=True,
-            db_path=DATABASE_PATH
-        )
+        # 評価器を初期化（create_standard_evaluatorで一貫性確保）
+        from src.betting.evaluator_helpers import create_standard_evaluator
+        evaluator = create_standard_evaluator(db_path=DATABASE_PATH)
 
         # レースごとにデータをグループ化
         race_data_by_id = {}
         for row in race_rows:
-            race_id, venue_code, race_number, race_time, race_date, confidence, prediction_type, predictions_data = row
+            race_id, venue_code, race_number, race_time, race_date, confidence, prediction_type, predictions_data, total_score = row
 
             if race_id not in race_data_by_id:
                 race_data_by_id[race_id] = {
@@ -228,7 +224,8 @@ def _render_bet_targets():
             pred_data = {
                 'predictions': predictions,
                 'confidence': confidence,
-                'top3': predictions[:3] if len(predictions) >= 3 else predictions
+                'top3': predictions[:3] if len(predictions) >= 3 else predictions,
+                'total_score': total_score
             }
 
             if prediction_type == 'before':
@@ -240,17 +237,25 @@ def _render_bet_targets():
         race_ids = list(race_data_by_id.keys())
         placeholders = ','.join('?' * len(race_ids))
         cursor.execute(f"""
-            SELECT race_id, pit_number, racer_rank
+            SELECT race_id, pit_number, racer_number, racer_rank, motor_second_rate, second_rate
             FROM entries
             WHERE race_id IN ({placeholders})
         """, race_ids)
         entries_by_race = {}
         c1_ranks = {}
+        racer_number_by_race_pit = {}  # (race_id, pit_number) -> racer_number
         for row in cursor.fetchall():
-            race_id, pit_number, racer_rank = row
+            race_id, pit_number, racer_number, racer_rank, motor_second_rate, second_rate = row
             if race_id not in entries_by_race:
                 entries_by_race[race_id] = []
-            entries_by_race[race_id].append({'pit_number': pit_number, 'racer_rank': racer_rank})
+            entries_by_race[race_id].append({
+                'pit_number': pit_number,
+                'racer_number': racer_number,
+                'racer_rank': racer_rank,
+                'motor_second_rate': motor_second_rate,
+                'second_rate': second_rate,
+            })
+            racer_number_by_race_pit[(race_id, pit_number)] = racer_number
             if pit_number == 1:
                 c1_ranks[race_id] = racer_rank
 
@@ -265,6 +270,20 @@ def _render_bet_targets():
             if race_id not in odds_by_race:
                 odds_by_race[race_id] = {}
             odds_by_race[race_id][combination] = odds
+
+        # 気象情報を取得（風速フィルター・波高フィルター用）
+        cursor.execute(f"""
+            SELECT race_id, wind_speed, wave_height
+            FROM race_conditions
+            WHERE race_id IN ({placeholders})
+        """, race_ids)
+        weather_by_race = {}
+        for row in cursor.fetchall():
+            race_id_w, wind_speed, wave_height = row
+            weather_by_race[race_id_w] = {
+                'wind_speed': wind_speed if wind_speed else 0.0,
+                'wave_height': wave_height,
+            }
 
         # advance予測（initial）のtop3を一括取得（advance/before一致フィルタ用）
         advance_top3_by_race = {}
@@ -318,20 +337,30 @@ def _render_bet_targets():
             advance_top3 = advance_top3_by_race.get(race_id) if has_beforeinfo else None
 
             # race_dataを構築（evaluate_race用）
+            weather_info = weather_by_race.get(race_id, {})
             race_data_for_eval = {
                 'venue_code': data['venue_code'],
                 'entries': entries_by_race.get(race_id, []),
                 'race_date': data['race_date'],
                 'race_number': data['race_number'],
                 'id': race_id,
+                'wind_speed': weather_info.get('wind_speed', 0.0),
+                'wave_height': weather_info.get('wave_height'),
             }
 
-            # predictions辞書を構築
+            # 1着予測選手の登録番号を取得（逃げ率/バイアスフィルター用）
+            first_racer_number = None
+            if full_prediction:
+                first_racer_number = racer_number_by_race_pit.get((race_id, full_prediction[0]))
+
+            # predictions辞書を構築（generate_daily_predictions.pyと同じ形式）
             predictions_for_eval = {
                 'confidence': confidence,
-                'old_prediction': [top3[0]['pit_number'], top3[1]['pit_number'], top3[2]['pit_number']],
-                'new_prediction': [top3[0]['pit_number'], top3[1]['pit_number'], top3[2]['pit_number']],
+                'old_prediction': full_prediction,  # 全6位まで（p143/p142等の4位以上参照に必要）
+                'new_prediction': full_prediction,
                 'full_prediction': full_prediction,
+                'total_score': pred.get('total_score'),  # スコアフィルター用
+                'first_racer_number': first_racer_number,  # 逃げ率/バイアスフィルター用
             }
 
             # 評価実行（evaluate_raceで複数点買いも生成）
@@ -461,11 +490,11 @@ def _render_bet_targets():
                         <div style="font-size: 2.5em; font-weight: bold;">→</div>
                     </div>
                     <div>
-                        <div style="font-size: 0.9em; opacity: 0.9;">期待収益</div>
+                        <div style="font-size: 0.9em; opacity: 0.9;">期待収益<span style="font-size: 0.75em; opacity: 0.7;">（BT平均）</span></div>
                         <div style="font-size: 2em; font-weight: bold; color: #81c784;">¥{expected_return:,.0f}</div>
                     </div>
                     <div style="text-align: right;">
-                        <div style="font-size: 0.9em; opacity: 0.9;">平均期待回収率</div>
+                        <div style="font-size: 0.9em; opacity: 0.9;">平均期待回収率<span style="font-size: 0.75em; opacity: 0.7;">（BT平均）</span></div>
                         <div style="font-size: 1.8em; font-weight: bold; color: #ffeb3b;">{avg_roi:.1f}%</div>
                     </div>
                 </div>

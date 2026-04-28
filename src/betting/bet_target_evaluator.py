@@ -13,7 +13,7 @@ from .multi_bet_generator import MultiBetGenerator, MultiBetPattern, MultiBetRes
 from .venue_evaluator import VenueEvaluator
 from .venue_course_adjuster import VenueCourseAdjuster, AdjustmentResult
 from config.venue_wind_adjustments import should_exclude_race
-from config.bet_conditions import STANDARD_BET_CONDITIONS, GLOBAL_VENUE_MONTH_EXCLUDES, GLOBAL_MONTH_EXCLUDES
+from config.bet_conditions import STANDARD_BET_CONDITIONS, GLOBAL_VENUE_MONTH_EXCLUDES, GLOBAL_MONTH_EXCLUDES, GLOBAL_GRADE_EXCLUDES, GLOBAL_ROOKIE_EXCLUDE
 
 
 class BetStatus(Enum):
@@ -1029,6 +1029,40 @@ class BetTargetEvaluator:
         # この処理も無効化しています。
         # ============================================================
         # （無効化済み）
+
+        # ============================================================
+        # グレード除外チェック（v2.60.0追加）
+        # SG: 6年0的中・構造的予測困難。ルーキー: 2021-2025が0/127件赤字
+        # evaluate()呼び出し前にグローバルチェック（条件ループより前に判定）
+        # ============================================================
+        race_grade = race_data.get('race_grade')
+        is_rookie = race_data.get('is_rookie', 0)
+        if GLOBAL_GRADE_EXCLUDES and race_grade in GLOBAL_GRADE_EXCLUDES:
+            return BetTarget(
+                status=BetStatus.EXCLUDED,
+                confidence=confidence,
+                method='-',
+                combination='-',
+                odds=0,
+                odds_range='-',
+                c1_rank=c1_rank,
+                expected_roi=0,
+                bet_amount=0,
+                reason=f'グレード除外: {race_grade}'
+            )
+        if GLOBAL_ROOKIE_EXCLUDE and is_rookie:
+            return BetTarget(
+                status=BetStatus.EXCLUDED,
+                confidence=confidence,
+                method='-',
+                combination='-',
+                odds=0,
+                odds_range='-',
+                c1_rank=c1_rank,
+                expected_roi=0,
+                bet_amount=0,
+                reason='グレード除外: ルーキーシリーズ'
+            )
 
         # ============================================================
         # 通常の購入対象判定（B2条件に該当しない場合）

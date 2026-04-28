@@ -114,12 +114,14 @@ def main():
     all_ok = all("✅" in v for v in results.values())
     if all_ok:
         log("")
+        log("Phase 2-4 ALL_SUCCESS")  # ウォッチャーが検知する成功マーカー
         log("🎉 Phase 2-4 全完了！")
         log("次のステップ:")
         log("  Phase 5: python scripts/data_collection/fetch_2018_2019_beforeinfo.py")
     else:
         log("")
         log("⚠️  一部失敗。ログを確認して再実行してください。")
+        log("Phase 2-4 FAILED")  # 失敗時はALL_SUCCESSを出力しない
 
 
 if __name__ == '__main__':

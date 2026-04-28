@@ -72,7 +72,8 @@
 | 操作 | コマンド |
 |------|---------|
 | UI起動 | `cd ui && python -m streamlit run app.py` |
-| **標準テスト（推奨）** | `python scripts/backtest/standard_backtest_unique.py --full` |
+| **標準テスト（推奨）** | `python scripts/backtest/standard_backtest_unique.py --full` ※風速フィルター有効がデフォルト（v2.58.1〜） |
+| 標準テスト（風速フィルターなし・旧来比較用） | `python scripts/backtest/standard_backtest_unique.py --full --no-wind-filter` |
 | 標準テスト（条件分析用） | `python scripts/backtest/standard_backtest.py --full` |
 | 知見検索 | `python scripts/search_knowledge.py "キーワード"` |
 | 知見DB統計 | `python scripts/query_knowledge_db.py --stats` |

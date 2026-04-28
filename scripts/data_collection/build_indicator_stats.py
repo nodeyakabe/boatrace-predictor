@@ -73,7 +73,7 @@ def build_yearly(db_path: str, years: list = None):
     print("=" * 70)
 
     if years is None:
-        years = list(range(2018, 2026))
+        years = list(range(2018, 2027))
 
     escape_calc = EscapeRateCalculator(db_path)
     attack_calc = AttackRateCalculator(db_path)

@@ -171,20 +171,22 @@ def send_race_notification(
     return send_discord_notification(message)
 
 
-def send_daily_summary(date: str, race_count: int, target_count: int, target_races: list = None, candidate_races: list = None) -> bool:
+def send_daily_summary(date: str, race_count: int, target_count: int, target_races: list = None, advance_races: list = None, candidate_races: list = None) -> bool:
     """
     朝の予想生成完了通知
 
     Args:
         date: 日付（YYYY-MM-DD）
         race_count: 総レース数
-        target_count: 購入対象レース数
-        target_races: 購入対象レースリスト [{'venue': str, 'race_num': int, 'combination': str, 'odds': float}, ...]
-        candidate_races: 候補レースリスト [{'venue': str, 'race_num': int, 'combination': str, 'reason': str}, ...]
+        target_count: 確定購入対象レース数（before予測確定済み）
+        target_races: 確定購入対象レースリスト
+        advance_races: 暫定購入対象レースリスト（advance予測のみ・before未確定）
+        candidate_races: 候補レースリスト
 
     Returns:
         bool: 送信成功ならTrue
     """
+    adv_count = len(advance_races) if advance_races else 0
     cand_count = len(candidate_races) if candidate_races else 0
 
     # 日付を MM/DD に短縮
@@ -194,12 +196,14 @@ def send_daily_summary(date: str, race_count: int, target_count: int, target_rac
     except Exception:
         short_date = date
 
-    if target_count == 0 and cand_count == 0:
+    if target_count == 0 and adv_count == 0 and cand_count == 0:
         message = f"📋 **{short_date}** 購入対象なし"
     else:
         parts = []
         if target_count > 0:
-            parts.append(f"購入 {target_count}件")
+            parts.append(f"確定 {target_count}件")
+        if adv_count > 0:
+            parts.append(f"暫定 {adv_count}件")
         if cand_count > 0:
             parts.append(f"候補 {cand_count}件")
         message = f"📋 **{short_date} 予想完了**  {' / '.join(parts)}"
@@ -208,12 +212,17 @@ def send_daily_summary(date: str, race_count: int, target_count: int, target_rac
                 odds = race.get('odds', 0.0)
                 odds_str = f"  {odds:.1f}倍" if odds else ""
                 message += f"\n🎯 {race.get('venue')} {race.get('race_num')}R  {race.get('race_time')}  `{race.get('combination')}`{odds_str}"
+        if advance_races:
+            for race in advance_races:
+                odds = race.get('odds', 0.0)
+                odds_str = f"  {odds:.1f}倍" if odds else ""
+                message += f"\n🟡 {race.get('venue')} {race.get('race_num')}R  {race.get('race_time')}  `{race.get('combination')}`{odds_str}  (advance暫定)"
         if candidate_races:
-            cands = " / ".join(
-                f"{r.get('venue')}{r.get('race_num')}R {r.get('race_time')}"
-                for r in candidate_races
-            )
-            message += f"\n\n💤 {cands}"
+            message += "\n"
+            for r in candidate_races:
+                combo = r.get('combination', '')
+                combo_str = f"  `{combo}`" if combo else ""
+                message += f"\n💤 {r.get('venue')} {r.get('race_num')}R  {r.get('race_time')}{combo_str}"
 
     return send_discord_notification(message)
 

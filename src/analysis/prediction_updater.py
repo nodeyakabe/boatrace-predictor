@@ -427,19 +427,16 @@ class PredictionUpdater:
             直前情報が存在する場合True
         """
         try:
-            # race_detailsのbeforeinfo列をチェック
+            # exhibition_time が1艇以上存在すれば直前情報取得済みと判定
+            # （scraper.save_to_db() は race_details の exhibition_time 等カラムに個別保存するため、
+            #   'beforeinfo' カラムは存在しない）
             self.cursor.execute("""
-                SELECT beforeinfo
-                FROM race_details
-                WHERE race_id = ?
+                SELECT COUNT(*) FROM race_details
+                WHERE race_id = ? AND exhibition_time IS NOT NULL
             """, (race_id,))
 
             row = self.cursor.fetchone()
-            if row and row[0]:
-                # beforeinfoが存在する（NULLでも空文字でもない）
-                return True
-
-            return False
+            return bool(row and row[0] >= 1)
 
         except Exception as e:
             logger.error(f"直前情報チェックエラー: {e}", exc_info=True)

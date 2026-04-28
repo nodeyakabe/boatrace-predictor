@@ -21,7 +21,6 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from scripts.automation.fetch_today_races import fetch_todays_races
-from scripts.automation.notify import send_discord_notification, send_error_notification
 
 
 class BlockCRunner:
@@ -184,27 +183,7 @@ class BlockCRunner:
         print(f"  総所要時間: {int(total_elapsed // 60)}分{int(total_elapsed % 60)}秒")
         print("=" * 80 + "\n")
 
-        # Discord通知
-        self._send_notification(success_count, total_count, total_elapsed, is_rest_day, data_fetch_failed)
-
         return len(self.errors) == 0
-
-    def _send_notification(self, success_count: int, total_count: int, elapsed: float, is_rest_day: bool, data_fetch_failed: bool = False):
-        """Discord通知送信"""
-        today = datetime.now().strftime('%m/%d')
-
-        if data_fetch_failed:
-            message = f"⚠️ **C完了** {today}  データ取得失敗（Dで再収集）"
-        elif is_rest_day:
-            message = f"ℹ️ **C完了** {today}  休止日"
-        else:
-            status_icon = "✅" if success_count == total_count else "⚠️"
-            elapsed_str = f"{int(elapsed // 60)}分{int(elapsed % 60)}秒"
-            message = f"{status_icon} **C完了** {today}  {success_count}/{total_count}タスク  {elapsed_str}"
-            if self.errors:
-                message += "\n" + "\n".join(f"❌ {e[:80]}" for e in self.errors)
-
-        send_discord_notification(message)
 
 
 def main():

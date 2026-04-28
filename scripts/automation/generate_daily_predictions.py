@@ -27,7 +27,7 @@ def get_todays_target_and_candidates(db_path: str) -> tuple:
         db_path: データベースパス
 
     Returns:
-        tuple: (購入対象レース数, 購入対象レースリスト, 候補レースリスト)
+        tuple: (確定購入対象レース数, 確定購入対象レースリスト, 暫定購入対象レースリスト, 候補レースリスト)
     """
     import sqlite3
     from src.betting.bet_target_evaluator import BetStatus
@@ -41,6 +41,7 @@ def get_todays_target_and_candidates(db_path: str) -> tuple:
     conn.row_factory = sqlite3.Row
 
     target_races = []
+    advance_races = []
     candidate_races = []
 
     try:
@@ -110,9 +111,18 @@ def get_todays_target_and_candidates(db_path: str) -> tuple:
                     # 1点買い
                     combination_str = bet_target.combination
 
-                # 購入対象レース
-                if bet_target.status in [BetStatus.TARGET_ADVANCE, BetStatus.TARGET_CONFIRMED]:
+                # 確定購入対象（before予測で確定済み）
+                if bet_target.status == BetStatus.TARGET_CONFIRMED:
                     target_races.append({
+                        'venue': venue_name,
+                        'race_num': race_number,
+                        'race_time': race_time,
+                        'combination': combination_str,
+                        'odds': bet_target.odds if (bet_target.odds is not None and bet_target.odds != 0) else 0.0
+                    })
+                # 暫定購入対象（advance予測のみ・before予測未確定）
+                elif bet_target.status == BetStatus.TARGET_ADVANCE:
+                    advance_races.append({
                         'venue': venue_name,
                         'race_num': race_number,
                         'race_time': race_time,
@@ -160,7 +170,7 @@ def get_todays_target_and_candidates(db_path: str) -> tuple:
             except Exception:
                 continue
 
-        return len(target_races), target_races, candidate_races
+        return len(target_races), target_races, advance_races, candidate_races
     finally:
         conn.close()
 
@@ -312,9 +322,10 @@ def generate_todays_predictions() -> bool:
             print(f"  オッズ取得: {result['odds_fetched']}")
 
             # 購入対象レースと候補レースを取得
-            target_count, target_races, candidate_races = get_todays_target_and_candidates(str(db_path))
+            target_count, target_races, advance_races, candidate_races = get_todays_target_and_candidates(str(db_path))
 
-            print(f"  購入対象レース数: {target_count}件")
+            print(f"  確定購入対象レース数: {target_count}件")
+            print(f"  暫定購入対象レース数: {len(advance_races)}件")
             print(f"  候補レース数: {len(candidate_races)}件")
 
             # 完了通知送信
@@ -323,6 +334,7 @@ def generate_todays_predictions() -> bool:
                 race_count=result['races_fetched'],
                 target_count=target_count,
                 target_races=target_races,
+                advance_races=advance_races,
                 candidate_races=candidate_races
             )
 

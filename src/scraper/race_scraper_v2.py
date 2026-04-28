@@ -493,38 +493,41 @@ class RaceScraperV2(BaseScraperV2):
         """
         try:
             # Step 1: CSSクラスベースの検出（最優先・確実）
-            # 公式サイトは is-SG / is-G1 / is-G2 / is-G3 クラスを使用
+            # 個別レースページは is-gradeColor* クラスを使用（monthlyschedule と同じ体系）
+            for css_class, grade in [
+                ('.is-gradeColorSG', 'SG'),
+                ('.is-gradeColorG1', 'G1'),
+                ('.is-gradeColorG2', 'G2'),
+                ('.is-gradeColorG3', 'G3'),
+                ('.is-gradeColorVenus', 'ヴィーナスシリーズ'),
+                ('.is-gradeColorRookie', 'ルーキーシリーズ'),
+                ('.is-gradeColorLady', 'オールレディース'),
+            ]:
+                if tree.css_first(css_class):
+                    return grade
+            # フォールバック: 旧CSS形式（.is-SG / .is-G1 等が使われる場合の保険）
             for css_class, grade in [
                 ('.is-SG', 'SG'), ('.is-G1', 'G1'), ('.is-G2', 'G2'), ('.is-G3', 'G3'),
             ]:
                 if tree.css_first(css_class):
                     return grade
 
-            # Step 2: テキストベースの検出（複数セレクタ）
-            # h1, h2, h3, title, .heading1_title 等を対象にテキスト全体を結合して検索
-            candidate_selectors = ['h1', 'h2', 'h3', '.heading1_title', '.titleTop', '.is-title1']
+            # Step 2: テキストベースの検出（ヘッダー要素に限定。body全体は偽陽性リスクがあるため使わない）
+            candidate_selectors = ['h1', 'h2', 'h3', '.heading1_title', '.titleTop', '.is-title1', '.heading2_titleName']
             combined_text = ''
             for sel in candidate_selectors:
                 elem = tree.css_first(sel)
                 if elem:
                     combined_text += elem.text(strip=True)
 
-            # 半角・全角両方対応（優先度順）
-            if not combined_text and tree.body:
-                # 上記で取れない場合はbody全体から短い範囲で取得
-                combined_text = tree.body.text(deep=True)[:500]
-
             grade_patterns = [
-                # SG
-                (['SG', 'ＳＧ', 'スペシャルグレード'], 'SG'),
-                # G1（全角・旧表記含む）
-                (['G1', 'Ｇ１', 'ＧⅠ', 'プレミアムＧⅠ', 'グレードワン'], 'G1'),
-                # G2
-                (['G2', 'Ｇ２', 'ＧⅡ'], 'G2'),
-                # G3
-                (['G3', 'Ｇ３', 'ＧⅢ'], 'G3'),
-                # ルーキー
+                (['スペシャルグレード', 'ＳＧ'], 'SG'),
+                (['Ｇ１', 'ＧⅠ', 'プレミアムＧⅠ', 'グレードワン'], 'G1'),
+                (['Ｇ２', 'ＧⅡ'], 'G2'),
+                (['Ｇ３', 'ＧⅢ'], 'G3'),
                 (['ルーキーシリーズ'], 'ルーキーシリーズ'),
+                (['ヴィーナスシリーズ'], 'ヴィーナスシリーズ'),
+                (['オールレディース'], 'オールレディース'),
             ]
             for patterns, grade in grade_patterns:
                 if any(p in combined_text for p in patterns):
@@ -544,8 +547,7 @@ class RaceScraperV2(BaseScraperV2):
                 elem = tree.css_first(sel)
                 if elem:
                     combined_text += elem.text(strip=True)
-            if not combined_text and tree.body:
-                combined_text = tree.body.text(deep=True)[:500]
+            # bodyフォールバックは使わない（ナビゲーション等の「女子」で誤検出するため）
             ladies_patterns = ['女子', 'レディース', 'LADIES', 'オールレディース', 'ヴィーナスシリーズ']
             return 1 if any(p in combined_text for p in ladies_patterns) else 0
         except Exception:
@@ -559,8 +561,7 @@ class RaceScraperV2(BaseScraperV2):
                 elem = tree.css_first(sel)
                 if elem:
                     combined_text += elem.text(strip=True)
-            if not combined_text and tree.body:
-                combined_text = tree.body.text(deep=True)[:500]
+            # bodyフォールバックは使わない（ナビゲーション等での誤検出防止）
             rookie_patterns = ['新人', 'ルーキー', 'フレッシュ', 'ジュニア']
             return 1 if any(p in combined_text for p in rookie_patterns) else 0
         except Exception:

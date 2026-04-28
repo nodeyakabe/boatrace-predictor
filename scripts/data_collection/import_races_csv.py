@@ -178,7 +178,7 @@ def import_races(conn, rows: list, dry_run: bool) -> dict:
         for row in batch:
             try:
                 values_list.append((
-                    row['venue_code'],
+                    str(row['venue_code']).zfill(2),  # 1桁→2桁正規化
                     fmt_date(row['race_date']),
                     safe_int(row['race_number']),
                     safe_str(row.get('race_time')),

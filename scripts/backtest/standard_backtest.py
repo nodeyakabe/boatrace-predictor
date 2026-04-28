@@ -1068,7 +1068,7 @@ def run_backtest(year: int = 2025, full_test: bool = False, rj_condition: Option
 
     if full_test:
         # 6年間全体テスト
-        years = [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]
+        years = [2020, 2021, 2022, 2023, 2024, 2025]
         results['years'] = years
         results['year_start'] = years[0]
         results['year_end'] = years[-1]

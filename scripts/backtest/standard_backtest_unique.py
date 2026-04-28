@@ -40,7 +40,8 @@ def assign_races_to_conditions(
     cursor: sqlite3.Cursor,
     conditions: List[Dict],
     start_date: str,
-    end_date: str
+    end_date: str,
+    enable_wind_filter: bool = True
 ) -> Dict[str, List[int]]:
     """
     全レースを優先度順に条件に割り当て
@@ -69,7 +70,7 @@ def assign_races_to_conditions(
     print("-" * 80)
 
     for cond in sorted_conditions:
-        race_ids = get_race_ids_for_condition(cursor, cond, start_date, end_date)
+        race_ids = get_race_ids_for_condition(cursor, cond, start_date, end_date, enable_wind_filter=enable_wind_filter)
         new_assignments = 0
         duplicate_count = 0
 
@@ -84,7 +85,7 @@ def assign_races_to_conditions(
         print(f"{cond['id']:<20} {cond.get('priority', 1):<8} {len(race_ids):<10} {new_assignments:<10} {duplicate_count:<10}")
 
     print("-" * 80)
-    total_candidates = sum(len(get_race_ids_for_condition(cursor, c, start_date, end_date)) for c in conditions)
+    total_candidates = sum(len(get_race_ids_for_condition(cursor, c, start_date, end_date, enable_wind_filter=enable_wind_filter)) for c in conditions)
     print(f"Total candidates (with duplicates): {total_candidates:,}")
     print(f"Unique races: {len(all_race_ids):,}")
     print(f"Duplicates excluded: {total_candidates - len(all_race_ids):,}")
@@ -461,14 +462,55 @@ def analyze_assigned_races(
         'investment': 0, 'payout': 0, 'roi': 0, 'profit': 0,
     }
 
-def run_unique_backtest(year: int = 2025, full_test: bool = False) -> Dict:
+def analyze_grade_breakdown(
+    cursor: sqlite3.Cursor,
+    condition_to_races: Dict[str, List[int]],
+    conditions: List[Dict]
+) -> Dict:
+    """全assigned race_idをrace_grade別に集計して返す"""
+    all_ids = [rid for ids in condition_to_races.values() for rid in ids]
+    if not all_ids:
+        return {}
+
+    # race_grade を一括取得
+    BATCH = 900
+    grade_map: Dict[int, str] = {}
+    for i in range(0, len(all_ids), BATCH):
+        batch = all_ids[i:i + BATCH]
+        ph = ','.join(['?'] * len(batch))
+        cursor.execute(f'SELECT id, race_grade FROM races WHERE id IN ({ph})', batch)
+        for row in cursor.fetchall():
+            grade_map[row[0]] = row[1] or '一般'
+
+    # grade × condition_id ごとに race_ids を振り分け
+    grade_cond_races: Dict[str, Dict[str, List[int]]] = {}
+    for cond_id, race_ids in condition_to_races.items():
+        for rid in race_ids:
+            grade = grade_map.get(rid, '一般')
+            grade_cond_races.setdefault(grade, {}).setdefault(cond_id, []).append(rid)
+
+    cond_map = {c['id']: c for c in conditions}
+    grade_totals: Dict[str, Dict] = {}
+    for grade, cond_to_ids in grade_cond_races.items():
+        total = {'bets': 0, 'hits': 0, 'investment': 0, 'payout': 0.0}
+        for cond_id, race_ids in cond_to_ids.items():
+            r = analyze_assigned_races(cursor, cond_map[cond_id], race_ids)
+            total['bets'] += r['bets']
+            total['hits'] += r['hits']
+            total['investment'] += r['investment']
+            total['payout'] += r['payout']
+        grade_totals[grade] = total
+    return grade_totals
+
+
+def run_unique_backtest(year: int = 2025, full_test: bool = False, enable_wind_filter: bool = True, grade_breakdown: bool = False) -> Dict:
     """ユニーク版バックテストを実行"""
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
 
     # 期間設定
     if full_test:
-        years = [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]
+        years = [2020, 2021, 2022, 2023, 2024, 2025]
         year_start = f"{years[0]}-01-01"
         year_end = f"{years[-1] + 1}-01-01"
     else:
@@ -480,14 +522,15 @@ def run_unique_backtest(year: int = 2025, full_test: bool = False) -> Dict:
         cursor,
         STANDARD_BET_CONDITIONS,
         year_start,
-        year_end
+        year_end,
+        enable_wind_filter=enable_wind_filter
     )
 
     # STEP 2: 各条件の成績を再集計
     results = {
         'test_type': 'unique',
         'date': datetime.now().isoformat(),
-        'param_desc': f"standard_backtest_unique {'full(2018-2025)' if full_test else str(year)}",
+        'param_desc': f"standard_backtest_unique {'full(2020-2025)' if full_test else str(year)}",
         'conditions': [],
         'total': {},
     }
@@ -531,6 +574,36 @@ def run_unique_backtest(year: int = 2025, full_test: bool = False) -> Dict:
           f"{results['total']['hit_rate']:>6.1f}% {results['total']['roi']:>7.1f}% {results['total']['profit']:>+14,.0f}")
     print()
 
+    # STEP 4: race_grade別集計（--grade-breakdown 時のみ）
+    if grade_breakdown:
+        print("\n[Grade Breakdown (Unique Races)]")
+        print("-" * 72)
+        print(f"{'Grade':<20} {'Bets':>6} {'Hits':>5} {'Hit%':>7} {'ROI':>8} {'Profit':>14}")
+        print("-" * 72)
+        grade_totals = analyze_grade_breakdown(cursor, condition_to_races, STANDARD_BET_CONDITIONS)
+        ORDER = ['一般', 'G1', 'G2', 'G3', 'SG', 'オールレディース', 'ヴィーナスシリーズ', 'ルーキーシリーズ']
+        all_grades = ORDER + [g for g in sorted(grade_totals) if g not in ORDER]
+        gb_total = {'bets': 0, 'hits': 0, 'investment': 0, 'payout': 0.0}
+        for grade in all_grades:
+            if grade not in grade_totals:
+                continue
+            t = grade_totals[grade]
+            if t['bets'] == 0:
+                continue
+            hit_rate = 100.0 * t['hits'] / t['bets']
+            roi = 100.0 * t['payout'] / t['investment'] if t['investment'] > 0 else 0.0
+            profit = t['payout'] - t['investment']
+            print(f"{grade:<20} {t['bets']:>6} {t['hits']:>5} {hit_rate:>6.1f}% {roi:>7.1f}% {profit:>+14,.0f}")
+            for k in gb_total:
+                gb_total[k] += t[k]
+        print("-" * 72)
+        gb_hit = 100.0 * gb_total['hits'] / gb_total['bets'] if gb_total['bets'] > 0 else 0
+        gb_roi = 100.0 * gb_total['payout'] / gb_total['investment'] if gb_total['investment'] > 0 else 0
+        gb_profit = gb_total['payout'] - gb_total['investment']
+        print(f"{'Total':<20} {gb_total['bets']:>6} {gb_total['hits']:>5} {gb_hit:>6.1f}% {gb_roi:>7.1f}% {gb_profit:>+14,.0f}")
+        print()
+        results['grade_breakdown'] = grade_totals
+
     conn.close()
     return results
 
@@ -539,14 +612,21 @@ def main():
     parser.add_argument('--year', type=int, default=2025, help='Target year (default: 2025)')
     parser.add_argument('--full', action='store_true', help='Run 6-year full test')
     parser.add_argument('--save-json', type=str, help='Save results to JSON (for Tier 3 comparison)')
+    parser.add_argument('--no-wind-filter', action='store_true', help='風速フィルター無効化（デフォルト: 有効）')
+    parser.add_argument('--grade-breakdown', action='store_true', help='race_grade別パフォーマンスを追加表示')
     args = parser.parse_args()
+
+    enable_wind_filter = not args.no_wind_filter
 
     print("=" * 90)
     print("Unique Standard Backtest (Production Simulation)")
+    print(f"  [風速フィルター: {'無効' if args.no_wind_filter else '有効（デフォルト）'}]")
+    if args.grade_breakdown:
+        print("  [race_grade別集計: 有効]")
     print("=" * 90)
     print()
 
-    results = run_unique_backtest(args.year, args.full)
+    results = run_unique_backtest(args.year, args.full, enable_wind_filter=enable_wind_filter, grade_breakdown=args.grade_breakdown)
 
     print("\n[Overall Summary]")
     print("-" * 60)

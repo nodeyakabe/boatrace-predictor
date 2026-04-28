@@ -162,7 +162,7 @@ def get_tier2_unique_bet_race_ids(start_date: str, end_date: str) -> Set[int]:
 
     print("Assigning races to conditions by priority...")
     for cond in sorted_conditions:
-        race_ids = get_race_ids_for_condition(cursor, cond, start_date, end_date, require_odds=True)
+        race_ids = get_race_ids_for_condition(cursor, cond, start_date, end_date, require_odds=True, enable_wind_filter=True)
 
         new_assignments = 0
         for race_id in race_ids:

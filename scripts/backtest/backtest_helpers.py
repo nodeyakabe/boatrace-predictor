@@ -8,14 +8,15 @@ import sys
 import os
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, PROJECT_ROOT)
-from config.bet_conditions import GLOBAL_VENUE_MONTH_EXCLUDES, GLOBAL_MONTH_EXCLUDES
+from config.bet_conditions import GLOBAL_VENUE_MONTH_EXCLUDES, GLOBAL_MONTH_EXCLUDES, GLOBAL_GRADE_EXCLUDES, GLOBAL_ROOKIE_EXCLUDE
 
 def get_race_ids_for_condition(
     cursor: sqlite3.Cursor,
     cond: Dict,
     start_date: str,
     end_date: str,
-    require_odds: bool = False
+    require_odds: bool = False,
+    enable_wind_filter: bool = False
 ) -> Set[int]:
     """条件に該当するレースIDのセットを取得
 
@@ -73,6 +74,14 @@ def get_race_ids_for_condition(
     if combined_month_exclude:
         months = ','.join(map(str, sorted(set(combined_month_exclude))))
         month_exclude_clause = f"AND CAST(strftime('%m', r.race_date) AS INTEGER) NOT IN ({months})"
+
+    # グレード除外フィルター（v2.60.0新規）
+    grade_exclude_clause = ""
+    if GLOBAL_GRADE_EXCLUDES:
+        grades = ','.join([f"'{g}'" for g in GLOBAL_GRADE_EXCLUDES])
+        grade_exclude_clause = f"AND (r.race_grade IS NULL OR r.race_grade NOT IN ({grades}))"
+    if GLOBAL_ROOKIE_EXCLUDE:
+        grade_exclude_clause += " AND r.is_rookie = 0"
 
     # 会場×月除外フィルター（standard_backtest.pyと同じロジック）
     venue_month_exclude_clause = ""
@@ -219,6 +228,20 @@ def get_race_ids_for_condition(
         if cond.get('wave_height_min') is not None:
             wave_height_clause += f"AND rc.wave_height IS NOT NULL AND rc.wave_height >= {cond['wave_height_min']} "
 
+    # 風速フィルター（BetTargetEvaluatorの enable_venue_wind_filter=True と同等）
+    # 不安定会場: びわこ(11),徳山(18),多摩川(05),浜名湖(06),芦屋(21),津(09),下関(19),宮島(17)
+    wind_filter_join = ""
+    wind_filter_clause = ""
+    if enable_wind_filter:
+        _unstable = "('05','06','09','11','17','18','19','21')"
+        wind_filter_join = "LEFT JOIN race_conditions rc_wind ON r.id = rc_wind.race_id"
+        wind_filter_clause = f"""
+    AND NOT (rc_wind.wind_speed IS NOT NULL AND (
+        (rc_wind.wind_speed >= 6.0 AND r.venue_code IN {_unstable})
+        OR (rc_wind.wind_speed >= 6.0 AND rp.confidence IN ('D','E'))
+        OR (r.venue_code IN {_unstable} AND rc_wind.wind_speed >= 4.0 AND rp.confidence IN ('C','D','E'))
+    ))"""
+
     # パターンHの場合は予測が必要（INNER JOINでrp4/rp5まで）
     use_pattern_h = cond.get('use_pattern_h', False)
     use_pattern_p142 = cond.get('use_pattern_p142', False)
@@ -246,6 +269,7 @@ def get_race_ids_for_condition(
         {avg_st_join}
         {wave_height_join}
         {advance_match_join}
+        {wind_filter_join}
         WHERE rp.rank_prediction = 1
         {confidence_clause}
         AND e1.racer_rank IN ({c1_ranks_str})
@@ -258,6 +282,7 @@ def get_race_ids_for_condition(
         {predicted_course_clause}
         {c1_second_rate_clause}
         {month_exclude_clause}
+        {grade_exclude_clause}
         {venue_month_exclude_clause}
         {escape_rate_clause}
         {bias_clause}
@@ -268,6 +293,7 @@ def get_race_ids_for_condition(
         {wave_height_clause}
         {predicted_rank_class_clause}
         {advance_match_clause}
+        {wind_filter_clause}
         """
     elif use_pattern_p143:
         # p1-p4-p3 パターン: 1位・3位・4位の予測が必要（2026-04-17追加）
@@ -285,6 +311,7 @@ def get_race_ids_for_condition(
         {avg_st_join}
         {wave_height_join}
         {advance_match_join}
+        {wind_filter_join}
         WHERE rp.rank_prediction = 1
         {confidence_clause}
         AND e1.racer_rank IN ({c1_ranks_str})
@@ -297,6 +324,7 @@ def get_race_ids_for_condition(
         {predicted_course_clause}
         {c1_second_rate_clause}
         {month_exclude_clause}
+        {grade_exclude_clause}
         {venue_month_exclude_clause}
         {escape_rate_clause}
         {bias_clause}
@@ -307,6 +335,7 @@ def get_race_ids_for_condition(
         {wave_height_clause}
         {predicted_rank_class_clause}
         {advance_match_clause}
+        {wind_filter_clause}
         """
     elif use_pattern_p132:
         # p1-p3-p2 パターン: 1位・2位・3位の予測が必要（2026-04-17追加）
@@ -324,6 +353,7 @@ def get_race_ids_for_condition(
         {avg_st_join}
         {wave_height_join}
         {advance_match_join}
+        {wind_filter_join}
         WHERE rp.rank_prediction = 1
         {confidence_clause}
         AND e1.racer_rank IN ({c1_ranks_str})
@@ -336,6 +366,7 @@ def get_race_ids_for_condition(
         {predicted_course_clause}
         {c1_second_rate_clause}
         {month_exclude_clause}
+        {grade_exclude_clause}
         {venue_month_exclude_clause}
         {escape_rate_clause}
         {bias_clause}
@@ -346,6 +377,7 @@ def get_race_ids_for_condition(
         {wave_height_clause}
         {predicted_rank_class_clause}
         {advance_match_clause}
+        {wind_filter_clause}
         """
     elif use_pattern_p142:
         # p1-p4-p2 パターン: 1位・2位・4位の予測が必要（2026-04-17追加）
@@ -363,6 +395,7 @@ def get_race_ids_for_condition(
         {avg_st_join}
         {wave_height_join}
         {advance_match_join}
+        {wind_filter_join}
         WHERE rp.rank_prediction = 1
         {confidence_clause}
         AND e1.racer_rank IN ({c1_ranks_str})
@@ -375,6 +408,7 @@ def get_race_ids_for_condition(
         {predicted_course_clause}
         {c1_second_rate_clause}
         {month_exclude_clause}
+        {grade_exclude_clause}
         {venue_month_exclude_clause}
         {escape_rate_clause}
         {bias_clause}
@@ -385,6 +419,7 @@ def get_race_ids_for_condition(
         {wave_height_clause}
         {predicted_rank_class_clause}
         {advance_match_clause}
+        {wind_filter_clause}
         """
     elif use_pattern_p124:
         # p1-p2-p4 パターン: 1位・2位・4位の予測が必要（2026-04-20追加）
@@ -402,6 +437,7 @@ def get_race_ids_for_condition(
         {avg_st_join}
         {wave_height_join}
         {advance_match_join}
+        {wind_filter_join}
         WHERE rp.rank_prediction = 1
         {confidence_clause}
         AND e1.racer_rank IN ({c1_ranks_str})
@@ -414,6 +450,7 @@ def get_race_ids_for_condition(
         {predicted_course_clause}
         {c1_second_rate_clause}
         {month_exclude_clause}
+        {grade_exclude_clause}
         {venue_month_exclude_clause}
         {escape_rate_clause}
         {bias_clause}
@@ -424,6 +461,7 @@ def get_race_ids_for_condition(
         {wave_height_clause}
         {predicted_rank_class_clause}
         {advance_match_clause}
+        {wind_filter_clause}
         """
     else:
         # 1点買い: 3位までの予測でOK（min_score_gap_3_4 指定時は rp4_gap もJOIN）
@@ -442,6 +480,7 @@ def get_race_ids_for_condition(
         {avg_st_join}
         {wave_height_join}
         {advance_match_join}
+        {wind_filter_join}
         WHERE rp.rank_prediction = 1
         {confidence_clause}
         AND e1.racer_rank IN ({c1_ranks_str})
@@ -454,6 +493,7 @@ def get_race_ids_for_condition(
         {predicted_course_clause}
         {c1_second_rate_clause}
         {month_exclude_clause}
+        {grade_exclude_clause}
         {venue_month_exclude_clause}
         {escape_rate_clause}
         {bias_clause}
@@ -465,6 +505,7 @@ def get_race_ids_for_condition(
         {wave_height_clause}
         {predicted_rank_class_clause}
         {advance_match_clause}
+        {wind_filter_clause}
         """
 
     cursor.execute(query)

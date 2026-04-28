@@ -12,7 +12,6 @@ from src.prediction.integrated_predictor import IntegratedPredictor
 from src.prediction.predictor_helpers import create_standard_predictor
 from src.betting.bet_generator import BetGenerator
 from src.betting.bet_target_evaluator import BetTargetEvaluator, BetTarget, BetStatus
-from src.betting.multi_bet_generator import MultiBetPattern
 from ui.components.common.widgets import render_confidence_badge
 from ui.components.common.db_utils import safe_query_to_df
 from config.settings import DATABASE_PATH
@@ -179,37 +178,62 @@ def _render_bet_target_summary(race_id, race_date_str, venue_code, race_number, 
 
     old_odds = odds_data.get(old_combo, 0)
 
-    # エントリー情報を取得（evaluate_race用）
+    # エントリー情報を取得（evaluate_race用 - motor_second_rate/second_rate/racer_number含む）
     entries_query = """
-        SELECT pit_number, racer_rank FROM entries WHERE race_id = ?
+        SELECT pit_number, racer_number, racer_rank, motor_second_rate, second_rate
+        FROM entries WHERE race_id = ?
+        ORDER BY pit_number
     """
     entries_df = safe_query_to_df(entries_query, params=(int(race_id),))
     entries_list = (
-        [{'pit_number': r['pit_number'], 'racer_rank': r['racer_rank']}
+        [{'pit_number': r['pit_number'], 'racer_number': r['racer_number'],
+          'racer_rank': r['racer_rank'], 'motor_second_rate': r['motor_second_rate'],
+          'second_rate': r['second_rate']}
          for _, r in entries_df.iterrows()]
         if entries_df is not None and not entries_df.empty else []
     )
 
+    # 気象情報を取得（風速フィルター・波高フィルター用）
+    weather_query = """
+        SELECT wind_speed, wave_height FROM race_conditions WHERE race_id = ?
+    """
+    weather_df = safe_query_to_df(weather_query, params=(int(race_id),))
+    wind_speed = 0.0
+    wave_height = None
+    if weather_df is not None and not weather_df.empty:
+        wind_speed = weather_df['wind_speed'].iloc[0] if weather_df['wind_speed'].iloc[0] else 0.0
+        wave_height = weather_df['wave_height'].iloc[0] if 'wave_height' in weather_df.columns else None
+
+    # 1着予測選手の登録番号を取得（逃げ率/バイアスフィルター用）
+    first_racer_number = None
+    if full_prediction and entries_df is not None and not entries_df.empty:
+        first_pit = full_prediction[0]
+        first_entry = entries_df[entries_df['pit_number'] == first_pit]
+        if not first_entry.empty:
+            first_racer_number = first_entry['racer_number'].iloc[0]
+
+    # total_scoreを取得（スコアフィルター用）
+    eval_total_score = eval_df['total_score'].iloc[0] if 'total_score' in eval_df.columns else None
+
     # 購入対象判定（evaluate_race: config/bet_conditions.py の全条件・advance_top3を使用）
-    evaluator = BetTargetEvaluator(
-        use_multi_bet=True,
-        multi_bet_pattern=MultiBetPattern.PATTERN_H,
-        enable_venue_wind_filter=True,
-        enable_venue_course_adjustment=True,
-        db_path=DATABASE_PATH
-    )
+    from src.betting.evaluator_helpers import create_standard_evaluator
+    evaluator = create_standard_evaluator(db_path=DATABASE_PATH)
     race_data_for_eval = {
         'venue_code': int(venue_code),
         'entries': entries_list,
         'race_date': race_date_str,
         'race_number': int(race_number),
         'id': int(race_id),
+        'wind_speed': wind_speed,
+        'wave_height': wave_height,
     }
     predictions_for_eval = {
         'confidence': confidence,
-        'old_prediction': top3_pits,
-        'new_prediction': top3_pits,
+        'old_prediction': full_prediction,  # 全6位まで（p143/p142等の4位以上参照に必要）
+        'new_prediction': full_prediction,
         'full_prediction': full_prediction,
+        'total_score': eval_total_score,  # スコアフィルター用
+        'first_racer_number': first_racer_number,  # 逃げ率/バイアスフィルター用
     }
     # before予測がある場合のみadvance_top3を渡してフィルタを有効化
     adv_top3_param = advance_top3 if has_beforeinfo else None

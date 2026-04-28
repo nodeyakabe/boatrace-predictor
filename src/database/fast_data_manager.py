@@ -104,6 +104,10 @@ class FastDataManager:
         race_date = race_data['race_date']
         race_number = race_data['race_number']
         race_time = race_data.get('race_time')
+        race_grade = race_data.get('race_grade')
+        is_nighter = race_data.get('is_nighter')
+        is_ladies = race_data.get('is_ladies')
+        is_rookie = race_data.get('is_rookie')
 
         # 日付をYYYY-MM-DD形式に変換
         race_date_formatted = f"{race_date[:4]}-{race_date[4:6]}-{race_date[6:8]}"
@@ -119,17 +123,27 @@ class FastDataManager:
         if existing:
             # 既存データを更新
             race_id = existing[0]
+            # race_grade: 既存の特殊グレード(SG/G1等)は上書きしない。
+            # スクレイパーが検出失敗で'一般'を返してもバックフィル済みの値を保護する。
             self.cursor.execute("""
                 UPDATE races
-                SET race_time = ?
+                SET race_time = ?,
+                    race_grade = CASE
+                        WHEN race_grade IN ('SG','G1','G2','G3','ルーキーシリーズ','オールレディース','ヴィーナスシリーズ')
+                        THEN race_grade
+                        ELSE COALESCE(?, race_grade)
+                    END,
+                    is_nighter = COALESCE(?, is_nighter),
+                    is_ladies = COALESCE(?, is_ladies),
+                    is_rookie = COALESCE(?, is_rookie)
                 WHERE id = ?
-            """, (race_time, race_id))
+            """, (race_time, race_grade, is_nighter, is_ladies, is_rookie, race_id))
         else:
             # 新規データを挿入
             self.cursor.execute("""
-                INSERT INTO races (venue_code, race_date, race_number, race_time)
-                VALUES (?, ?, ?, ?)
-            """, (venue_code, race_date_formatted, race_number, race_time))
+                INSERT INTO races (venue_code, race_date, race_number, race_time, race_grade, is_nighter, is_ladies, is_rookie)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (venue_code, race_date_formatted, race_number, race_time, race_grade, is_nighter, is_ladies, is_rookie))
             race_id = self.cursor.lastrowid
 
         return race_id

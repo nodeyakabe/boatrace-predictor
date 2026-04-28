@@ -33,6 +33,9 @@ from src.utils.job_manager import (
 # ジョブ名定数
 JOB_TENJI = 'tenji_collection'
 JOB_MISSING_DATA = 'missing_data_fetch'
+JOB_LADIES_MASTER = 'ladies_master_update'
+
+LADIES_MASTER_CSV = os.path.join(PROJECT_ROOT, 'data', 'csv', 'racers', 'ladies_master.csv')
 
 
 def render_data_maintenance():
@@ -46,10 +49,11 @@ def render_data_maintenance():
     データ取得作業を一元管理します。タブで作業を選択してください。
     """)
 
-    tab1, tab2, tab3 = st.tabs([
+    tab1, tab2, tab3, tab4 = st.tabs([
         "🔍 不足データ検出・取得",
         "🎯 オリジナル展示",
-        "📥 一括取得"
+        "📥 一括取得",
+        "🔄 定期メンテナンス"
     ])
 
     with tab1:
@@ -60,6 +64,9 @@ def render_data_maintenance():
 
     with tab3:
         _render_bulk_collector()
+
+    with tab4:
+        _render_periodic_maintenance()
 
 
 def _render_job_status_bar():
@@ -589,3 +596,103 @@ def _render_bulk_collector():
         # 従来のbulk_data_collectorの処理を呼び出し
         from ui.components.bulk_data_collector import render_bulk_data_collector
         render_bulk_data_collector(None, None)
+
+
+def _render_periodic_maintenance():
+    """定期メンテナンスタスク一覧"""
+    st.subheader("定期メンテナンスタスク")
+    st.markdown("月次・定期で実施が必要なメンテナンス作業を管理します。")
+
+    # ── 女性レーサーマスター更新 ──
+    st.markdown("---")
+    st.markdown("### 女性レーサーマスター更新（月次）")
+    st.markdown("""
+    **目的**: ladies-info.jp の公式APIから現役女性レーサーリストを取得し、`racers.gender` を最新化する。
+
+    **頻度**: 月1回（新人デビューは4月・10月の登録期に集中）
+
+    **処理内容**:
+    1. `fetch_ladies_master.py` — ladies-info.jp API から全女性レーサー（約278人）を取得 → `ladies_master.csv`
+    2. `import_racers_csv.py` — ladies_master.csv を優先参照して `racers.gender` を更新
+    """)
+
+    # 現在のステータス表示
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        if os.path.exists(LADIES_MASTER_CSV):
+            mtime = datetime.fromtimestamp(os.path.getmtime(LADIES_MASTER_CSV))
+            days_ago = (datetime.now() - mtime).days
+            label = f"{mtime.strftime('%Y-%m-%d')}"
+            delta = f"{days_ago}日前"
+            color = "normal" if days_ago <= 35 else "off"
+            st.metric("ladies_master.csv 最終更新", label, delta, delta_color=color)
+        else:
+            st.metric("ladies_master.csv", "未取得", "要実行")
+
+    with col2:
+        try:
+            conn = sqlite3.connect(DATABASE_PATH)
+            female_count = conn.execute("SELECT COUNT(*) FROM racers WHERE gender='female'").fetchone()[0]
+            male_count = conn.execute("SELECT COUNT(*) FROM racers WHERE gender='male'").fetchone()[0]
+            conn.close()
+            st.metric("現役女性選手（DB）", f"{female_count}人")
+        except Exception:
+            st.metric("現役女性選手（DB）", "取得エラー")
+
+    with col3:
+        if os.path.exists(LADIES_MASTER_CSV):
+            import csv as _csv
+            with open(LADIES_MASTER_CSV, 'r', encoding='utf-8') as f:
+                count = sum(1 for _ in _csv.DictReader(f))
+            st.metric("ladies_master.csv 件数", f"{count}人")
+        else:
+            st.metric("ladies_master.csv 件数", "—")
+
+    # 実行ボタン
+    st.markdown("---")
+
+    if is_job_running(JOB_LADIES_MASTER):
+        progress = get_job_progress(JOB_LADIES_MASTER)
+        st.warning("🔄 女性レーサーマスター更新がバックグラウンドで実行中です")
+        if progress:
+            st.progress(progress.get('progress', 0) / 100)
+            st.text(progress.get('message', '処理中...'))
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔄 状況を更新", key="refresh_ladies"):
+                st.rerun()
+        with col2:
+            if st.button("⏹️ キャンセル", key="cancel_ladies"):
+                cancel_job(JOB_LADIES_MASTER)
+                st.rerun()
+    else:
+        if st.button("▶ 女性レーサーマスター更新を実行", type="primary", use_container_width=True):
+            _run_ladies_master_update()
+
+        if os.path.exists(LADIES_MASTER_CSV):
+            mtime = datetime.fromtimestamp(os.path.getmtime(LADIES_MASTER_CSV))
+            days_ago = (datetime.now() - mtime).days
+            if days_ago <= 35:
+                st.caption(f"最終実行: {days_ago}日前 — 次回推奨: {(mtime + timedelta(days=30)).strftime('%Y-%m-%d')} 頃")
+            else:
+                st.warning(f"最終実行から {days_ago}日 経過しています。更新を推奨します。")
+
+
+def _run_ladies_master_update():
+    """女性レーサーマスター更新をバックグラウンドで実行（fetch → import を連結）"""
+    script = os.path.join(PROJECT_ROOT, 'scripts', 'data_collection', 'update_ladies_master_and_import.py')
+
+    result = start_job(
+        JOB_LADIES_MASTER,
+        script,
+        args=[]
+    )
+
+    if result['success']:
+        st.success("✅ 女性レーサーマスター更新を開始しました（fetch → import を自動連結）")
+        st.info("完了まで約1分かかります。「状況を更新」ボタンで進捗を確認できます。")
+        time.sleep(1)
+        st.rerun()
+    else:
+        st.error(f"❌ {result['message']}")

@@ -49,7 +49,7 @@ def _assign_races(cursor, target_date: str) -> Dict[str, List[int]]:
     end_date = (datetime.strptime(target_date, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
 
     for cond in sorted_conditions:
-        race_ids = get_race_ids_for_condition(cursor, cond, target_date, end_date)
+        race_ids = get_race_ids_for_condition(cursor, cond, target_date, end_date, enable_wind_filter=True)
         for race_id in race_ids:
             if race_id not in all_race_ids:
                 all_race_ids.add(race_id)
@@ -292,7 +292,6 @@ def format_reconcile_message(result: Dict) -> str:
     candidate_count = result.get('candidate_count', 0)
     candidate_hit_count = result.get('candidate_hit_count', 0)
     candidate_details = result.get('candidate_details', [])
-
     # 日付を MM/DD に短縮
     try:
         short_date = datetime.strptime(date, '%Y-%m-%d').strftime('%m/%d')

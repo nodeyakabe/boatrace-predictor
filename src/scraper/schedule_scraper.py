@@ -27,6 +27,66 @@ class ScheduleScraper:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         })
 
+    # スケジュールページのグレードCSSクラス → (race_grade, is_ladies, is_rookie)
+    GRADE_CLASS_MAP = {
+        'is-gradeColorSG':     ('SG',              0, 0),
+        'is-gradeColorG1':     ('G1',              0, 0),
+        'is-gradeColorG2':     ('G2',              0, 0),
+        'is-gradeColorG3':     ('G3',              0, 0),
+        'is-gradeColorVenus':  ('ヴィーナスシリーズ', 1, 0),
+        'is-gradeColorRookie': ('ルーキーシリーズ',   0, 1),
+        'is-gradeColorLady':   ('オールレディース',   1, 0),
+    }
+
+    def get_monthly_schedule_with_grades(self, year, month, max_retries=3):
+        """
+        月間スケジュールをグレード情報付きで取得
+
+        Returns:
+            dict: {(venue_code, date_str_YYYYMMDD): (grade, is_ladies, is_rookie)}
+                  非「一般」開催のみ収録。含まれないキーは '一般'/0/0 扱い。
+        """
+        params = {'ym': f'{year}{month:02d}'}
+
+        for retry in range(max_retries):
+            try:
+                timeout = 15 + retry * 5
+                response = self.session.get(self.base_url, params=params, timeout=timeout)
+                response.raise_for_status()
+
+                soup = BeautifulSoup(response.text, 'html.parser')
+                result = {}
+
+                for css_class, grade_info in self.GRADE_CLASS_MAP.items():
+                    for td in soup.find_all('td', class_=css_class):
+                        link = td.find('a', href=True)
+                        if not link:
+                            continue
+                        href = link.get('href', '')
+                        jcd_m = re.search(r'jcd=(\d+)', href)
+                        hd_m  = re.search(r'hd=(\d{8})', href)
+                        if not jcd_m or not hd_m:
+                            continue
+                        venue_code  = jcd_m.group(1).zfill(2)
+                        start_str   = hd_m.group(1)
+                        colspan     = int(td.get('colspan', 1))
+                        start_dt    = datetime.strptime(start_str, '%Y%m%d')
+
+                        for day in range(colspan):
+                            date_str = (start_dt + timedelta(days=day)).strftime('%Y%m%d')
+                            result[(venue_code, date_str)] = grade_info
+
+                return result
+
+            except Exception as e:
+                if retry < max_retries - 1:
+                    time.sleep(2 ** retry)
+                else:
+                    print(f'❌ get_monthly_schedule_with_grades ({year}/{month}): {e}')
+                    return {}
+
+        return {}
+
     def get_monthly_schedule(self, year, month, max_retries=3):
         """
         指定月の開催スケジュールを取得
