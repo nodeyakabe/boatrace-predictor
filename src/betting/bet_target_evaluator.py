@@ -45,6 +45,7 @@ class BetTarget:
     pattern_h_exclude_p5: bool = False   # p5軸を除外して2点にするか（2026-04-08追加）
     odds_min: float = 0                  # オッズ下限（multi_bet_generator に渡すため保持）
     odds_max: float = 9999               # オッズ上限（multi_bet_generator に渡すため保持）
+    pattern_h_require_p123: bool = False  # p123必須フラグ（multi_bet_generator に渡すため保持）
 
 
 @dataclass
@@ -183,7 +184,7 @@ class BetTargetEvaluator:
             'score_min', 'score_max',
             # パターン種別フラグ（2026-04-21追加）
             'use_pattern_p142', 'use_pattern_p143', 'use_pattern_p132', 'use_pattern_p124',
-            'pattern_h_exclude_p5',
+            'pattern_h_exclude_p5', 'pattern_h_require_p123',
             # その他フィルター（2026-04-21追加）
             'venue_codes', 'venue_exclude', 'race_exclude',
             'motor_min', 'sashi_rate_min', 'makuri_rate_min',
@@ -587,6 +588,7 @@ class BetTargetEvaluator:
                 # 他の条件もチェックするためcontinue
                 continue
             exclude_p5 = cond.get('pattern_h_exclude_p5', False)
+            require_p123_flag = cond.get('pattern_h_require_p123', False)
 
             # p1-p4-p3 パターン（4位2着・3位3着穴狙い）の処理（2026-04-17追加）
             if use_pattern_p143:
@@ -823,6 +825,7 @@ class BetTargetEvaluator:
                 pattern_h_exclude_p5=_exclude_p5,
                 odds_min=odds_min,
                 odds_max=odds_max,
+                pattern_h_require_p123=require_p123_flag,
             )
 
         # オッズ未取得でCANDIDATE候補がある場合（全条件確認済み）
@@ -1153,6 +1156,7 @@ class BetTargetEvaluator:
                             pattern=_pattern,
                             odds_min=bet_target.odds_min,
                             odds_max=bet_target.odds_max,
+                            require_p123=bet_target.pattern_h_require_p123,
                         )
                         bet_target.multi_bet_result = multi_bet_result
                     except Exception as e:

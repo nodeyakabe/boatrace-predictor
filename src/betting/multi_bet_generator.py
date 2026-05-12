@@ -118,6 +118,7 @@ class MultiBetGenerator:
         pattern: Optional[MultiBetPattern] = None,
         odds_min: float = 0,
         odds_max: float = 9999,
+        require_p123: bool = False,
     ) -> MultiBetResult:
         """
         複数点買いを生成
@@ -128,6 +129,7 @@ class MultiBetGenerator:
             pattern: 使用するパターン（Noneならデフォルト）
             odds_min: オッズ下限（パターンH/H2の各買い目に適用）
             odds_max: オッズ上限（パターンH/H2の各買い目に適用）
+            require_p123: Trueのとき、p1-p2-p3が範囲内でなければ全買い目をスキップ
 
         Returns:
             MultiBetResult: 複数点買い結果
@@ -143,7 +145,7 @@ class MultiBetGenerator:
         elif pattern == MultiBetPattern.PATTERN_H:
             return self._generate_pattern_h(predictions, odds_dict, odds_min, odds_max)
         elif pattern == MultiBetPattern.PATTERN_H2:
-            return self._generate_pattern_h2(predictions, odds_dict, odds_min, odds_max)
+            return self._generate_pattern_h2(predictions, odds_dict, odds_min, odds_max, require_p123)
         elif pattern == MultiBetPattern.PATTERN_B:
             return self._generate_pattern_b(predictions, odds_dict)
         elif pattern == MultiBetPattern.PATTERN_L:
@@ -230,6 +232,7 @@ class MultiBetGenerator:
     def _generate_pattern_h2(
         self, predictions: List[int], odds_dict: Dict[str, float],
         odds_min: float = 0, odds_max: float = 9999,
+        require_p123: bool = False,
     ) -> MultiBetResult:
         """
         パターンH2: 1-2軸2点傾斜配分（200/100）- p5除外版
@@ -239,10 +242,29 @@ class MultiBetGenerator:
         - 3着候補は予測3-4位のみ（p5除外）
         - 配分: 1点目200円、2点目100円
         - 各買い目のオッズが odds_min 以上 odds_max 未満の場合のみ投資
+        - require_p123=True: p1-p2-p3が範囲内でなければ全買い目をスキップ
         """
         p1, p2 = predictions[0], predictions[1]
         third_candidates = [predictions[2], predictions[3]]  # p3, p4のみ
         bet_amounts = [200, 100]
+
+        stats = self.PATTERN_STATS[MultiBetPattern.PATTERN_H]
+
+        # p123必須フラグ: p1-p2-p3のオッズが範囲外なら空リストを返す
+        if require_p123:
+            p3 = third_candidates[0]
+            if p3 != p1 and p3 != p2:
+                combo_p123 = f"{p1}-{p2}-{p3}"
+                odds_p123 = odds_dict.get(combo_p123, 0)
+                if not (odds_min <= odds_p123 < odds_max):
+                    return MultiBetResult(
+                        pattern=MultiBetPattern.PATTERN_H2,
+                        bets=[],
+                        total_investment=0,
+                        description="パターンH2: p123範囲外のためスキップ",
+                        expected_hit_rate=stats['hit_rate'],
+                        expected_roi=stats['roi'],
+                    )
 
         bets = []
         priority = 1
@@ -260,8 +282,6 @@ class MultiBetGenerator:
                     priority += 1
 
         total = sum(b.bet_amount for b in bets)
-        # PATTERN_H2専用の期待値統計がないためPATTERN_Hの値を参照
-        stats = self.PATTERN_STATS[MultiBetPattern.PATTERN_H]
 
         return MultiBetResult(
             pattern=MultiBetPattern.PATTERN_H2,
