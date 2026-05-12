@@ -43,6 +43,8 @@ class BetTarget:
     venue_course_adjustment: Optional[AdjustmentResult] = None  # 会場コース調整情報
     use_pattern_h: bool = True           # パターンH（3点買い）を使用するか（2026-01-07追加）
     pattern_h_exclude_p5: bool = False   # p5軸を除外して2点にするか（2026-04-08追加）
+    odds_min: float = 0                  # オッズ下限（multi_bet_generator に渡すため保持）
+    odds_max: float = 9999               # オッズ上限（multi_bet_generator に渡すため保持）
 
 
 @dataclass
@@ -818,7 +820,9 @@ class BetTargetEvaluator:
                 bet_amount=cond['bet_amount'],
                 reason=reason,
                 use_pattern_h=use_pattern_h,
-                pattern_h_exclude_p5=_exclude_p5
+                pattern_h_exclude_p5=_exclude_p5,
+                odds_min=odds_min,
+                odds_max=odds_max,
             )
 
         # オッズ未取得でCANDIDATE候補がある場合（全条件確認済み）
@@ -1146,7 +1150,9 @@ class BetTargetEvaluator:
                         multi_bet_result = self.multi_bet_generator.generate(
                             predictions=full_prediction,
                             odds_dict=odds_dict_complete,
-                            pattern=_pattern
+                            pattern=_pattern,
+                            odds_min=bet_target.odds_min,
+                            odds_max=bet_target.odds_max,
                         )
                         bet_target.multi_bet_result = multi_bet_result
                     except Exception as e:

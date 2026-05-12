@@ -116,6 +116,8 @@ class MultiBetGenerator:
         predictions: List[int],
         odds_dict: Dict[str, float],
         pattern: Optional[MultiBetPattern] = None,
+        odds_min: float = 0,
+        odds_max: float = 9999,
     ) -> MultiBetResult:
         """
         複数点買いを生成
@@ -124,6 +126,8 @@ class MultiBetGenerator:
             predictions: 予測順位（1位〜6位の艇番リスト）
             odds_dict: オッズ辞書 {combination: odds}
             pattern: 使用するパターン（Noneならデフォルト）
+            odds_min: オッズ下限（パターンH/H2の各買い目に適用）
+            odds_max: オッズ上限（パターンH/H2の各買い目に適用）
 
         Returns:
             MultiBetResult: 複数点買い結果
@@ -137,9 +141,9 @@ class MultiBetGenerator:
         if pattern == MultiBetPattern.SINGLE:
             return self._generate_single(predictions, odds_dict)
         elif pattern == MultiBetPattern.PATTERN_H:
-            return self._generate_pattern_h(predictions, odds_dict)
+            return self._generate_pattern_h(predictions, odds_dict, odds_min, odds_max)
         elif pattern == MultiBetPattern.PATTERN_H2:
-            return self._generate_pattern_h2(predictions, odds_dict)
+            return self._generate_pattern_h2(predictions, odds_dict, odds_min, odds_max)
         elif pattern == MultiBetPattern.PATTERN_B:
             return self._generate_pattern_b(predictions, odds_dict)
         elif pattern == MultiBetPattern.PATTERN_L:
@@ -180,7 +184,8 @@ class MultiBetGenerator:
         )
 
     def _generate_pattern_h(
-        self, predictions: List[int], odds_dict: Dict[str, float]
+        self, predictions: List[int], odds_dict: Dict[str, float],
+        odds_min: float = 0, odds_max: float = 9999,
     ) -> MultiBetResult:
         """
         パターンH: 1-2軸傾斜配分（200/100/100）
@@ -189,6 +194,7 @@ class MultiBetGenerator:
         - 1-2着は予測1-2位で固定
         - 3着候補は予測3-5位
         - 配分: 1点目200円、2-3点目100円ずつ
+        - 各買い目のオッズが odds_min 以上 odds_max 未満の場合のみ投資
         """
         p1, p2 = predictions[0], predictions[1]
         third_candidates = [predictions[2], predictions[3], predictions[4]]
@@ -200,7 +206,7 @@ class MultiBetGenerator:
             if third != p1 and third != p2:
                 combo = f"{p1}-{p2}-{third}"
                 odds = odds_dict.get(combo, 0)
-                if odds > 0:
+                if odds_min <= odds < odds_max:
                     bets.append(MultiBet(
                         combination=combo,
                         odds=odds,
@@ -222,7 +228,8 @@ class MultiBetGenerator:
         )
 
     def _generate_pattern_h2(
-        self, predictions: List[int], odds_dict: Dict[str, float]
+        self, predictions: List[int], odds_dict: Dict[str, float],
+        odds_min: float = 0, odds_max: float = 9999,
     ) -> MultiBetResult:
         """
         パターンH2: 1-2軸2点傾斜配分（200/100）- p5除外版
@@ -231,6 +238,7 @@ class MultiBetGenerator:
         - 1-2着は予測1-2位で固定
         - 3着候補は予測3-4位のみ（p5除外）
         - 配分: 1点目200円、2点目100円
+        - 各買い目のオッズが odds_min 以上 odds_max 未満の場合のみ投資
         """
         p1, p2 = predictions[0], predictions[1]
         third_candidates = [predictions[2], predictions[3]]  # p3, p4のみ
@@ -242,7 +250,7 @@ class MultiBetGenerator:
             if third != p1 and third != p2:
                 combo = f"{p1}-{p2}-{third}"
                 odds = odds_dict.get(combo, 0)
-                if odds > 0:
+                if odds_min <= odds < odds_max:
                     bets.append(MultiBet(
                         combination=combo,
                         odds=odds,
