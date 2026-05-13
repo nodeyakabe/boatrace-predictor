@@ -82,9 +82,10 @@ def get_race_id(conn, venue_code, race_date, race_no):
     cursor = conn.cursor()
 
     # 既存のrace_idを検索
+    # CAST比較: '01'と1(整数)・'1'のいずれでも一致させる
     cursor.execute("""
         SELECT id FROM races
-        WHERE venue_code = ? AND race_date = ? AND race_number = ?
+        WHERE CAST(venue_code AS INTEGER) = CAST(? AS INTEGER) AND race_date = ? AND race_number = ?
     """, (venue_code, race_date, race_no))
 
     result = cursor.fetchone()

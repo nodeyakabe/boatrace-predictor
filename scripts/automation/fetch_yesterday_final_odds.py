@@ -15,8 +15,12 @@ sys.path.insert(0, str(project_root))
 
 from src.scraper.odds_scraper import OddsScraper
 from config.settings import DATABASE_PATH
+from scripts.automation.notify import send_discord_notification, send_error_notification
 import sqlite3
 import time
+
+# 確定オッズの最低件数しきい値（三連単は最大120通り。99件以上あれば確定とみなす）
+CONFIRMED_ODDS_THRESHOLD = 90
 
 
 def fetch_yesterday_final_odds(headless: bool = True) -> int:
@@ -97,6 +101,40 @@ def fetch_yesterday_final_odds(headless: bool = True) -> int:
         # レート制限対策
         time.sleep(0.5)
 
+    # ── 品質チェック: 前売りオッズ残存の検出 ──────────────────────────────
+    # 正常ならAブロック完了後に全レース99件以上の確定オッズが入る。
+    # 件数不足は「Aブロックが前日にスキップされた」or「スクレイピング失敗」を示す。
+    conn2 = sqlite3.connect(DATABASE_PATH)
+    cur2 = conn2.cursor()
+    cur2.execute("""
+        SELECT r.venue_code, r.race_number, COUNT(t.combination) as cnt,
+               MAX(t.fetched_at) as last_fetch
+        FROM races r
+        LEFT JOIN trifecta_odds t ON r.id = t.race_id
+        WHERE r.race_date = ?
+        GROUP BY r.id
+        HAVING cnt < ?
+        ORDER BY r.venue_code, r.race_number
+    """, (date_str, CONFIRMED_ODDS_THRESHOLD))
+    thin_races = cur2.fetchall()
+    conn2.close()
+
+    if thin_races:
+        lines = [f"⚠️ **前日確定オッズ不足検出** ({date_str})"]
+        lines.append(f"件数が{CONFIRMED_ODDS_THRESHOLD}件未満のレース: {len(thin_races)}件")
+        for vc, rn, cnt, last in thin_races[:10]:
+            lines.append(f"  {int(vc):02d}場 {rn}R: {cnt}件  最終fetch={last}")
+        if len(thin_races) > 10:
+            lines.append(f"  ... 他{len(thin_races)-10}件")
+        lines.append("→ Aブロック未実行(PC再起動等)による前売りオッズ残存の可能性があります")
+        warn_msg = "\n".join(lines)
+        print(f"\n[WARNING] {warn_msg}")
+        try:
+            send_error_notification("前日確定オッズ不足", warn_msg, severity='critical')
+        except Exception:
+            pass
+    # ─────────────────────────────────────────────────────────────────────────
+
     conn.close()
 
     print("\n" + "=" * 80)
@@ -104,6 +142,8 @@ def fetch_yesterday_final_odds(headless: bool = True) -> int:
     print(f"  成功: {success_count}件")
     print(f"  スキップ: {skip_count}件")
     print(f"  エラー: {error_count}件")
+    if thin_races:
+        print(f"  ⚠️ 件数不足レース: {len(thin_races)}件（Discord警告送信済み）")
     print("=" * 80)
 
     return success_count

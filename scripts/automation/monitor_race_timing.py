@@ -21,15 +21,16 @@ from scripts.automation.notify import (
     send_race_notification,
     send_error_notification,
     send_discord_notification,
+    send_discord_notification_dual,
+    send_odds_change_alert,
     format_race_notification,
+    format_race_notification_short,
+    calc_prediction_score,
 )
 from src.betting.bet_target_evaluator import BetTargetEvaluator, BetStatus
 from src.betting.multi_bet_generator import MultiBetPattern
 from src.betting.evaluator_helpers import create_standard_evaluator
 from src.scraper.beforeinfo_scraper import BeforeInfoScraper
-
-# 信頼度グレード→float変換マップ（notify.py の {confidence:.1%} フォーマット用）
-_CONFIDENCE_FLOAT_MAP = {'A': 0.85, 'B': 0.70, 'C': 0.60, 'D': 0.50}
 
 
 class RaceMonitor:
@@ -43,8 +44,12 @@ class RaceMonitor:
         self.db_path = db_path
         self.notified_races = set()  # 通知済みレースID
         self.fetched_direct_info = set()  # 直前情報取得済みレースID
-        self.fetched_odds_races = set()   # オッズ再取得済みレースID
+        self.fetched_odds_races: Dict[int, datetime] = {}  # オッズ再取得済み: {race_id: 取得時刻}
+        self.late_fetched_races: set = set()  # 後期(3-5分前)オッズ確認済みレースID
         self.fetched_direct_info_universal = set()  # Gap1対応: 全レース直前情報チェック済み
+        self.candidate_notified_races = set()  # 候補最終通知済みレースID（5-8分前）
+        # CANDIDATE時のcombination/odds_rangeを保存（EXCLUDED後はcombination='-'に上書きされるためここに退避）
+        self.prev_candidate_races: Dict[int, dict] = {}  # {race_id: {'combination': str, 'odds_range': str}}
         self._bet_target_cache = {}       # {race_id: race_dict} - 購入判定キャッシュ
         self._cache_date = None           # キャッシュの日付
 
@@ -76,6 +81,12 @@ class RaceMonitor:
         if self._cache_date != today:
             self._bet_target_cache = {}
             self.fetched_direct_info_universal = set()
+            self.notified_races = set()
+            self.fetched_direct_info = set()
+            self.fetched_odds_races = {}
+            self.late_fetched_races = set()
+            self.candidate_notified_races = set()
+            self.prev_candidate_races = {}
             self._cache_date = today
 
         conn = self.get_connection()
@@ -104,6 +115,10 @@ class RaceMonitor:
                 if race_id in self._bet_target_cache:
                     cached = self._bet_target_cache[race_id]
                     if cached['bet_target'].status != BetStatus.TARGET_ADVANCE:
+                        # 発走時刻は当日変更される可能性があるため毎回DBから最新値を反映する
+                        if cached['deadline'] != row['race_time']:
+                            print(f"  [INFO] 発走時刻変更: race_id={race_id} 会場{cached.get('venue_code', '??')} {cached.get('race_number', '?')}R {cached['deadline']} → {row['race_time']}")
+                        cached['deadline'] = row['race_time']
                         races.append(cached)
                         continue
 
@@ -295,9 +310,18 @@ class RaceMonitor:
             if racer_row:
                 first_racer_number = racer_row['racer_number']
 
+        r1_score = predictions[0].get('total_score')
+        r2_score = predictions[1].get('total_score') if len(predictions) > 1 else None
+        r3_score = predictions[2].get('total_score') if len(predictions) > 2 else None
+        r4_score = predictions[3].get('total_score') if len(predictions) > 3 else None
+        score_gap  = (r1_score - r2_score) if r1_score is not None and r2_score is not None else None
+        score_gap34 = (r3_score - r4_score) if r3_score is not None and r4_score is not None else None
+
         return {
             'confidence': predictions[0]['confidence'],
-            'total_score': predictions[0].get('total_score'),  # スコアフィルター用（2026-04-21追加）
+            'total_score': r1_score,
+            'score_gap': score_gap,
+            'score_gap34': score_gap34,
             'old_prediction': all_pred,
             'new_prediction': all_pred,  # 事前予測の段階では同じ
             'first_racer_number': first_racer_number
@@ -354,7 +378,17 @@ class RaceMonitor:
         return datetime.strptime(deadline_datetime_str, '%Y-%m-%d %H:%M')
 
     def _notify_promotion(self, race: Dict, bet_target, label: str) -> None:
-        """候補レースが購入対象に昇格した際の即時Discord通知"""
+        """候補レースが購入対象に昇格した際の即時Discord通知
+
+        通常の昇格（CANDIDATE/ADVANCE→CONFIRMED）は静音化。
+        締切10分前通知（check_and_notify）で同内容が流れるため重複を避ける。
+        Gap1（朝の見通しにないレースが新規昇格）のみ「新規購入発生」として通知。
+        """
+        # Gap1以外の通常昇格は静音化（ログのみ）
+        if not label.startswith("Gap1"):
+            print(f"  [INFO] 昇格(静音): {race['race_id']} - {label}")
+            return
+
         race_id = race['race_id']
         try:
             venue_name = self.get_venue_name(race['venue_code'])
@@ -373,45 +407,55 @@ class RaceMonitor:
                 odds_info = {
                     'trifecta_odds': bet_target.odds if bet_target.odds else 10.0,
                     'multi_bets': [
-                        {'combination': bet.combination, 'odds': bet.odds}
+                        {'combination': bet.combination, 'odds': bet.odds, 'bet_amount': bet.bet_amount}
                         for bet in bet_target.multi_bet_result.bets
-                    ]
+                    ],
+                    'bet_amount': sum(b.bet_amount for b in bet_target.multi_bet_result.bets),
+                    'expected_roi': bet_target.expected_roi,
+                    'reason': bet_target.reason,
                 }
             else:
                 if not bet_target.combination:
                     print(f"[WARNING] 昇格通知スキップ（組み合わせ未設定）: {race_id}")
                     return
                 pit_numbers = [[int(x) for x in bet_target.combination.split('-')]]
-                odds_info = {'trifecta_odds': bet_target.odds if bet_target.odds else 10.0}
+                odds_info = {
+                    'trifecta_odds': bet_target.odds if bet_target.odds else 10.0,
+                    'bet_amount': bet_target.bet_amount,
+                    'expected_roi': bet_target.expected_roi,
+                    'reason': bet_target.reason,
+                }
 
+            preds = race.get('predictions') or {}
+            rank1_pit = (preds.get('old_prediction') or [None])[0]
+            entries = (race.get('race_data') or {}).get('entries', [])
+            rank1_entry = next((e for e in entries if e.get('pit_number') == rank1_pit), None)
             prediction = {
                 'pit_numbers': pit_numbers,
-                'confidence': (
-                    _CONFIDENCE_FLOAT_MAP.get(bet_target.confidence, 0.70)
-                    if isinstance(bet_target.confidence, str)
-                    else (float(bet_target.confidence) if bet_target.confidence is not None else 0.70)
-                )
+                'prediction_score': calc_prediction_score(
+                    bet_target.confidence,
+                    preds.get('score_gap'),
+                    preds.get('score_gap34'),
+                ),
+                'rank1_name': rank1_entry['racer_name'] if rank1_entry else None,
             }
 
-            base_msg = format_race_notification(race_info, prediction, odds_info)
-            msg = f"🔔 **{label}** {base_msg}"
-            send_discord_notification(msg)
-            print(f"  昇格通知送信: {race_id}")
+            status_name = bet_target.status.name if bet_target.status else None
+            log_base = format_race_notification(race_info, prediction, odds_info, status=status_name)
+            log_msg = f"🆕 **朝の見通しにないレース** {log_base}\n_締切10分前に改めて購入通知が届きます_"
+            alert_msg = format_race_notification_short(race_info, prediction, odds_info, status=status_name, gap1=True)
+            alert_msg += "\n_（10分前に改めて通知）_"
+            send_discord_notification_dual(alert_msg, log_msg,
+                                           primary_channel='buy', secondary_channel='log')
+            print(f"  Gap1新規発生通知送信: {race_id}")
 
         except Exception as e:
             print(f"[ERROR] 昇格通知送信失敗: {race_id} - {e}")
 
     def _notify_demotion(self, race: Dict, new_status, label: str) -> None:
-        """暫定購入対象が降格した際のDiscord通知"""
-        race_id = race['race_id']
-        try:
-            venue_name = self.get_venue_name(race['venue_code'])
-            status_str = "候補" if new_status == BetStatus.CANDIDATE else "対象外"
-            msg = f"🔕 **{label}** {venue_name} {race['race_number']}R {race['deadline']}  before予測で{status_str}に変更"
-            send_discord_notification(msg)
-            print(f"  降格通知送信: {race_id}")
-        except Exception as e:
-            print(f"[ERROR] 降格通知送信失敗: {race_id} - {e}")
+        """暫定購入対象が降格した際の処理（静音化済み・ログのみ）"""
+        status_str = "候補" if new_status == BetStatus.CANDIDATE else "対象外"
+        print(f"  [INFO] 降格(静音): {race['race_id']} - {label} → {status_str}")
 
     def _fetch_beforeinfo_for_race(self, race: Dict) -> bool:
         """
@@ -488,7 +532,14 @@ class RaceMonitor:
                 if success:
                     self.fetched_direct_info.add(race_id)
 
-                    # 直前情報取得後、購入判定を再評価
+                    # 修正E: CANDIDATEのままbeforeinfo取得した場合、Webオッズも先に更新する
+                    # 通常は修正Aによりループ先頭で既にfetched_odds_racesに登録済みだが、
+                    # Gap1経由でwatchlist入りした直後や13分前ぎりぎりの初回サイクル等の
+                    # エッジケースに備えて再チェック。登録済みなら内部ガードで自動スキップ（二重取得なし）
+                    if race['bet_target'].status == BetStatus.CANDIDATE:
+                        self._check_and_fetch_odds(race)
+
+                    # 直前情報取得後、購入判定を再評価（最新DBオッズが使われる）
                     self._reevaluate_after_beforeinfo(race)
 
                     return True
@@ -599,9 +650,12 @@ class RaceMonitor:
                 }
                 self._bet_target_cache[race_id] = race_info
                 self.fetched_direct_info.add(race_id)
-                if bet_target.status == BetStatus.TARGET_CONFIRMED:
+                # Gap1: DBの朝オッズが古いためWebから最新オッズを即時取得・再評価
+                self._check_and_fetch_odds(race_info)
+                # odds再評価後のステータスで昇格判定（fetched_odds後にrace_infoが更新済み）
+                if race_info['bet_target'].status == BetStatus.TARGET_CONFIRMED:
                     print(f"  [GAP1] 購入対象昇格: race_id={race_id}")
-                    self._notify_promotion(race_info, bet_target, "Gap1-before昇格")
+                    self._notify_promotion(race_info, race_info['bet_target'], "Gap1-before昇格")
                 else:
                     print(f"  [GAP1] 候補昇格（オッズ更新待ち）: race_id={race_id}")
 
@@ -674,8 +728,21 @@ class RaceMonitor:
                         print(f"  暫定購入対象が降格: {race_id} ({demotion_label})")
                         self._notify_demotion(race, new_status, demotion_label)
 
+                # CANDIDATE→EXCLUDED: 5-8分前の候補通知用にCANDIDATE時の情報を退避
+                # ※ race['bet_target']はこの時点ではまだ古い（CANDIDATE時）ためcombinationが有効
+                # ※ L730でbet_targetを新しい(EXCLUDED)ものに上書きするとcombination='-'になる
+                if old_status == BetStatus.CANDIDATE and new_status == BetStatus.EXCLUDED:
+                    prev_combo = race['bet_target'].combination
+                    if prev_combo and prev_combo != '-':
+                        self.prev_candidate_races[race_id] = {
+                            'combination': prev_combo,
+                            'odds_range': race['bet_target'].odds_range or '-',
+                        }
+                        print(f"  [INFO] CANDIDATE→EXCLUDED: {race_id} を候補追跡に登録(combo={prev_combo})")
+
                 # ステータス変化に関わらず常にキャッシュ更新（has_beforeinfo=True の評価結果を反映）
                 race['bet_target'] = bet_target
+                race['predictions'] = predictions  # 最新 gap 値を check_and_notify で使うため更新
                 self._bet_target_cache[race_id] = race
 
             finally:
@@ -736,9 +803,24 @@ class RaceMonitor:
             if racer_row:
                 first_racer_number = racer_row['racer_number']
 
+        # rank2-rank4スコア（gap計算用）: before/advanceを混在させずソースを統一する
+        # 混在するとスコアの絶対値スケールが異なり gap34 が無意味な値になるため
+        def _get_gap_scores(b_list, a_list, indices):
+            if all(len(b_list) > i and b_list[i].get('total_score') is not None for i in indices):
+                return [b_list[i]['total_score'] for i in indices]
+            if all(len(a_list) > i and a_list[i].get('total_score') is not None for i in indices):
+                return [a_list[i]['total_score'] for i in indices]
+            return [None] * len(indices)
+
+        r2_score, r3_score, r4_score = _get_gap_scores(before_preds, advance_preds, [1, 2, 3])
+        score_gap   = (total_score - r2_score) if total_score is not None and r2_score is not None else None
+        score_gap34 = (r3_score - r4_score)    if r3_score   is not None and r4_score is not None else None
+
         return {
-            'confidence': confidence,  # before予測優先（2026-04-23修正）
-            'total_score': total_score,  # before予測優先（2026-04-22修正）
+            'confidence': confidence,
+            'total_score': total_score,
+            'score_gap': score_gap,
+            'score_gap34': score_gap34,
             'old_prediction': old_pred,
             'new_prediction': new_pred,
             'first_racer_number': first_racer_number
@@ -784,10 +866,11 @@ class RaceMonitor:
         if race_id in self.fetched_odds_races:
             return False
 
-        # CANDIDATE または TARGET_ADVANCE のみ対象
-        # TARGET_ADVANCE: Eブロック(08:00)で取得済みだが締切前に大きく変動するため再取得が必要
+        # EXCLUDED のみスキップ。TARGET_CONFIRMEDも対象に含める。
+        # 理由: beforeinfo再評価でTARGET_CONFIRMEDになった場合、その時点でのDBオッズは
+        # 朝のEブロック取得値のまま（古い）なのでWebから再取得が必要。
         bet_target = race['bet_target']
-        if bet_target.status not in (BetStatus.CANDIDATE, BetStatus.TARGET_ADVANCE):
+        if bet_target.status == BetStatus.EXCLUDED:
             return False
 
         deadline = self.parse_deadline(race['date'], race['deadline'])
@@ -826,7 +909,9 @@ class RaceMonitor:
                     finally:
                         conn.close()
 
-                    self.fetched_odds_races.add(race_id)
+                    fetch_time = datetime.now()
+                    self.fetched_odds_races[race_id] = fetch_time
+                    race['odds_fetched_at'] = fetch_time
 
                     # 再評価
                     self._reevaluate_after_odds_fetch(race, odds_data)
@@ -888,6 +973,7 @@ class RaceMonitor:
                         self._notify_promotion(race, bet_target, "候補→対象(オッズ確認)")
 
                 race['bet_target'] = bet_target
+                race['predictions'] = predictions  # 最新 gap 値を check_and_notify で使うため更新
                 self._bet_target_cache[race_id] = race
 
             finally:
@@ -944,10 +1030,26 @@ class RaceMonitor:
                 # 1点買いの場合もリストのリスト形式に統一
                 pit_numbers = [[int(x) for x in bet_target.combination.split('-')]]
 
+            preds = race.get('predictions') or {}
+            rank1_pit = (preds.get('old_prediction') or [None])[0]
+            entries = (race.get('race_data') or {}).get('entries', [])
+            rank1_entry = next((e for e in entries if e.get('pit_number') == rank1_pit), None)
             prediction = {
                 'pit_numbers': pit_numbers,
-                'confidence': _CONFIDENCE_FLOAT_MAP.get(bet_target.confidence, 0.70) if isinstance(bet_target.confidence, str) else (float(bet_target.confidence) if bet_target.confidence is not None else 0.70)
+                'prediction_score': calc_prediction_score(
+                    bet_target.confidence,
+                    preds.get('score_gap'),
+                    preds.get('score_gap34'),
+                ),
+                'rank1_name': rank1_entry['racer_name'] if rank1_entry else None,
             }
+
+            # オッズ取得からの経過時間（通知メッセージに表示）
+            fetch_elapsed_min = None
+            if 'odds_fetched_at' in race:
+                elapsed = int((datetime.now() - race['odds_fetched_at']).total_seconds() / 60)
+                if elapsed >= 1:
+                    fetch_elapsed_min = elapsed
 
             # オッズ情報整形（2026-01-28修正: パターンH対応）
             if bet_target.multi_bet_result and bet_target.multi_bet_result.bets:
@@ -955,14 +1057,22 @@ class RaceMonitor:
                 odds_info = {
                     'trifecta_odds': bet_target.odds if bet_target.odds else 10.0,
                     'multi_bets': [
-                        {'combination': bet.combination, 'odds': bet.odds}
+                        {'combination': bet.combination, 'odds': bet.odds, 'bet_amount': bet.bet_amount}
                         for bet in bet_target.multi_bet_result.bets
-                    ]
+                    ],
+                    'bet_amount': sum(b.bet_amount for b in bet_target.multi_bet_result.bets),
+                    'expected_roi': bet_target.expected_roi,
+                    'reason': bet_target.reason,
+                    'odds_fetch_elapsed': fetch_elapsed_min,
                 }
             else:
                 # 1点買い
                 odds_info = {
                     'trifecta_odds': bet_target.odds if bet_target.odds else 10.0,
+                    'bet_amount': bet_target.bet_amount,
+                    'expected_roi': bet_target.expected_roi,
+                    'reason': bet_target.reason,
+                    'odds_fetch_elapsed': fetch_elapsed_min,
                 }
 
             # 直前情報があれば取得
@@ -973,10 +1083,19 @@ class RaceMonitor:
 
             # 通知送信
             try:
-                success = send_race_notification(race_info, prediction, odds_info, direct_info)
+                success = send_race_notification(race_info, prediction, odds_info, direct_info, status=bet_target.status.name if hasattr(bet_target.status, 'name') else str(bet_target.status))
 
                 if success:
                     self.notified_races.add(race_id)
+                    # 後期オッズ比較用: 通知時点の全買い目オッズをマップで保存（パターンH対応）
+                    if bet_target.multi_bet_result and bet_target.multi_bet_result.bets:
+                        race['notified_odds_map'] = {
+                            bet.combination: bet.odds for bet in bet_target.multi_bet_result.bets
+                        }
+                    else:
+                        race['notified_odds_map'] = (
+                            {bet_target.combination: bet_target.odds} if bet_target.combination else {}
+                        )
                     return True
                 else:
                     print(f"[ERROR] 通知送信失敗: {race_id}")
@@ -988,6 +1107,250 @@ class RaceMonitor:
                 return False
 
         return False
+
+    @staticmethod
+    def _parse_odds_range(odds_range: str) -> tuple:
+        """
+        odds_range文字列を (min, max) のタプルにパースする。
+
+        例:
+            "100-200倍" -> (100.0, 200.0)
+            "100倍+"    -> (100.0, None)
+            "-"         -> (None, None)
+
+        Returns:
+            (Optional[float], Optional[float]): (下限, 上限)。上限なしは None
+        """
+        if not odds_range or odds_range == '-':
+            return (None, None)
+        try:
+            s = odds_range.replace('倍', '').strip()
+            if s.endswith('+'):
+                return (float(s[:-1]), None)
+            if '-' in s:
+                lo, hi = s.split('-', 1)
+                return (float(lo), float(hi))
+        except (ValueError, AttributeError):
+            pass
+        return (None, None)
+
+    def _check_and_notify_candidate(self, race: Dict) -> bool:
+        """
+        候補最終通知（締切5-8分前）
+
+        CANDIDATEのまま締切が近づいたレースに対し、買い目と現在オッズをDiscordに通知する。
+        購入可否の判定はユーザーが現在オッズを見て手動で行う前提。
+        通常の購入通知（🎯/🟡）とは明確に区別されるフォーマット（📢）で送信。
+
+        Args:
+            race: レース情報
+
+        Returns:
+            bool: 候補通知を送信したらTrue
+        """
+        race_id = race['race_id']
+
+        # 通常通知済みなら候補通知は不要
+        if race_id in self.notified_races:
+            return False
+        # 既に候補通知済みならスキップ
+        if race_id in self.candidate_notified_races:
+            return False
+
+        bet_target = race['bet_target']
+        # CANDIDATE、またはCANDIDATE→EXCLUDEDに遷移したレース（最終オッズ次第で購入余地あり）
+        is_candidate = bet_target.status == BetStatus.CANDIDATE
+        was_candidate_now_excluded = (
+            bet_target.status == BetStatus.EXCLUDED
+            and race_id in self.prev_candidate_races
+        )
+        if not is_candidate and not was_candidate_now_excluded:
+            return False
+
+        # 買い目・オッズ範囲を決定
+        # EXCLUDED経路: EXCLUDED後はcombination='-'に上書きされているため、退避済みCANDIDATE時の値を使用
+        if was_candidate_now_excluded:
+            saved = self.prev_candidate_races[race_id]
+            target_combo = saved['combination']
+            odds_range_str = saved['odds_range']
+        else:
+            target_combo = bet_target.combination
+            odds_range_str = bet_target.odds_range or '-'
+
+        if not target_combo or target_combo == '-':
+            return False
+
+        deadline = self.parse_deadline(race['date'], race['deadline'])
+        now = datetime.now()
+        time_until_deadline = (deadline - now).total_seconds() / 60
+
+        # 5-8分前のみ発火
+        if not (5 <= time_until_deadline <= 8):
+            return False
+
+        print(f"候補最終通知: {race_id} (締切まであと{time_until_deadline:.0f}分) range={odds_range_str} combo={target_combo}")
+
+        # Webオッズ取得（最新値を表示するため）
+        current_odds = None
+        try:
+            from src.scraper.odds_scraper import OddsScraper
+
+            venue_code = race['venue_code']
+            race_date = race['date'].replace('-', '')
+            race_number = race['race_number']
+
+            scraper = OddsScraper()
+            try:
+                odds_data = scraper.get_trifecta_odds(venue_code, race_date, race_number)
+            finally:
+                scraper.close()
+
+            if odds_data and target_combo in odds_data:
+                current_odds = odds_data[target_combo]
+
+                # DBにも保存（後続処理で参照される可能性）
+                conn = self.get_connection()
+                try:
+                    cursor = conn.cursor()
+                    for combo, odds_val in odds_data.items():
+                        cursor.execute("""
+                            INSERT INTO trifecta_odds
+                            (race_id, combination, odds, fetched_at)
+                            VALUES (?, ?, ?, ?)
+                            ON CONFLICT(race_id, combination)
+                            DO UPDATE SET odds = excluded.odds, fetched_at = excluded.fetched_at
+                        """, (race_id, combo, odds_val, datetime.now().isoformat()))
+                    conn.commit()
+                finally:
+                    conn.close()
+
+        except Exception as e:
+            print(f"  [WARNING] 候補通知用オッズ取得失敗: {race_id} - {e}")
+
+        # 明らかに届かないオッズは通知しない
+        # 上限×2.0超（現在値が半値以下にならないと入らない）→ スキップ
+        # 下限×0.6未満（現在値が1.67倍以上に跳ね上がらないと入らない）→ スキップ
+        min_v, max_v = self._parse_odds_range(odds_range_str)
+        if current_odds is not None:
+            if max_v is not None and current_odds > max_v * 2.0:
+                print(f"  [SKIP] 候補通知スキップ: {race_id} 現在{current_odds:.1f}倍 > 上限{max_v}倍×2 (届かない)")
+                return False
+            if min_v is not None and current_odds < min_v * 0.6:
+                print(f"  [SKIP] 候補通知スキップ: {race_id} 現在{current_odds:.1f}倍 < 下限{min_v}倍×0.6 (届かない)")
+                return False
+
+        # 通知メッセージ整形（スマホ向け2行 + 信頼度）
+        venue_name = self.get_venue_name(race['venue_code'])
+        race_number = race['race_number']
+        deadline_str = race['deadline']
+        confidence = bet_target.confidence if hasattr(bet_target, 'confidence') else ''
+        conf_str = f" [{confidence}信頼]" if confidence else ""
+
+        if current_odds is not None:
+            if min_v is not None and min_v <= current_odds and (max_v is None or current_odds < max_v):
+                range_label = f" ✅範囲内({odds_range_str})"
+            else:
+                range_label = f" ⚠️範囲外({odds_range_str})"
+            odds_line = f"`{target_combo}` **{current_odds:.1f}倍**{range_label}"
+        else:
+            odds_line = f"`{target_combo}` オッズ取得失敗"
+
+        msg = (
+            f"📢 **{venue_name} {race_number}R** 締切{deadline_str} (あと{round(time_until_deadline)}分){conf_str}\n"
+            f"{odds_line}"
+        )
+
+        # 現在オッズが対象範囲の±15%以内なら購入チャンネルへ、それ以外は監視チャンネルへ
+        is_close = (
+            current_odds is not None
+            and min_v is not None
+            and max_v is not None
+            and current_odds >= min_v * 0.85
+            and current_odds <= max_v * 1.15
+        )
+        channel = 'buy' if is_close else 'watch'
+        if is_close:
+            print(f"  [CLOSE] 範囲±15%以内: {current_odds:.1f}倍 (範囲{min_v}-{max_v}倍) → #購入チャンネルへ")
+
+        try:
+            success = send_discord_notification(msg, channel=channel)
+            if success:
+                self.candidate_notified_races.add(race_id)
+                print(f"  候補通知送信成功: {race_id} (channel={channel})")
+                return True
+            else:
+                print(f"[ERROR] 候補通知送信失敗: {race_id}")
+                return False
+        except Exception as e:
+            print(f"[ERROR] 候補通知送信エラー: {race_id} - {e}")
+            return False
+
+    def _check_and_refresh_odds_late(self, race: Dict) -> Dict:
+        """
+        締切3-5分前の最終オッズ確認。30%以上の大幅変動時に補足通知を送信。
+        パターンH（複数点買い）の全買い目を個別に比較する。
+
+        Returns:
+            dict: {'checked': bool, 'alerted': int}
+        """
+        race_id = race['race_id']
+        result = {'checked': False, 'alerted': 0}
+
+        # 通知済みレースのみ対象
+        if race_id not in self.notified_races:
+            return result
+        # 既に後期確認済みならスキップ
+        if race_id in self.late_fetched_races:
+            return result
+
+        deadline = self.parse_deadline(race['date'], race['deadline'])
+        now = datetime.now()
+        time_until = (deadline - now).total_seconds() / 60
+
+        if not (3 <= time_until <= 5):
+            return result
+
+        try:
+            from src.scraper.odds_scraper import OddsScraper
+
+            venue_code = race['venue_code']
+            race_date = race['date'].replace('-', '')
+            race_number = race['race_number']
+
+            scraper = OddsScraper()
+            new_odds_data = scraper.get_trifecta_odds(venue_code, race_date, race_number)
+            scraper.close()
+
+            result['checked'] = True
+
+            if not new_odds_data:
+                # オッズ未公開の場合は再試行可能にするためaddしない
+                return result
+
+            # スクレイピング成功かつデータ取得済みの場合のみaddして再試行を防ぐ
+            self.late_fetched_races.add(race_id)
+
+            notified_odds_map = race.get('notified_odds_map', {})
+            if not notified_odds_map:
+                return result
+
+            venue_name = self.get_venue_name(race['venue_code'])
+            for combination, old_odds in notified_odds_map.items():
+                if not (old_odds and old_odds > 0):
+                    continue
+                new_odds = new_odds_data.get(combination, 0.0)
+                if new_odds <= 0:
+                    continue
+                change_rate = abs(new_odds - old_odds) / old_odds
+                if change_rate >= 0.3:
+                    send_odds_change_alert(venue_name, race['race_number'], combination, old_odds, new_odds, time_until)
+                    print(f"  [ODDS変動] {race_id} {combination}: {old_odds:.1f}→{new_odds:.1f}倍 ({change_rate:.0%}変動)")
+                    result['alerted'] += 1
+
+        except Exception as e:
+            print(f"[ERROR] 後期オッズ確認エラー: {race_id} - {e}")
+
+        return result
 
     def monitor_once(self) -> Dict[str, int]:
         """
@@ -1001,6 +1364,9 @@ class RaceMonitor:
             'odds_fetched': 0,
             'direct_info_fetched': 0,
             'notifications_sent': 0,
+            'candidate_notifications': 0,
+            'late_odds_checks': 0,
+            'odds_change_alerts': 0,
             'errors': 0
         }
 
@@ -1015,17 +1381,29 @@ class RaceMonitor:
             # 各レースをチェック
             for race in races:
                 try:
+                    # オッズ再取得チェック（締切13-25分前）
+                    # ※ 直前情報取得より先に実行することで _reevaluate_after_beforeinfo() が
+                    #   最新DBオッズで再評価できる（CANDIDATE→EXCLUDED 取りこぼし防止）
+                    if self._check_and_fetch_odds(race):
+                        stats['odds_fetched'] += 1
+
                     # 直前情報取得チェック（締切15-25分前、取得後にbefore予測生成+再評価）
+                    # オッズ取得済みのため、_reevaluate_after_beforeinfo() は最新DBオッズで評価される
                     if self.check_and_fetch_direct_info(race):
                         stats['direct_info_fetched'] += 1
 
-                    # オッズ再取得チェック（締切13-25分前、直前情報取得後に実行してbefore予測+最新オッズで再評価）
-                    if self._check_and_fetch_odds(race):
-                        stats['odds_fetched'] += 1
+                    # 候補最終通知チェック（締切5-8分前、CANDIDATEのまま残ったレースを買い目だけ通知）
+                    if self._check_and_notify_candidate(race):
+                        stats['candidate_notifications'] += 1
 
                     # 通知チェック（締切8-12分前、再評価後のステータスで判定）
                     if self.check_and_notify(race):
                         stats['notifications_sent'] += 1
+
+                    # 後期オッズ確認（締切3-5分前、通知済みレースのみ・30%変動で補足通知）
+                    late_result = self._check_and_refresh_odds_late(race)
+                    stats['late_odds_checks'] += late_result['checked']
+                    stats['odds_change_alerts'] += late_result['alerted']
 
                 except Exception as e:
                     print(f"[ERROR] レース処理エラー: {race['race_id']} - {e}")
@@ -1045,7 +1423,7 @@ class RaceMonitor:
 
         except Exception as e:
             print(f"[ERROR] 監視サイクルエラー: {e}")
-            send_error_notification("監視サイクル失敗", str(e))
+            send_error_notification("監視サイクル失敗", str(e), severity='critical')
             stats['errors'] += 1
 
         return stats

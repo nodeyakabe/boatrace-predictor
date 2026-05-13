@@ -515,6 +515,9 @@ def get_race_ids_for_condition(
     if require_odds and race_ids:
         _use_ph = cond.get('use_pattern_h', False)
         _use_p142 = cond.get('use_pattern_p142', False)
+        _use_p143 = cond.get('use_pattern_p143', False)
+        _use_p132 = cond.get('use_pattern_p132', False)
+        _use_p124 = cond.get('use_pattern_p124', False)
         _excl_p5 = cond.get('pattern_h_exclude_p5', False)
         filtered_race_ids = set()
 
@@ -536,6 +539,15 @@ def get_race_ids_for_condition(
             if _use_p142 and len(pits) >= 4:
                 # p1-p4-p2: 予測1位-予測4位-予測2位
                 combinations = [f"{pits[0]}-{pits[3]}-{pits[1]}"]
+            elif _use_p143 and len(pits) >= 4:
+                # p1-p4-p3: 予測1位-予測4位-予測3位
+                combinations = [f"{pits[0]}-{pits[3]}-{pits[2]}"]
+            elif _use_p132:
+                # p1-p3-p2: 予測1位-予測3位-予測2位
+                combinations = [f"{pits[0]}-{pits[2]}-{pits[1]}"]
+            elif _use_p124 and len(pits) >= 4:
+                # p1-p2-p4: 予測1位-予測2位-予測4位
+                combinations = [f"{pits[0]}-{pits[1]}-{pits[3]}"]
             elif _use_ph and _excl_p5 and len(pits) >= 4:
                 combinations = [
                     f"{pits[0]}-{pits[1]}-{pits[2]}",

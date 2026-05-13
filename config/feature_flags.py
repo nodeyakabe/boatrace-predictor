@@ -50,6 +50,13 @@ FEATURE_FLAGS = {
     'score_gap_confidence': True,              # スコア差ベースの信頼度判定（混戦レースをC,Dとして適切に分類）
     'ml_consensus_filter': False,              # MLコンセンサスフィルター（v4b: total_score除外・OOS差+35pt確認済み・2026-04-13不採用: バックテストROI 190.2%→177.8% -12.4pt悪化）
 
+    # === boatersオリジナル展示データ活用（2026-05-12追加）===
+    # isshu_time(1周)・mawariashi_time(回り足)・chikusen_time(直線)の3指標
+    # gap_total順位（レース内での3指標合計差順位）をスコアに追加
+    # データなし=0点(中立)で自動補正。異常スケール会場(01,12,13,18,21)は除外
+    # 合格基準: 2026年OOS ROI ±5pt以内、3連単一致率≥95%
+    'boaters_tenji_score': True,               # boaters展示gap_totalスコア（2026-05-12追加・2026-05-13本採用・max_score=1.0）
+
     # === 展開指標スコアリング（2026-01-09追加） ===
     'escape_rate_scoring': False,              # 逃げ率スコアリング - 不採用（500レース検証で効果なし）
     'venue_attack_scoring': False,             # 会場攻撃率スコアリング - 不採用（840レース検証で効果なし、Z=0.00）

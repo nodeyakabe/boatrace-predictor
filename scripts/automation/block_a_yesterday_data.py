@@ -24,8 +24,8 @@ from scripts.automation.fetch_yesterday_final_odds import fetch_yesterday_final_
 from scripts.automation.fetch_yesterday_beforeinfo import fetch_yesterday_beforeinfo
 from scripts.automation.daily_tenji_collector import collect_previous_day_tenji
 from scripts.automation.generate_yesterday_before_predictions import generate_yesterday_before_predictions
-from scripts.automation.reconcile_yesterday_bets import reconcile_yesterday_bets, format_reconcile_message
-from scripts.automation.notify import send_discord_notification, send_error_notification
+from scripts.automation.reconcile_yesterday_bets import reconcile_yesterday_bets
+from scripts.automation.notify import send_discord_notification, send_error_notification, send_reconcile_notification
 
 
 class BlockARunner:
@@ -50,11 +50,12 @@ class BlockARunner:
 
         tasks = [
             ("前日レース結果収集", self._task_results),
-            ("前日確定オッズ取得", self._task_final_odds),
             ("前日直前情報収集", self._task_beforeinfo),
             ("前日展示データ収集", self._task_tenji),
             ("前日直前予想生成", self._task_before_predictions),
+            # 突合せはfinal_odds上書き前に実行（pre-race oddsで条件判定するため）
             ("前日予想結果突合せ", self._task_reconcile),
+            ("前日確定オッズ取得", self._task_final_odds),
         ]
 
         for idx, (name, task_func) in enumerate(tasks, 1):
@@ -62,7 +63,7 @@ class BlockARunner:
             task_start = datetime.now()
 
             try:
-                count = task_func()
+                count = task_func() or 0
                 elapsed = (datetime.now() - task_start).total_seconds()
 
                 self.results[name] = {
@@ -149,15 +150,33 @@ class BlockARunner:
 
         message = f"{status_icon} **A完了** {yesterday}  {success_count}/{total_count}タスク  {elapsed_str}"
 
+        # タスク別取得件数を表示
+        TASK_SHORT = {
+            "前日レース結果収集": "結果",
+            "前日確定オッズ取得": "オッズ",
+            "前日直前情報収集": "直前情報",
+            "前日展示データ収集": "展示",
+            "前日直前予想生成": "before予測",
+            "前日予想結果突合せ": "突合せ",
+        }
+        task_parts = []
+        for name, res in self.results.items():
+            short = TASK_SHORT.get(name, name)
+            if res["status"] == "OK":
+                task_parts.append(f"{short}:{res['count']:,}件")
+            else:
+                task_parts.append(f"❌{short}")
+        if task_parts:
+            message += "\n" + " / ".join(task_parts)
+
         if self.errors:
             message += "\n" + "\n".join(f"❌ {e[:80]}" for e in self.errors)
 
-        # 突合せ結果を別通知で送信
+        # 突合せ結果を別通知で送信（alert: 1行要約 / log: 詳細）
         if self._reconcile_result is not None:
-            reconcile_msg = format_reconcile_message(self._reconcile_result)
-            send_discord_notification(reconcile_msg)
+            send_reconcile_notification(self._reconcile_result)
 
-        send_discord_notification(message)
+        send_discord_notification(message, channel='log')
 
 
 def main():

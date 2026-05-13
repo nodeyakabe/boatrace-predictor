@@ -1068,17 +1068,18 @@ class BatchDataLoader:
                 'chikusen_time': row['chikusen_time']
             }
 
-        # exhibition_dataテーブルからもchikusen_timeを取得（補完用）
+        # exhibition_dataテーブルからもchikusen_time/isshu_time/mawariashi_timeを取得（補完用）
         cursor.execute("""
             SELECT
                 ed.race_id,
                 ed.pit_number,
                 ed.chikusen_time,
-                ed.exhibition_time
+                ed.exhibition_time,
+                ed.isshu_time,
+                ed.mawariashi_time
             FROM exhibition_data ed
             JOIN races r ON ed.race_id = r.id
             WHERE r.race_date = ?
-              AND ed.chikusen_time IS NOT NULL
         """, [target_date])
 
         for row in cursor.fetchall():
@@ -1094,6 +1095,11 @@ class BatchDataLoader:
                 race_details[race_id][pit]['chikusen_time'] = row['chikusen_time']
             if not race_details[race_id][pit].get('exhibition_time') and row['exhibition_time']:
                 race_details[race_id][pit]['exhibition_time'] = row['exhibition_time']
+            # isshu_time / mawariashi_time は boaters展示データのみに存在（常に上書き設定）
+            if row['isshu_time']:
+                race_details[race_id][pit]['isshu_time'] = row['isshu_time']
+            if row['mawariashi_time']:
+                race_details[race_id][pit]['mawariashi_time'] = row['mawariashi_time']
 
         self._cache['race_details'] = dict(race_details)
         cursor.close()

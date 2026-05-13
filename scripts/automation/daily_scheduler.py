@@ -84,6 +84,7 @@ from scripts.automation.block_a_yesterday_data import BlockARunner
 from scripts.automation.block_c_today_data import BlockCRunner
 from scripts.automation.block_d_today_prediction import BlockDRunner
 from scripts.automation.fetch_today_odds import fetch_todays_odds
+from scripts.automation.fetch_today_races import fetch_todays_races
 from scripts.maintenance.run_racer_features_recompute import recompute_racer_features
 
 
@@ -195,6 +196,8 @@ def block_a_job():
         monitor.fetched_direct_info.clear()
         monitor.fetched_odds_races.clear()
         monitor._bet_target_cache.clear()
+        monitor.candidate_notified_races.clear()
+        monitor.prev_candidate_races.clear()
         monitor._cache_date = None
         print("[INFO] 日次リセット完了（通知済み・直前情報・オッズ取得済みセットをクリア）")
 
@@ -208,7 +211,7 @@ def block_a_job():
     except Exception as e:
         error_msg = f"Aブロック実行中にエラー: {str(e)}"
         print(f"[ERROR] {error_msg}")
-        send_error_notification("Aブロックエラー", error_msg)
+        send_error_notification("Aブロックエラー", error_msg, severity='critical')
 
 
 def racer_features_job():
@@ -219,11 +222,11 @@ def racer_features_job():
         if success:
             print(f"[OK] racer_features 更新完了")
         else:
-            send_error_notification("racer_features更新エラー", "週2回更新が失敗しました")
+            send_error_notification("racer_features更新エラー", "週2回更新が失敗しました", severity='critical')
     except Exception as e:
         error_msg = f"racer_features更新エラー: {str(e)}"
         print(f"[ERROR] {error_msg}")
-        send_error_notification("racer_features更新エラー", error_msg)
+        send_error_notification("racer_features更新エラー", error_msg, severity='critical')
 
 
 def block_c_job():
@@ -238,7 +241,7 @@ def block_c_job():
     except Exception as e:
         error_msg = f"Cブロック実行中にエラー: {str(e)}"
         print(f"[ERROR] {error_msg}")
-        send_error_notification("Cブロックエラー", error_msg)
+        send_error_notification("Cブロックエラー", error_msg, severity='critical')
 
 
 def block_d_job():
@@ -254,7 +257,7 @@ def block_d_job():
     except Exception as e:
         error_msg = f"Dブロック実行中にエラー: {str(e)}"
         print(f"[ERROR] {error_msg}")
-        send_error_notification("Dブロックエラー", error_msg)
+        send_error_notification("Dブロックエラー", error_msg, severity='critical')
 
 
 def block_e_job():
@@ -292,7 +295,25 @@ def block_e_job():
     except Exception as e:
         error_msg = f"Eブロック（オッズ収集）でエラー: {str(e)}"
         print(f"[ERROR] {error_msg}")
-        send_error_notification("Eブロックエラー", error_msg)
+        send_error_notification("Eブロックエラー", error_msg, severity='critical')
+
+
+def refresh_race_times_job():
+    """発走時刻再取得ジョブ（10:00 / 13:00 / 16:00）
+
+    当日に発走時刻が変更された場合に races.race_time を最新化する。
+    fetch_todays_races() のみを再実行し、entries等の再取得は行わない。
+    """
+    start_time = datetime.now()
+    print(f"\n[{start_time.strftime('%Y-%m-%d %H:%M:%S')}] 発走時刻再取得開始")
+
+    try:
+        race_count = fetch_todays_races()
+        elapsed = (datetime.now() - start_time).total_seconds()
+        print(f"[OK] 発走時刻再取得完了: {race_count}レース ({int(elapsed // 60)}分{int(elapsed % 60)}秒)\n")
+
+    except Exception as e:
+        print(f"[ERROR] 発走時刻再取得エラー: {e}")
 
 
 # 古いジョブ関数は削除（4ブロック構成に統合）
@@ -335,13 +356,13 @@ def startup_notification():
         f"🤖 **システム起動** {datetime.now().strftime('%m/%d %H:%M')}\n"
         f"A 03:00 → C 06:00 → E 08:00 → D 08:30"
     )
-    send_discord_notification(message)
+    send_discord_notification(message, channel='log')
 
 
 def shutdown_notification():
     """停止通知"""
     message = f"🛑 **システム停止** {datetime.now().strftime('%m/%d %H:%M')}"
-    send_discord_notification(message)
+    send_discord_notification(message, channel='log')
 
 
 def print_status():
@@ -357,6 +378,7 @@ def print_status():
     print("  - 毎朝 6:00 - Cブロック（本日データ収集 + advance予測生成）")
     print("  - 毎朝 8:00 - Eブロック（当日オッズ収集）")
     print("  - 毎朝 8:30 - Dブロック（予想生成・オッズあり状態で通知）")
+    print("  - 10:00 / 13:00 / 16:00 - 発走時刻再取得（当日変更対応）")
     print("  - 1分ごと - レース監視（オッズ再取得→直前情報→通知）")
     print("\n操作:")
     print("  - Ctrl+C で停止")
@@ -404,6 +426,12 @@ def main():
     schedule.every().day.at("06:00").do(block_c_job)
     print("[OK] 毎朝 6:00 - Cブロック（本日データ収集）[30分前倒し]")
 
+    # 10:00 / 13:00 / 16:00 に発走時刻を再取得（当日変更対応）
+    schedule.every().day.at("10:00").do(refresh_race_times_job)
+    schedule.every().day.at("13:00").do(refresh_race_times_job)
+    schedule.every().day.at("16:00").do(refresh_race_times_job)
+    print("[OK] 10:00 / 13:00 / 16:00 - 発走時刻再取得（当日変更対応）")
+
     # 毎朝8:00にEブロック（当日オッズ収集）- Dブロックより先に実行
     schedule.every().day.at("08:00").do(block_e_job)
     print("[OK] 毎朝 8:00 - Eブロック（当日オッズ収集）")
@@ -433,7 +461,7 @@ def main():
     except Exception as e:
         error_msg = f"スケジューラメインループでエラー: {str(e)}"
         print(f"\n[ERROR] {error_msg}")
-        send_error_notification("スケジューラ致命的エラー", error_msg)
+        send_error_notification("スケジューラ致命的エラー", error_msg, severity='critical')
 
     finally:
         # ロックファイルを解放

@@ -67,7 +67,7 @@ class BlockDRunner:
             print(f"  所要時間: {int(elapsed // 60)}分{int(elapsed % 60)}秒\n")
 
             # エラー通知
-            send_error_notification("Dブロックエラー", error_msg)
+            send_error_notification("Dブロックエラー", error_msg, severity='critical')
             self.success = False
 
         self.end_time = datetime.now()

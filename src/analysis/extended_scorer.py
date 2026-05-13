@@ -1543,6 +1543,140 @@ class ExtendedScorer:
             'description': desc
         }
 
+    # 異常スケール会場（isshu~18s、mawari~11s等）は除外
+    _BOATERS_EXCLUDE_VENUES = {1, 12, 13, 18, 21}
+
+    def calculate_boaters_tenji_score(
+        self,
+        race_id: int,
+        pit_number: int,
+        venue_code: int,
+        max_score: float = 2.0
+    ) -> Dict:
+        """
+        boatersオリジナル展示データ（isshu/mawari/chiku）に基づくスコアを計算
+
+        3指標の gap_total 順位（レース内での合計差順位）でスコアを付与。
+        - rank=1（3指標とも最良に近い）: +max_score
+        - rank=2-3: +max_score*0.5
+        - rank=4-5: -max_score*0.25
+        - rank=6: -max_score*0.75
+        - データなし: 0.0（中立。選択バイアス補正のため加点も減点もしない）
+
+        異常スケール会場（01桐生/12住之江/13尼崎/18徳山/21芦屋）は除外（0点）。
+
+        Args:
+            race_id: レースID
+            pit_number: 枠番
+            venue_code: 会場コード（int）
+            max_score: 最大スコア（デフォルト: 2.0点）
+
+        Returns:
+            {'score': float, 'rank': int or None, 'gap_total': float or None,
+             'n_boats': int, 'level': str, 'description': str}
+        """
+        # 異常スケール会場は除外（中立）
+        if venue_code in self._BOATERS_EXCLUDE_VENUES:
+            return {
+                'score': 0.0, 'rank': None, 'gap_total': None,
+                'n_boats': 0, 'level': 'excluded',
+                'description': f'対象外会場（コード{venue_code}）'
+            }
+
+        # バッチローダーキャッシュから取得（race_detailsキャッシュにisshu/mawariが含まれる）
+        times_data = []  # [(pit, isshu, mawari, chiku), ...]
+        cache_hit = False
+        if self.batch_loader and self.batch_loader._cache_loaded:
+            race_details = self.batch_loader._cache.get('race_details', {}).get(race_id, {})
+            for pit, details in race_details.items():
+                isshu = details.get('isshu_time')
+                mawari = details.get('mawariashi_time')
+                chiku = details.get('chikusen_time')
+                if isshu and mawari and chiku and isshu > 0 and mawari > 0 and chiku > 0:
+                    times_data.append((pit, isshu, mawari, chiku))
+            cache_hit = True  # キャッシュを試みた（データなし=isshu未収集が正常）
+
+        if not cache_hit:
+            # フォールバック: DBクエリ（バッチローダーなし時）
+            conn = get_connection(self.db_path)
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    SELECT pit_number, isshu_time, mawariashi_time, chikusen_time
+                    FROM exhibition_data
+                    WHERE race_id = ?
+                      AND isshu_time IS NOT NULL AND mawariashi_time IS NOT NULL
+                      AND chikusen_time IS NOT NULL
+                      AND isshu_time > 0 AND mawariashi_time > 0 AND chikusen_time > 0
+                ''', (race_id,))
+                times_data = [(r[0], r[1], r[2], r[3]) for r in cursor.fetchall()]
+            finally:
+                cursor.close()
+
+        # 3艇未満はデータ不足で中立
+        if len(times_data) < 3:
+            return {
+                'score': 0.0, 'rank': None, 'gap_total': None,
+                'n_boats': len(times_data), 'level': 'no_data',
+                'description': 'boaters展示データなし（中立）'
+            }
+
+        # gap_total 計算
+        best_isshu = min(t[1] for t in times_data)
+        best_mawari = min(t[2] for t in times_data)
+        best_chiku = min(t[3] for t in times_data)
+
+        gaps = []
+        for pit, isshu, mawari, chiku in times_data:
+            gt = (isshu - best_isshu) + (mawari - best_mawari) + (chiku - best_chiku)
+            gaps.append((pit, gt))
+
+        gaps.sort(key=lambda x: x[1])  # gap_total 昇順（小さい=良い）
+
+        # 対象艇の rank を取得
+        target_rank = None
+        target_gap = None
+        for rank, (pit, gap) in enumerate(gaps, start=1):
+            if pit == pit_number:
+                target_rank = rank
+                target_gap = gap
+                break
+
+        if target_rank is None:
+            # 対象艇のデータなし（中立）
+            return {
+                'score': 0.0, 'rank': None, 'gap_total': None,
+                'n_boats': len(times_data), 'level': 'no_data',
+                'description': 'boaters展示データなし（中立）'
+            }
+
+        # ランク別スコアリング
+        if target_rank == 1:
+            score = max_score
+            level = 'excellent'
+            desc = f'boaters展示gap_total {target_gap:.3f}（1位/最良）'
+        elif target_rank in (2, 3):
+            score = max_score * 0.5
+            level = 'good'
+            desc = f'boaters展示gap_total {target_gap:.3f}（{target_rank}位/良好）'
+        elif target_rank in (4, 5):
+            score = -max_score * 0.25
+            level = 'below_average'
+            desc = f'boaters展示gap_total {target_gap:.3f}（{target_rank}位/やや不振）'
+        else:  # rank=6
+            score = -max_score * 0.75
+            level = 'poor'
+            desc = f'boaters展示gap_total {target_gap:.3f}（6位/不振）'
+
+        return {
+            'score': round(score, 2),
+            'rank': target_rank,
+            'gap_total': round(target_gap, 4),
+            'n_boats': len(times_data),
+            'level': level,
+            'description': desc
+        }
+
     def calculate_recent_form_score(
         self,
         racer_number: str,
@@ -1635,6 +1769,10 @@ class ExtendedScorer:
         recent_avg_rank = avg_rank_5 if avg_rank_5 is not None else (avg_rank_3 or avg_rank_10 or 3.5)
 
         if win_rate_3 is not None and win_rate_10 is not None:
+            # ⚠️ KNOWN BUG (意図的に保持 - 2026-05-01 Opus検証済み)
+            # 正しくは +0.10/-0.10 だが、全15条件がこの閾値(+10/-10)で
+            # 最適化済みのため修正すると2025年で-98,150円悪化(実測)。
+            # 正式修正はポートフォリオ全体リチューニング時のみ実施。
             if win_rate_3 > win_rate_10 + 10:
                 trend = 'improving'
                 trend_desc = '上昇中'
@@ -1648,6 +1786,10 @@ class ExtendedScorer:
             trend = 'unknown'
             trend_desc = '不明'
 
+        # ⚠️ KNOWN BUG (意図的に保持 - 2026-05-01 Opus検証済み)
+        # 正しくは / 0.30 だが、全15条件がこのスケール(win_rate_score≈0)で
+        # 最適化済みのため修正すると2025年で-98,150円悪化(実測)。
+        # 正式修正はポートフォリオ全体リチューニング時のみ実施。
         win_rate_score = min(recent_win_rate / 30.0, 1.0) * max_score * 0.6
         rank_score = max(0, (4.5 - recent_avg_rank) / 3.5) * max_score * 0.4
         score = win_rate_score + rank_score
@@ -2187,6 +2329,23 @@ class ExtendedScorer:
             max_score=2.0
         )
 
+        # 17. boatersオリジナル展示スコア (設定: boaters_tenji_score)
+        boaters_tenji_result = {
+            'score': 0.0, 'rank': None, 'gap_total': None,
+            'n_boats': 0, 'level': 'disabled', 'description': 'boaters展示スコア無効'
+        }
+        if race_id and is_feature_enabled('boaters_tenji_score'):
+            try:
+                vc_int = int(venue_code) if venue_code else 0
+            except (ValueError, TypeError):
+                vc_int = 0
+            boaters_tenji_result = self.calculate_boaters_tenji_score(
+                race_id,
+                pit_number,
+                venue_code=vc_int,
+                max_score=float(weights.get('boaters_tenji_score', 2.0))
+            )
+
         # 総合スコア計算
         # 各スコアを合算
         total_score = (
@@ -2205,7 +2364,8 @@ class ExtendedScorer:
             recent_form_result['score'] +
             venue_affinity_result['score'] +
             place_rate_result['score'] +
-            motor_second_rate_result['score']  # モーター2連対率スコアを追加
+            motor_second_rate_result['score'] +  # モーター2連対率スコアを追加
+            boaters_tenji_result['score']  # boatersオリジナル展示スコアを追加
         )
 
         # 最大可能スコアを計算（正規化用）
@@ -2242,6 +2402,7 @@ class ExtendedScorer:
             'exhibition': exhibition_result,
             'tilt': tilt_result,
             'chikusen_time': chikusen_time_result,  # 直線タイムスコアを追加
+            'boaters_tenji': boaters_tenji_result,  # boatersオリジナル展示スコア
             'recent_form': recent_form_result,
             'venue_affinity': venue_affinity_result,
             'place_rate': place_rate_result

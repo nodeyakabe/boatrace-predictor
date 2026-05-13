@@ -144,8 +144,8 @@ class OriginalTenjiBrowserScraper:
             # ページにアクセス
             self.driver.get(url)
 
-            # ページが読み込まれるまで待機（オリジナル展示タブのコンテンツ）
-            time.sleep(2)
+            # ページが読み込まれるまで待機（動的JS読み込みのため5秒必要）
+            time.sleep(5)
 
             # データが存在するか確認
             # 「データがありません」などのメッセージがあれば None を返す

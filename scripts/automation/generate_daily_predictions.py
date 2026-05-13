@@ -118,7 +118,8 @@ def get_todays_target_and_candidates(db_path: str) -> tuple:
                         'race_num': race_number,
                         'race_time': race_time,
                         'combination': combination_str,
-                        'odds': bet_target.odds if (bet_target.odds is not None and bet_target.odds != 0) else 0.0
+                        'odds': bet_target.odds if (bet_target.odds is not None and bet_target.odds != 0) else 0.0,
+                        'reason': bet_target.reason,
                     })
                 # 暫定購入対象（advance予測のみ・before予測未確定）
                 elif bet_target.status == BetStatus.TARGET_ADVANCE:
@@ -127,7 +128,8 @@ def get_todays_target_and_candidates(db_path: str) -> tuple:
                         'race_num': race_number,
                         'race_time': race_time,
                         'combination': combination_str,
-                        'odds': bet_target.odds if (bet_target.odds is not None and bet_target.odds != 0) else 0.0
+                        'odds': bet_target.odds if (bet_target.odds is not None and bet_target.odds != 0) else 0.0,
+                        'reason': bet_target.reason,
                     })
                 # 候補レース（オッズが条件の80%以上ある場合のみ）
                 elif bet_target.status == BetStatus.CANDIDATE:
@@ -328,6 +330,14 @@ def generate_todays_predictions() -> bool:
             print(f"  暫定購入対象レース数: {len(advance_races)}件")
             print(f"  候補レース数: {len(candidate_races)}件")
 
+            # 本日最初のレース締切時刻を取得（通知時刻の見通し用）
+            all_races = (target_races or []) + (advance_races or []) + (candidate_races or [])
+            first_race_time = None
+            if all_races:
+                times = [r.get('race_time', '') for r in all_races if r.get('race_time')]
+                if times:
+                    first_race_time = min(times)
+
             # 完了通知送信
             send_daily_summary(
                 date=today_str,
@@ -335,7 +345,8 @@ def generate_todays_predictions() -> bool:
                 target_count=target_count,
                 target_races=target_races,
                 advance_races=advance_races,
-                candidate_races=candidate_races
+                candidate_races=candidate_races,
+                first_race_time=first_race_time,
             )
 
             return True

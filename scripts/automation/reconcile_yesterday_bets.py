@@ -65,13 +65,17 @@ def _assign_races(cursor, target_date: str) -> Dict[str, List[int]]:
 def _get_race_detail(cursor, race_id: int, cond: Dict) -> Optional[Dict]:
     """
     1レースの買い目・実結果・収支を計算して返す。
-    パターンH / 1点買い対応。
+    パターンH / p142 / p143 / p132 / p124 / 1点買い対応。
 
     Returns:
         dict with is_candidate=False (購入対象) or is_candidate=True (候補)
         or None (予測不足等でスキップ)
     """
     use_pattern_h = cond.get('use_pattern_h', False)
+    use_pattern_p142 = cond.get('use_pattern_p142', False)
+    use_pattern_p143 = cond.get('use_pattern_p143', False)
+    use_pattern_p132 = cond.get('use_pattern_p132', False)
+    use_pattern_p124 = cond.get('use_pattern_p124', False)
     odds_min = cond['odds_min']
     odds_max = cond['odds_max']
     exclude_p5 = cond.get('pattern_h_exclude_p5', False)
@@ -167,6 +171,76 @@ def _get_race_detail(cursor, race_id: int, cond: Dict) -> Optional[Dict]:
                 combo_125 if bet_125 > 0 else None,
             ]))
             ref_odds = None
+
+    elif use_pattern_p142:
+        # p1-p4-p2 パターン
+        if not p4:
+            return None
+        combo = f"{p1}-{p4}-{p2}"
+        odds_val = get_odds(combo)
+        is_candidate = not (odds_min <= odds_val < odds_max)
+        bets_str = combo
+        ref_odds = odds_val if is_candidate else None
+        if is_candidate:
+            total_bet = 0
+            total_payout = 0
+            is_hit = has_result and actual_combo == combo
+        else:
+            total_bet = 100
+            is_hit = has_result and actual_combo == combo
+            total_payout = int(odds_val * 100) if is_hit else 0
+
+    elif use_pattern_p143:
+        # p1-p4-p3 パターン
+        if not p4:
+            return None
+        combo = f"{p1}-{p4}-{p3}"
+        odds_val = get_odds(combo)
+        is_candidate = not (odds_min <= odds_val < odds_max)
+        bets_str = combo
+        ref_odds = odds_val if is_candidate else None
+        if is_candidate:
+            total_bet = 0
+            total_payout = 0
+            is_hit = has_result and actual_combo == combo
+        else:
+            total_bet = 100
+            is_hit = has_result and actual_combo == combo
+            total_payout = int(odds_val * 100) if is_hit else 0
+
+    elif use_pattern_p132:
+        # p1-p3-p2 パターン
+        combo = f"{p1}-{p3}-{p2}"
+        odds_val = get_odds(combo)
+        is_candidate = not (odds_min <= odds_val < odds_max)
+        bets_str = combo
+        ref_odds = odds_val if is_candidate else None
+        if is_candidate:
+            total_bet = 0
+            total_payout = 0
+            is_hit = has_result and actual_combo == combo
+        else:
+            total_bet = 100
+            is_hit = has_result and actual_combo == combo
+            total_payout = int(odds_val * 100) if is_hit else 0
+
+    elif use_pattern_p124:
+        # p1-p2-p4 パターン
+        if not p4:
+            return None
+        combo = f"{p1}-{p2}-{p4}"
+        odds_val = get_odds(combo)
+        is_candidate = not (odds_min <= odds_val < odds_max)
+        bets_str = combo
+        ref_odds = odds_val if is_candidate else None
+        if is_candidate:
+            total_bet = 0
+            total_payout = 0
+            is_hit = has_result and actual_combo == combo
+        else:
+            total_bet = 100
+            is_hit = has_result and actual_combo == combo
+            total_payout = int(odds_val * 100) if is_hit else 0
 
     else:
         combo_123 = f"{p1}-{p2}-{p3}"
@@ -309,12 +383,26 @@ def format_reconcile_message(result: Dict) -> str:
     else:
         lines.append(f"📊 **{short_date}** 購入なし")
 
-    # 的中レースのみ表示
+    # 的中レース
     hits = [d for d in result['details'] if d['status'] == '的中']
     if hits:
         lines.append("")
         for d in hits:
             lines.append(f"✅ {d['venue']} {d['race_num']}R  `{d['combinations']}`  +{d['return_amount']:,}円")
+
+    # 不的中レース（買い目 vs 実着順を表示）
+    misses = [d for d in result['details'] if d['status'] == '不的中']
+    if misses:
+        lines.append("")
+        for d in misses:
+            lines.append(f"❌ {d['venue']} {d['race_num']}R  買=`{d['combinations']}`  実=`{d['actual']}`")
+
+    # 結果未取得レース
+    no_results = [d for d in result['details'] if d['status'] == '結果未取得']
+    if no_results:
+        lines.append("")
+        for d in no_results:
+            lines.append(f"⏳ {d['venue']} {d['race_num']}R  `{d['combinations']}`  結果未取得")
 
     # 候補: 的中のみ表示
     if candidate_details:

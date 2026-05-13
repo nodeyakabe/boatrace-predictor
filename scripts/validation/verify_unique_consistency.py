@@ -36,15 +36,15 @@ def get_tier3_bet_race_ids(start_date: str, end_date: str) -> Set[int]:
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
-    # Tier 3で購入判定（風速フィルター無効化、実運用シミュレーション）
+    # Tier 3で購入判定（風速フィルター有効化: Tier 2 enable_wind_filter=True と整合）
     evaluator = create_custom_evaluator(
-        enable_venue_wind_filter=False,
+        enable_venue_wind_filter=True,
         db_path=DATABASE_PATH
     )
 
     # 期間内の全レースを取得
     cursor.execute("""
-        SELECT id, venue_code, race_number, race_date
+        SELECT id, venue_code, race_number, race_date, race_grade, is_rookie, is_ladies
         FROM races
         WHERE race_date >= ? AND race_date < ?
         ORDER BY race_date, race_time
@@ -59,9 +59,9 @@ def get_tier3_bet_race_ids(start_date: str, end_date: str) -> Set[int]:
     for race in races:
         race_id = race['id']
 
-        # 予測データを取得
+        # 予測データを取得（before）
         cursor.execute("""
-            SELECT pit_number, rank_prediction, confidence, racer_number
+            SELECT pit_number, rank_prediction, confidence, racer_number, total_score
             FROM race_predictions
             WHERE race_id = ? AND prediction_type = 'before'
             ORDER BY rank_prediction
@@ -72,22 +72,38 @@ def get_tier3_bet_race_ids(start_date: str, end_date: str) -> Set[int]:
             continue
 
         old_pred = [p['pit_number'] for p in predictions_rows]
+
+        # advance予測を取得（advance_before_matchチェック用）
+        cursor.execute("""
+            SELECT pit_number
+            FROM race_predictions
+            WHERE race_id = ? AND prediction_type = 'advance'
+            ORDER BY rank_prediction
+            LIMIT 3
+        """, (race_id,))
+        advance_rows = cursor.fetchall()
+        advance_top3 = [r['pit_number'] for r in advance_rows] if advance_rows else None
+
         predictions = {
             'confidence': predictions_rows[0]['confidence'],
             'old_prediction': old_pred,
             'new_prediction': old_pred,
-            'first_racer_number': predictions_rows[0]['racer_number']
+            'first_racer_number': predictions_rows[0]['racer_number'],
+            'total_score': predictions_rows[0].get('total_score'),
         }
 
-        # オッズデータを取得（パターンH用：3点）
-        if len(old_pred) >= 5:
-            combinations = [
-                f"{old_pred[0]}-{old_pred[1]}-{old_pred[2]}",
-                f"{old_pred[0]}-{old_pred[1]}-{old_pred[3]}",
-                f"{old_pred[0]}-{old_pred[1]}-{old_pred[4]}",
-            ]
-        else:
-            combinations = [f"{old_pred[0]}-{old_pred[1]}-{old_pred[2]}"]
+        # オッズデータを取得（全パターン対応: p1-p2-p3 / p132 / p142 / p143 / p124 / pattern_h）
+        p = old_pred
+        combinations = [f"{p[0]}-{p[1]}-{p[2]}"]  # 1点買い / p123
+        if len(p) >= 3:
+            combinations.append(f"{p[0]}-{p[2]}-{p[1]}")  # p132
+        if len(p) >= 4:
+            combinations.append(f"{p[0]}-{p[3]}-{p[1]}")  # p142
+            combinations.append(f"{p[0]}-{p[3]}-{p[2]}")  # p143
+            combinations.append(f"{p[0]}-{p[1]}-{p[3]}")  # p124 / pattern_h(4th)
+        if len(p) >= 5:
+            combinations.append(f"{p[0]}-{p[1]}-{p[4]}")  # pattern_h(5th)
+        combinations = list(dict.fromkeys(combinations))  # 重複除去・順序保持
 
         placeholders = ','.join(['?'] * len(combinations))
         cursor.execute(f"""
@@ -109,12 +125,20 @@ def get_tier3_bet_race_ids(start_date: str, end_date: str) -> Set[int]:
         """, (race_id,))
         entries = [dict(row) for row in cursor.fetchall()]
 
+        # 風速を取得（Tier 2の enable_wind_filter=True と整合させる）
+        cursor.execute("SELECT wind_speed FROM race_conditions WHERE race_id = ?", (race_id,))
+        wind_row = cursor.fetchone()
+        wind_speed = wind_row['wind_speed'] if wind_row and wind_row['wind_speed'] is not None else 0.0
+
         race_data = {
             'id': race_id,
             'venue_code': race['venue_code'],
             'race_number': race['race_number'],
             'race_date': race['race_date'],
-            'wind_speed': 0.0,
+            'race_grade': race.get('race_grade'),
+            'is_rookie': race.get('is_rookie', 0),
+            'is_ladies': race.get('is_ladies', 0),
+            'wind_speed': wind_speed,
             'entries': entries
         }
 
@@ -123,7 +147,8 @@ def get_tier3_bet_race_ids(start_date: str, end_date: str) -> Set[int]:
             race_data=race_data,
             predictions=predictions,
             odds_data=odds_dict,
-            has_beforeinfo=True
+            has_beforeinfo=True,
+            advance_top3=advance_top3
         )
 
         from src.betting.bet_target_evaluator import BetStatus

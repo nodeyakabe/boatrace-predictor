@@ -1,8 +1,22 @@
 # アーカイブ索引（ARCHIVE_INDEX）
 
-**最終更新**: 2026-04-06  
+**最終更新**: 2026-05-11  
 **目的**: archive/ 配下のファイルを検索・参照できるようにする。過去の知見・調査結果は削除せずここに保存している。  
 **注意**: 内容は過去時点のスナップショット。現在の状態はDB・コード・HANDOVER.mdで確認すること。
+
+---
+
+## 2026-05-11 整理内容
+
+| 対象 | 移動ファイル数 | 移動先 |
+|------|:---:|------|
+| scripts/analysis/ 旧版・一時分析 | 36 | scripts/analysis/_deprecated/ |
+| scripts/maintenance/ 旧版・一時タスク | 36 | scripts/maintenance/_deprecated/ |
+| scripts/validation/ デバッグ系 | 13 | scripts/validation/_deprecated/（新規作成） |
+| logs/ 完了済み一時作業ログ | 62 | logs/archive/（新規作成） |
+| ui/components/*.tmp.* | 16 | 削除 |
+| ルート直下 temp_* | 15 | 削除 |
+| temp/ 内 一時ファイル | 29 | 削除 |
 
 ---
 
@@ -22,6 +36,22 @@
 | [improvement_attempts/](#improvement_attempts5ファイル) | 5 | 不採用案の詳細調査メモ（REJECTED_IDEAS.mdに要約済み） |
 | [architecture_old/](#architecture_old4ファイル) | 4 | 旧アーキテクチャ文書・設計メモ |
 | [knowledge/](#knowledge6ファイル) | 6 | 旧知見ベース・ロジック解説書（2024-12） |
+
+### scripts/_deprecated/ （2026-05-11追加）
+
+| ディレクトリ | 移動数 | 主な内容 |
+|---|---|---|
+| scripts/analysis/_deprecated/ | +36 | tj系分析・旧p1/p2分析・一時スキャン・ML評価旧版など |
+| scripts/maintenance/_deprecated/ | +36 | 旧学習モデル（v4以前）・create_*系テーブル作成・cleanup_*系・監視旧版など |
+| scripts/validation/_deprecated/ | 13（新規） | debug_*系・analyze_tier*系・check_overlap系・compare_tier系 |
+
+### logs/archive/ （2026-05-11新規作成）
+
+| 内容 | ファイル数 |
+|---|---|
+| regen_*系（前日・年度データ再生成ログ） | 約25 |
+| test_*系（各種テスト実行ログ） | 約7 |
+| 一時作業ログ（brute_force・overnight・auto_plan等） | 約30 |
 
 ---
 

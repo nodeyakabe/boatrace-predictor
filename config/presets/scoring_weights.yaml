@@ -28,10 +28,11 @@ extended_scorer:
   tilt: 3                # チルト角度スコア
   recent_form: 8         # 直近成績スコア
   venue_affinity: 3      # 会場別勝率スコア
+  boaters_tenji_score: 1 # boaters展示gap_totalスコア（isshu/mawari/chiku合計差順位）案D採用・max_score縮小
 
   # 正規化設定
   total_weight: 20.0     # ExtendedScoreの最終的な重み
-  max_possible: 76       # 合計最大スコア（YAML=67 + chikusen_time=4 + place_rate=5をsettings.pyで追加）
+  max_possible: 78       # 合計最大スコア（YAML=69 + chikusen_time=4 + place_rate=5をsettings.pyで追加）
   min_possible: -10      # 合計最小スコア
 
 # ============================================================

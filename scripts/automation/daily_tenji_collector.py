@@ -112,7 +112,7 @@ def collect_previous_day_tenji(headless=True, update_existing=True):
                 elif result:
                     logger.info(f"  [{venue}] {yesterday} {race_no}R - OK 取得成功: {len(result)}名")
                     venue_results.append({
-                        'venue_code': int(venue),
+                        'venue_code': venue,  # '01'形式の文字列のまま渡す（int変換するとDBの'01'と不一致になる）
                         'date': yesterday,
                         'race_no': race_no,
                         'racers': result
