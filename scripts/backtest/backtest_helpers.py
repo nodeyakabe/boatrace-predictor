@@ -35,10 +35,14 @@ def get_race_ids_for_condition(
     """
     c1_ranks_str = ','.join([f"'{r}'" for r in cond['c1_rank']])
 
-    # 信頼度フィルター（Noneの場合は全信頼度対象）
+    # 信頼度フィルター（Noneの場合は全信頼度対象、リストの場合はIN句）
     confidence_clause = ""
     if cond.get('confidence') is not None:
-        confidence_clause = f"AND rp.confidence = '{cond['confidence']}'"
+        if isinstance(cond['confidence'], list):
+            _c_list = ','.join(f"'{c}'" for c in cond['confidence'])
+            confidence_clause = f"AND rp.confidence IN ({_c_list})"
+        else:
+            confidence_clause = f"AND rp.confidence = '{cond['confidence']}'"
 
     # 各種フィルター条件（standard_backtest.pyと同じ）
     venue_clause = ""
@@ -166,6 +170,18 @@ def get_race_ids_for_condition(
     AND CAST(rp1.pit_number AS TEXT)||'-'||CAST(rp2.pit_number AS TEXT)||'-'||CAST(rp3.pit_number AS TEXT) != (
         SELECT combination FROM trifecta_odds t WHERE t.race_id = r.id AND t.odds > 0 ORDER BY t.odds ASC LIMIT 1
     )"""
+
+    # 1号艇スタートタイムフィルター（独立信号用: race_detailsのst_time pit=1で絞り込み）
+    pit1_st_clause = ""
+    if cond.get('pit1_st_min') is not None:
+        pit1_st_clause += f"AND EXISTS (SELECT 1 FROM race_details _rd1 WHERE _rd1.race_id = r.id AND _rd1.pit_number = 1 AND _rd1.st_time >= {cond['pit1_st_min']}) "
+    if cond.get('pit1_st_max') is not None:
+        pit1_st_clause += f"AND EXISTS (SELECT 1 FROM race_details _rd1 WHERE _rd1.race_id = r.id AND _rd1.pit_number = 1 AND _rd1.st_time < {cond['pit1_st_max']}) "
+
+    # 予測1位が1号艇（pit_number=1）でないフィルター（独立信号用）
+    p1_not_course1_clause = ""
+    if cond.get('p1_not_course1', False):
+        p1_not_course1_clause = "AND rp1.pit_number != 1 "
 
     # 3位-4位スコア差フィルター（3着予測の確度フィルタ）
     score_gap_3_4_join = ""
@@ -516,6 +532,8 @@ def get_race_ids_for_condition(
         {advance_match_clause}
         {wind_filter_clause}
         {market_diverge_clause}
+        {pit1_st_clause}
+        {p1_not_course1_clause}
         """
 
     cursor.execute(query)

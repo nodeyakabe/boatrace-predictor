@@ -6,6 +6,11 @@
 Version: v2.62.0
 Last Updated: 2026-05-18
 
+【v2.63.0-test 不採用確定（2026-05-18）】
+- D_BROAD_50_300: Tier2(unique) ROI 93.8% / -17,530円 → FAIL。既存D条件の残余は低品質
+- SIG_PIT1ST_017_150_300_CD: Tier2(unique) 0的中/141件 → FAIL。独立信号空間は既存条件カバー済み
+- backtest_helpers.py拡張（confidence list / pit1_st_min / p1_not_course1）は保持（将来活用の可能性）
+
 【v2.62.0 変更内容】
 - A_DIVERGE_80_100: A信頼度×市場乖離×80-100倍 新規追加
   Tier2: 143件/ROI 384.3%/+40,650円/6/6年黒字（独立信号・既存条件との重複ゼロ）
@@ -1519,6 +1524,19 @@ STANDARD_BET_CONDITIONS = [
         'backtest_profit': 67610,
         'backtest_black_years': '5/6',
     },
+
+    # 【2026-05-18 Tier2テスト → 不採用】D_BROAD_50_300: D信頼度×全会場×50-300倍
+    # Standalone(Opus分析): ROI 109.2% / 月+1.99件 / corr 0.262 / 6年4黒字
+    # Tier2(unique, priority=60): 2822件 / ROI 93.8% / -17,530円 → FAIL (ROI<100%)
+    # 失敗理由: 既存D条件（D_B1×5会場・D_P143・D_P132×平和島）でフィルター落ちした「低品質」D レース
+    #           残余2822件はgrade/pattern条件をパスできなかった弱いD信頼度レース → 赤字構造
+
+    # 【2026-05-18 Tier2テスト → 不採用】SIG_PIT1ST_017_150_300_CD: 1号艇ST遅延×P1非1コース
+    # Standalone(Opus分析): 1479件 / ROI 203.3% / +152,720円 / 5/6年黒字 / corr 0.159
+    # Tier2(unique, priority=61): 141件 / 0的中 / ROI 0% / -14,100円 → FAIL
+    # 失敗理由: Standalone 1479件の的中14件はほぼ全て既存17条件に priority で吸収済み
+    #           priority最低の残余141件には的中ゼロ → 独立信号の的中空間は既存条件でカバー済み
+    # → REJECTED_IDEAS.md に記録
 ]
 
 # ============================================================
