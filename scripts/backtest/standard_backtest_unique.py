@@ -138,6 +138,14 @@ def analyze_assigned_races(
     use_pattern_p143 = cond.get('use_pattern_p143', False)
     use_pattern_p132 = cond.get('use_pattern_p132', False)
     use_pattern_p124 = cond.get('use_pattern_p124', False)
+    use_market_diverge = cond.get('use_market_diverge', False)
+    # 市場乖離条件: 予測買い目 != 市場本命（最小オッズ組み合わせ）
+    if use_market_diverge:
+        md_extra = """
+        AND CAST(p1 AS TEXT)||'-'||CAST(p2 AS TEXT)||'-'||CAST(p3 AS TEXT) !=
+            COALESCE((SELECT combination FROM trifecta_odds t WHERE t.race_id = race_bets.race_id AND t.odds > 0 ORDER BY t.odds ASC LIMIT 1), '')"""
+    else:
+        md_extra = ""
     placeholders = ','.join(['?'] * len(race_ids))
 
     if use_pattern_p143:
@@ -404,15 +412,16 @@ def analyze_assigned_races(
         race_payouts AS (
             SELECT
                 *,
-                CASE WHEN odds_123 >= {cond['odds_min']} AND odds_123 < {cond['odds_max']} THEN 100 ELSE 0 END as bet_amount,
+                CASE WHEN odds_123 >= {cond['odds_min']} AND odds_123 < {cond['odds_max']}{md_extra}
+                     THEN 100 ELSE 0 END as bet_amount,
                 CASE
                     WHEN actual_1st = p1 AND actual_2nd = p2 AND actual_3rd = p3
-                         AND odds_123 >= {cond['odds_min']} AND odds_123 < {cond['odds_max']}
+                         AND odds_123 >= {cond['odds_min']} AND odds_123 < {cond['odds_max']}{md_extra}
                     THEN odds_123 * 100 ELSE 0
                 END as payout,
                 CASE
                     WHEN actual_1st = p1 AND actual_2nd = p2 AND actual_3rd = p3
-                         AND odds_123 >= {cond['odds_min']} AND odds_123 < {cond['odds_max']}
+                         AND odds_123 >= {cond['odds_min']} AND odds_123 < {cond['odds_max']}{md_extra}
                     THEN 1 ELSE 0
                 END as is_hit
             FROM race_bets

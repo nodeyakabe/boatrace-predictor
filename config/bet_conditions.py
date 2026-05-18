@@ -3,8 +3,14 @@
 このファイルを修正すると、バックテストと実運用の両方に反映されます。
 条件追加時は必ずバックテストで検証してから実運用に適用してください。
 
-Version: v2.61.0
-Last Updated: 2026-05-12
+Version: v2.62.0
+Last Updated: 2026-05-18
+
+【v2.62.0 変更内容】
+- A_DIVERGE_80_100: A信頼度×市場乖離×80-100倍 新規追加
+  Tier2: 143件/ROI 384.3%/+40,650円/6/6年黒字（独立信号・既存条件との重複ゼロ）
+- E_DIVERGE_100_200: E信頼度×市場乖離×100-200倍 新規追加
+  Tier2: 711件/ROI 195.1%/+67,610円/5/6年黒字（E信頼度条件は初・100%純増）
 
 【v2.61.0 変更内容】
 - B_A1_30_50_8VENUES: pattern_h_require_p123=True追加
@@ -1459,6 +1465,60 @@ STANDARD_BET_CONDITIONS = [
     # GLOBAL_VENUE_MONTH_EXCLUDESで鳴門×1月・2月を除外後ROI 135.9% (<150%閾値)
     # ユニークテストで0件（C_P132_100_200_NARUTOに全レース先取りされる）
     # → REJECTED_IDEAS.md に記録
+
+    # ============================================================
+    # 市場乖離（market_diverge）独立信号 - v2.62.0 (2026-05-18)
+    # 定義: 予測1着組み合わせ(p1-p2-p3) ≠ 市場本命（最小オッズ組合せ）
+    # 特徴: 既存15条件との買い目重複ゼロ（完全独立信号）
+    # ============================================================
+
+    # A_DIVERGE_80_100: A信頼度×市場乖離×80-100倍
+    # - Tier1: 48件/ROI 369.2% (件数不足でFAIL、2年実績は優秀)
+    # - Tier2: 143件/ROI 384.3%/+40,650円/6/6年黒字 ← PASS
+    # - 既存条件との重複: ゼロ（A条件は30-70倍と125-300倍に分布、80-100倍はギャップ）
+    {
+        'id': 'A_DIVERGE_80_100',
+        'priority': 50,
+        'name': 'A信頼度×市場乖離×80-100倍',
+        'confidence': 'A',
+        'c1_rank': ['A1', 'A2', 'B1', 'B2'],
+        'odds_min': 80,
+        'odds_max': 100,
+        'use_pattern_h': False,
+        'use_market_diverge': True,
+        'advance_before_match': False,
+        'description': 'A信頼度かつ予測組合せが市場本命と一致しない×80-100倍（独立信号）',
+        'version': '1.0',
+        'added_date': '2026-05-18',
+        'backtest_period': '2020-2025',
+        'backtest_roi': 384.3,
+        'backtest_profit': 40650,
+        'backtest_black_years': '6/6',
+    },
+
+    # E_DIVERGE_100_200: E信頼度×市場乖離×100-200倍
+    # - Tier1: 239件/ROI 177.1%/2/2年黒字 ← PASS
+    # - Tier2: 711件/ROI 195.1%/+67,610円/5/6年黒字 ← PASS
+    # - 既存条件との重複: ゼロ（E信頼度条件は現行ゼロ → 100%純増）
+    {
+        'id': 'E_DIVERGE_100_200',
+        'priority': 51,
+        'name': 'E信頼度×市場乖離×100-200倍',
+        'confidence': 'E',
+        'c1_rank': ['A1', 'A2', 'B1', 'B2'],
+        'odds_min': 100,
+        'odds_max': 200,
+        'use_pattern_h': False,
+        'use_market_diverge': True,
+        'advance_before_match': False,
+        'description': 'E信頼度かつ予測組合せが市場本命と一致しない×100-200倍（独立信号・E条件初）',
+        'version': '1.0',
+        'added_date': '2026-05-18',
+        'backtest_period': '2020-2025',
+        'backtest_roi': 195.1,
+        'backtest_profit': 67610,
+        'backtest_black_years': '5/6',
+    },
 ]
 
 # ============================================================

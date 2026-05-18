@@ -158,6 +158,15 @@ def get_race_ids_for_condition(
     if cond.get('min_score_gap') is not None:
         score_gap_clause = f"AND (rp1.total_score - rp2.total_score) >= {cond['min_score_gap']}"
 
+    # 市場乖離フィルター（2026-05-18追加）
+    # 予測1着組み合わせ(rp1-rp2-rp3) != 市場本命（最小オッズ組み合わせ）のレースのみ対象
+    market_diverge_clause = ""
+    if cond.get('use_market_diverge'):
+        market_diverge_clause = """
+    AND CAST(rp1.pit_number AS TEXT)||'-'||CAST(rp2.pit_number AS TEXT)||'-'||CAST(rp3.pit_number AS TEXT) != (
+        SELECT combination FROM trifecta_odds t WHERE t.race_id = r.id AND t.odds > 0 ORDER BY t.odds ASC LIMIT 1
+    )"""
+
     # 3位-4位スコア差フィルター（3着予測の確度フィルタ）
     score_gap_3_4_join = ""
     score_gap_3_4_clause = ""
@@ -506,6 +515,7 @@ def get_race_ids_for_condition(
         {predicted_rank_class_clause}
         {advance_match_clause}
         {wind_filter_clause}
+        {market_diverge_clause}
         """
 
     cursor.execute(query)

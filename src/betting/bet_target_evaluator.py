@@ -191,6 +191,8 @@ class BetTargetEvaluator:
             'wave_height_max', 'wave_height_min',
             # advance/beforeフィルター（2026-04-22追加: per-condition方式）
             'advance_before_match',
+            # 市場乖離フィルター（2026-05-18追加）
+            'use_market_diverge',
         ]
         for field in optional_fields:
             value = cond.get(field)
@@ -326,7 +328,9 @@ class BetTargetEvaluator:
         escape_rate: Optional[float] = None,  # 1着予測選手の逃げ率（0-1）- 2026-01-09追加
         bias_index: Optional[float] = None,  # 1着予測選手のバイアス指数 - 2026-01-13追加
         odds_data: Optional[Dict] = None,  # 全オッズデータ（パターンH用）- 2026-02-13追加
-        old_prediction: Optional[List[int]] = None,  # 予測順位（ピット番号のリスト、パターンH用）- 2026-02-16追加
+        old_prediction: Optional[List[int]] = None,  # 予測順位（ピット番号のリスト、p142/p143/p132用）- 2026-02-16追加
+        # ⚠️ 命名注意: has_beforeinfo=Trueの場合は呼び出し元でbefore予測順位が渡される（実質before_prediction）
+        # → バックテスト(prediction_type=before)と整合。advance予測固定ではない。2026-04-23修正済み
         wave_height: Optional[float] = None,  # 波高フィルター用（cm）- 2026-04-06追加
         total_score: Optional[float] = None,  # スコアフィルター用（score_min/score_max）- 2026-04-21追加
         advance_before_match: bool = True   # advance/before一致フラグ - 2026-04-22追加（per-condition適用）
@@ -602,7 +606,7 @@ class BetTargetEvaluator:
                     continue
                 if score_max_c is not None and (total_score is None or total_score >= score_max_c):
                     continue
-                # p1-p4-p3 コンビネーション
+                # p1-p4-p3 コンビネーション（old_predictionはbefore取得後はbefore予測順位が渡される）
                 combo_p143 = f"{old_prediction[0]}-{old_prediction[3]}-{old_prediction[2]}"
                 odds_p143 = odds_data.get(combo_p143) if odds_data else None
                 if odds_p143 and odds_min <= odds_p143 < odds_max:
@@ -642,7 +646,7 @@ class BetTargetEvaluator:
                     continue
                 if score_max_c is not None and (total_score is None or total_score >= score_max_c):
                     continue
-                # p1-p3-p2 コンビネーション
+                # p1-p3-p2 コンビネーション（old_predictionはbefore取得後はbefore予測順位が渡される）
                 combo_p132 = f"{old_prediction[0]}-{old_prediction[2]}-{old_prediction[1]}"
                 odds_p132 = odds_data.get(combo_p132) if odds_data else None
                 if odds_p132 and odds_min <= odds_p132 < odds_max:
@@ -682,7 +686,7 @@ class BetTargetEvaluator:
                     continue
                 if score_max_c is not None and (total_score is None or total_score >= score_max_c):
                     continue
-                # p1-p4-p2 コンビネーション
+                # p1-p4-p2 コンビネーション（old_predictionはbefore取得後はbefore予測順位が渡される）
                 combo_p142 = f"{old_prediction[0]}-{old_prediction[3]}-{old_prediction[1]}"
                 odds_p142 = odds_data.get(combo_p142) if odds_data else None
                 if odds_p142 and odds_min <= odds_p142 < odds_max:
@@ -791,6 +795,20 @@ class BetTargetEvaluator:
                 # パターンH以外、または条件が揃わない場合は1点のみチェック
                 if not (odds_min <= odds < odds_max):
                     continue
+
+            # 市場乖離チェック（use_market_diverge=True 条件のみ）
+            # 予測買い目が市場本命（最小オッズ組み合わせ）と一致する場合はスキップ
+            if cond.get('use_market_diverge'):
+                if odds_data:
+                    valid_odds = {k: v for k, v in odds_data.items() if v and v > 0}
+                    if valid_odds:
+                        fav_combo = min(valid_odds, key=valid_odds.get)
+                        if combo == fav_combo:
+                            continue  # 予測=市場本命 → 市場乖離なし → スキップ
+                    else:
+                        continue  # オッズデータなし → 判定不能 → スキップ
+                else:
+                    continue  # odds_data なし → 判定不能 → スキップ
 
             # 購入対象として返す
             status = BetStatus.TARGET_CONFIRMED if has_beforeinfo else BetStatus.TARGET_ADVANCE
