@@ -23,10 +23,16 @@ class KimariteScorer:
         6: '恵まれ'
     }
 
+    # コース1専用: 逃げ率連続スコアのマッピング
+    # escape_rate=0.30 → 0pt, escape_rate=0.55 → max*0.5, escape_rate=0.80 → max
+    ESCAPE_RATE_SCORE_MIN  = 0.30
+    ESCAPE_RATE_SCORE_MAX  = 0.80
+
     def __init__(self, db_path: str = "data/boatrace.db", batch_loader=None):
         self.db_path = db_path
         self.batch_loader = batch_loader
         self._use_cache = batch_loader is not None
+        self._escape_rate_cache: dict = {}  # (racer_number, target_date) → escape_rate
 
     def _connect(self):
         """データベース接続（接続プールから取得）"""
@@ -34,13 +40,109 @@ class KimariteScorer:
         conn.row_factory = sqlite3.Row
         return conn
 
+    def _calc_course1_escape_score(
+        self,
+        racer_number: int,
+        venue_code: str,
+        max_score: float,
+        target_date: str = None,
+    ) -> Optional[Dict]:
+        """
+        コース1専用: player_escape_stats から連続逃げ率スコアを計算。
+        target_date を指定すると period_end <= target_date の時系列リーク防止フィルターを適用。
+        データがない場合は None を返し、呼び出し元が従来ロジックにフォールバックする。
+        """
+        cache_key = (racer_number, target_date)
+        if cache_key in self._escape_rate_cache:
+            escape_rate = self._escape_rate_cache[cache_key]
+        else:
+            try:
+                conn = self._connect()
+                if target_date:
+                    # 時系列リーク防止: 対象日以前の最新スナップショットを使用
+                    row = conn.execute(
+                        """
+                        SELECT escape_rate, races_1course
+                        FROM player_escape_stats
+                        WHERE player_id = ? AND stadium_id = ?
+                          AND races_1course >= 10
+                          AND escape_rate IS NOT NULL
+                          AND period_end <= ?
+                        ORDER BY period_end DESC LIMIT 1
+                        """,
+                        (str(racer_number), venue_code, target_date),
+                    ).fetchone()
+                    if row is None:
+                        row = conn.execute(
+                            """
+                            SELECT escape_rate, races_1course
+                            FROM player_escape_stats
+                            WHERE player_id = ? AND stadium_id IS NULL
+                              AND races_1course >= 20
+                              AND escape_rate IS NOT NULL
+                              AND period_end <= ?
+                            ORDER BY period_end DESC LIMIT 1
+                            """,
+                            (str(racer_number), target_date),
+                        ).fetchone()
+                else:
+                    # リアルタイム予測（当日）: 日付フィルターなし
+                    row = conn.execute(
+                        """
+                        SELECT escape_rate, races_1course
+                        FROM player_escape_stats
+                        WHERE player_id = ? AND stadium_id = ?
+                          AND races_1course >= 10
+                          AND escape_rate IS NOT NULL
+                        ORDER BY period_end DESC LIMIT 1
+                        """,
+                        (str(racer_number), venue_code),
+                    ).fetchone()
+                    if row is None:
+                        row = conn.execute(
+                            """
+                            SELECT escape_rate, races_1course
+                            FROM player_escape_stats
+                            WHERE player_id = ? AND stadium_id IS NULL
+                              AND races_1course >= 20
+                              AND escape_rate IS NOT NULL
+                            ORDER BY period_end DESC LIMIT 1
+                            """,
+                            (str(racer_number),),
+                        ).fetchone()
+                escape_rate = float(row["escape_rate"]) if row else None
+            except Exception:
+                escape_rate = None
+            self._escape_rate_cache[cache_key] = escape_rate
+
+        if escape_rate is None:
+            return None
+
+        # 線形マッピング: [0.30, 0.80] → [0, max_score]
+        lo, hi = self.ESCAPE_RATE_SCORE_MIN, self.ESCAPE_RATE_SCORE_MAX
+        score = (escape_rate - lo) / (hi - lo) * max_score
+        score = round(max(0.0, min(max_score, score)), 2)
+
+        return {
+            "score": score,
+            "racer_primary_kimarite": "逃げ",
+            "venue_primary_kimarite": "逃げ",
+            "match": True,
+            "racer_kimarite_rate": round(escape_rate * 100, 1),
+            "venue_kimarite_rate": None,
+            "confidence": "High" if score >= max_score * 0.6 else "Medium",
+            "escape_rate": escape_rate,
+            "method": "continuous_escape_rate",
+        }
+
     def calculate_kimarite_affinity_score(
         self,
         racer_number: int,
         venue_code: str,
         course: int,
         days: int = 180,
-        max_score: float = 15.0
+        max_score: float = 15.0,
+        target_date: str = None,
     ) -> Dict:
         """
         決まり手適性スコアを計算
@@ -51,6 +153,7 @@ class KimariteScorer:
             course: コース番号（1-6）
             days: 過去何日間のデータを使用するか
             max_score: 最大スコア（デフォルト15点）
+            target_date: 予測対象日（YYYY-MM-DD）。指定時は時系列リーク防止フィルターを適用
 
         Returns:
             {
@@ -63,6 +166,16 @@ class KimariteScorer:
                 'confidence': 'High'
             }
         """
+        # ── コース1専用: player_escape_stats の連続逃げ率スコア ──────────────
+        # 離散5段階（旧 calculate_escape_rate_score）を連続値に置き換える
+        if course == 1:
+            escape_score = self._calc_course1_escape_score(
+                racer_number, venue_code, max_score, target_date=target_date
+            )
+            if escape_score is not None:
+                return escape_score
+        # ─────────────────────────────────────────────────────────────────────
+
         # キャッシュ使用時
         if self._use_cache and self.batch_loader:
             racer_kimarite_dict = self.batch_loader.get_racer_kimarite(racer_number, course)

@@ -895,12 +895,15 @@ class RacePredictor:
             motor_score = motor_score_raw * (adjusted_weights['motor_weight'] / 20.0)
 
             # 決まり手適性スコアを計算（動的調整後の重みを使用）
+            # NOTE: target_date を渡すと player_escape_stats に過去スナップショットがない場合
+            #       全年度でフィーチャーが無効化される（2026-04-24スナップショット1件のみ存在）
+            #       履歴スナップショット収集後に target_date=race_date を復活させること
             kimarite_result = self.kimarite_scorer.calculate_kimarite_affinity_score(
                 racer_analysis['racer_number'],
                 venue_code,
                 course,
                 days=180,
-                max_score=adjusted_weights['kimarite_weight']
+                max_score=adjusted_weights['kimarite_weight'],
             )
             kimarite_score = kimarite_result['score']
 
