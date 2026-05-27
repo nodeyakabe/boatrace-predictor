@@ -1178,6 +1178,34 @@ STANDARD_BET_CONDITIONS = [
     # },
 
     # ----------------------------------------------------------------
+    # 【v2.63.0 2026-05-19 正式採用】D_ST_CONTRAST: D×1号艇ST遅延×2号艇ST速い×100-300倍
+    # 設計思想: 1号艇展示ST≥0.17(遅延) かつ 2号艇展示ST≤0.14(速い) → 1号艇弱い×2号艇強い
+    #           このコントラスト信号は total_score 未使用 → 既存ポートフォリオと独立
+    # Opus再チェック(2026-05-19): 境界値バグ修正(< → <=)・4月除外撤廃（過学習リスク）
+    # ポートフォリオ内(unique): 644件/ROI250.9%/+97,170円（修正後・月除外なし）
+    # 独立性: 月次相関r=0.255（合格<0.3）/ 二項検定p=0.0036（有意）
+    # ----------------------------------------------------------------
+    {
+        'id': 'D_ST_CONTRAST_100_300',
+        'priority': 24,
+        'name': 'D×1号艇ST>=0.17×2号艇ST<=0.14×100-300倍',
+        'confidence': 'D',
+        'c1_rank': ['A1', 'A2', 'B1', 'B2'],
+        'odds_min': 100,
+        'odds_max': 300,
+        'pit1_st_min': 0.17,
+        'pit2_st_max': 0.14,
+        'use_pattern_h': False,
+        'description': 'D信頼度×1号艇展示ST>=0.17(遅延)かつ2号艇展示ST<=0.14(速い)×100-300倍（展示STコントラスト独立信号）',
+        'version': '1.1',
+        'added_date': '2026-05-19',
+        'backtest_period': '2020-2025',
+        'backtest_roi': 250.9,
+        'backtest_profit': 97170,
+        'backtest_black_years': '6/6',
+    },
+
+    # ----------------------------------------------------------------
     # 穴買い条件: p1-p4-p2 × 100-300倍 × スコア80-90 × 11月除外
     # ----------------------------------------------------------------
     # 【v2.49.0追加】A信頼度×p1-p4-p2 三連単（100円1点買い）
@@ -1405,28 +1433,9 @@ STANDARD_BET_CONDITIONS = [
         'backtest_black_years': '5/6',
     },
 
-    # ----------------------------------------------------------------
-    # v2.56.0 追加: D×p1-p3-p2×100-200倍×平和島（2-3着入れ替わり）
-    # ----------------------------------------------------------------
-    {
-        'id': 'D_P132_100_200_HIROSHIMA',
-        'priority': 35,
-        'name': '平和島×D×p1-p3-p2×100-200倍',
-        'confidence': 'D',
-        'c1_rank': ['A1', 'A2', 'B1', 'B2'],
-        'venue_filter': [4],  # 平和島のみ
-        'odds_min': 100,
-        'odds_max': 200,
-        'use_pattern_h': False,
-        'use_pattern_p132': True,  # p1-p3-p2 三連単 100円1点買い
-        'description': 'D信頼度×p1-p3-p2×100-200倍×平和島（会場×パターン系統スキャン発見）',
-        'version': '1.0',
-        'added_date': '2026-04-23',
-        'backtest_period': '2020-2025',
-        'backtest_roi': 254.1,
-        'backtest_profit': 50849,
-        'backtest_black_years': '5/6',
-    },
+    # D_P132_100_200_HIROSHIMA: 2026-05-20 廃止（→ REJECTED_IDEAS.md）
+    # 理由: 6年190件/2的中・IS(2020-22)のみ的中・OOS(2023-25)=0的中連続3年
+    #       edge未証明（3hits/240bets, p=0.32, ランダムと区別不能）
 
     # B_P142_200_300は2026-04-22 Opus統計検証で不採用確定
     # 6年479件で4的中 = 的中率0.835% ≈ ランダム1/120 = 0.833%（z=0.00・区別不能）
@@ -1434,42 +1443,11 @@ STANDARD_BET_CONDITIONS = [
     # OOS高ROIは3的中のオッズ偶然集中（1件ずれれば赤字転落）
     # 詳細: docs/improvement_attempts/REJECTED_IDEAS.md
 
-    # ----------------------------------------------------------------
-    # v2.57.0 候補: 鳴門×C×p1-p3-p2×100-200倍（会場×パターン系統スキャン発見）
-    # ----------------------------------------------------------------
-    # 根拠:
-    #   買い目: p1-p3-p2（1着=予測1位, 2着=予測3位, 3着=予測2位）
-    #   全23会場×414組み合わせスキャンで発見（2026-04-24）
-    #   IS(2020-22): 156.4% / OOS(2023-25): 160.7%（OOS>IS = 過学習なし）
-    #   5/6年黒字（2025のみ赤字）
-    #   ※ GLOBAL_VENUE_MONTH_EXCLUDESで鳴門×1月・2月は自動除外済み
-    # スキャン結果:
-    #   Direct SQL(2020-2025): 701件/ROI 158.6%/+41,049円/5/6年黒字
-    #   Tier2厳格合格（150件+, 5/6年, OOS>=IS*0.8）
-    {
-        'id': 'C_P132_100_200_NARUTO',
-        'priority': 34,
-        'name': '鳴門×C×p1-p3-p2×100-200倍',
-        'confidence': 'C',
-        'c1_rank': ['A1', 'A2', 'B1', 'B2'],
-        'venue_filter': [14],  # 鳴門のみ
-        'odds_min': 100,
-        'odds_max': 200,
-        'use_pattern_h': False,
-        'use_pattern_p132': True,  # p1-p3-p2 三連単 100円1点買い
-        'description': '鳴門×C信頼度×p1-p3-p2×100-200倍（会場×パターン系統スキャン発見）',
-        'version': '1.0',
-        'added_date': '2026-04-24',
-        'backtest_period': '2020-2025',
-        'backtest_roi': 158.6,
-        'backtest_profit': 41049,
-        'backtest_black_years': '5/6',
-    },
+    # C_P132_100_200_NARUTO: 2026-05-20 廃止（→ REJECTED_IDEAS.md）
+    # 理由: priority=34のため上位C_P132系条件に先取りされ、unique実態50件・1的中のみ（5/6年赤字）
+    #       採用時はnon-unique 592件を主根拠としたが実運用では機能不全
 
-    # C_P143_100_200_NARUTO: 鳴門×C×p143×100-200倍 は検討の結果不採用
-    # GLOBAL_VENUE_MONTH_EXCLUDESで鳴門×1月・2月を除外後ROI 135.9% (<150%閾値)
-    # ユニークテストで0件（C_P132_100_200_NARUTOに全レース先取りされる）
-    # → REJECTED_IDEAS.md に記録
+    # C_P143_100_200_NARUTO: 鳴門×C×p143×100-200倍 は検討の結果不採用（→ REJECTED_IDEAS.md）
 
     # ============================================================
     # 市場乖離（market_diverge）独立信号 - v2.62.0 (2026-05-18)
@@ -1481,9 +1459,17 @@ STANDARD_BET_CONDITIONS = [
     # - Tier1: 48件/ROI 369.2% (件数不足でFAIL、2年実績は優秀)
     # - Tier2: 143件/ROI 384.3%/+40,650円/6/6年黒字 ← PASS
     # - 既存条件との重複: ゼロ（A条件は30-70倍と125-300倍に分布、80-100倍はギャップ）
+    # ⚠️ 【凍結監視中 active=False 2026-05-25】
+    # 理由: IS期間 117件/2的中（SG除外・風速フィルター適用後）= 二項検定p=0.255でランダムと区別不能
+    #       E_DIVERGE_100_200が完全ランダム(p=0.553)であることを合わせてポートフォリオ全体がv2.64.0ピーク→崩落
+    #       v2.64.0の226.4%はDIVERGE条件が偶然的中した「ラッキーピーク」だったと判定
+    # 解除基準: OOS 50件以上蓄積（月5件ペース×10ヶ月）かつROI 150%以上かつ的中数≥5件
+    #           → active=True復帰を検討。現実的には2026年末〜2027年初頭に再評価
+    # 監視担当: backtest_unique で E_DIVERGE削除後の単独成績を毎月確認
     {
         'id': 'A_DIVERGE_80_100',
         'priority': 50,
+        'active': False,  # 凍結監視中（2026-05-25）
         'name': 'A信頼度×市場乖離×80-100倍',
         'confidence': 'A',
         'c1_rank': ['A1', 'A2', 'B1', 'B2'],
@@ -1493,37 +1479,50 @@ STANDARD_BET_CONDITIONS = [
         'use_market_diverge': True,
         'advance_before_match': False,
         'description': 'A信頼度かつ予測組合せが市場本命と一致しない×80-100倍（独立信号）',
-        'version': '1.0',
+        'version': '1.1',
         'added_date': '2026-05-18',
+        'frozen_date': '2026-05-25',
+        'freeze_reason': 'IS 117件/2的中 p=0.255 統計的根拠不十分・ラッキーピーク判定',
         'backtest_period': '2020-2025',
         'backtest_roi': 384.3,
         'backtest_profit': 40650,
         'backtest_black_years': '6/6',
     },
 
-    # E_DIVERGE_100_200: E信頼度×市場乖離×100-200倍
-    # - Tier1: 239件/ROI 177.1%/2/2年黒字 ← PASS
-    # - Tier2: 711件/ROI 195.1%/+67,610円/5/6年黒字 ← PASS
-    # - 既存条件との重複: ゼロ（E信頼度条件は現行ゼロ → 100%純増）
-    {
-        'id': 'E_DIVERGE_100_200',
-        'priority': 51,
-        'name': 'E信頼度×市場乖離×100-200倍',
-        'confidence': 'E',
-        'c1_rank': ['A1', 'A2', 'B1', 'B2'],
-        'odds_min': 100,
-        'odds_max': 200,
-        'use_pattern_h': False,
-        'use_market_diverge': True,
-        'advance_before_match': False,
-        'description': 'E信頼度かつ予測組合せが市場本命と一致しない×100-200倍（独立信号・E条件初）',
-        'version': '1.0',
-        'added_date': '2026-05-18',
-        'backtest_period': '2020-2025',
-        'backtest_roi': 195.1,
-        'backtest_profit': 67610,
-        'backtest_black_years': '5/6',
-    },
+    # 【廃止 2026-05-25】E_DIVERGE_100_200: E信頼度×市場乖離×100-200倍
+    # 廃止理由:
+    #   1. IS期間 842件/7的中 → 的中率0.83% ≈ ランダム1/120=0.833%（二項検定p=0.553・完全ランダム）
+    #   2. 実バックテスト結果（regen後）: 660件/ROI 62.1%/-25,020円（損失）
+    #   3. confidence='E' はconfidence_filter.pyでデフォルト除外（exclude_e_level=True）→ 設計矛盾
+    #   4. OOS(2026年1-4月): 55件/0的中
+    #   → REJECTED_IDEAS.md に記録済み（2026-05-25）
+    # {
+    #     'id': 'E_DIVERGE_100_200',
+    #     'priority': 51,
+    #     'name': 'E信頼度×市場乖離×100-200倍',
+    #     'confidence': 'E',
+    #     'c1_rank': ['A1', 'A2', 'B1', 'B2'],
+    #     'odds_min': 100,
+    #     'odds_max': 200,
+    #     'use_pattern_h': False,
+    #     'use_market_diverge': True,
+    #     'advance_before_match': False,
+    #     'description': 'E信頼度かつ予測組合せが市場本命と一致しない×100-200倍（独立信号・E条件初）',
+    #     'version': '1.0',
+    #     'added_date': '2026-05-18',
+    #     'backtest_period': '2020-2025',
+    #     'backtest_roi': 195.1,
+    #     'backtest_profit': 67610,
+    #     'backtest_black_years': '5/6',
+    # },
+
+    # 【2026-05-22 Tier2テスト → 不採用】C_NAITER_4V_100_200: ナイター4会場×C×100-200倍×パターンH
+    # Tier1: 411件/ROI 171.2%/+39,730円/2/2年黒字 ← PASS（単体評価）
+    # Tier2(unique, priority=52): 294件/ROI 28.1%/-29,830円 → FAIL
+    # 失敗理由: priority=52（最低優先度）により既存C_P132/C_P143/A_DIVERGE等（priority 25-51）が
+    #           100-200倍帯を先消費。候補10,496件→割当2,466件（76%重複除外）で残余品質低下。
+    #           全体: 5,173件/226.4%/+681,020 → 5,467件/212.3%/+651,190（-14.1pt/-29,830円悪化）
+    # → REJECTED_IDEAS.md に記録
 
     # 【2026-05-18 Tier2テスト → 不採用】D_BROAD_50_300: D信頼度×全会場×50-300倍
     # Standalone(Opus分析): ROI 109.2% / 月+1.99件 / corr 0.262 / 6年4黒字
@@ -1534,8 +1533,10 @@ STANDARD_BET_CONDITIONS = [
     # 【2026-05-18 Tier2テスト → 不採用】SIG_PIT1ST_017_150_300_CD: 1号艇ST遅延×P1非1コース
     # Standalone(Opus分析): 1479件 / ROI 203.3% / +152,720円 / 5/6年黒字 / corr 0.159
     # Tier2(unique, priority=61): 141件 / 0的中 / ROI 0% / -14,100円 → FAIL
-    # 失敗理由: Standalone 1479件の的中14件はほぼ全て既存17条件に priority で吸収済み
-    #           priority最低の残余141件には的中ゼロ → 独立信号の的中空間は既存条件でカバー済み
+    # 失敗理由: C/D 150-300倍帯はP条件（C_P132/C_P143/D_P143等 priority 25-35）が先消費
+    #           SIG_PIT1STはp123（標準予測）を買い目とするが、P条件割り当て済みレースに参加不可
+    #           残余141件はP条件スコア/オッズフィルター落ちの低品質レース → 0的中
+    #           ※ priority=24でのre-testは可能だが、P条件（ROI 345-371%）をROI 208.9%p123で置換するデメリットあり
     # → REJECTED_IDEAS.md に記録
 ]
 
@@ -1618,9 +1619,13 @@ FILTER_THRESHOLDS = {
 # ============================================================
 # ヘルパー関数
 # ============================================================
+def get_active_conditions() -> List[Dict]:
+    """active=False（凍結監視中）の条件を除いたリストを返す"""
+    return [c for c in STANDARD_BET_CONDITIONS if c.get('active', True) is not False]
+
 def get_conditions_by_confidence(confidence: str) -> List[Dict]:
-    """信頼度で条件をフィルタリング"""
-    return [c for c in STANDARD_BET_CONDITIONS if c.get('confidence') == confidence]
+    """信頼度で条件をフィルタリング（active=Falseは除外）"""
+    return [c for c in get_active_conditions() if c.get('confidence') == confidence]
 
 def get_condition_by_id(condition_id: str) -> Optional[Dict]:
     """条件IDで検索"""

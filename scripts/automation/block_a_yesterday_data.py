@@ -25,6 +25,7 @@ from scripts.automation.fetch_yesterday_beforeinfo import fetch_yesterday_before
 from scripts.automation.daily_tenji_collector import collect_previous_day_tenji
 from scripts.automation.generate_yesterday_before_predictions import generate_yesterday_before_predictions
 from scripts.automation.reconcile_yesterday_bets import reconcile_yesterday_bets
+from scripts.automation.fetch_yesterday_payouts import fetch_yesterday_payouts
 from scripts.automation.notify import send_discord_notification, send_error_notification, send_reconcile_notification
 
 
@@ -56,6 +57,7 @@ class BlockARunner:
             # 突合せはfinal_odds上書き前に実行（pre-race oddsで条件判定するため）
             ("前日予想結果突合せ", self._task_reconcile),
             ("前日確定オッズ取得", self._task_final_odds),
+            ("前日払戻金収集", self._task_payouts),
         ]
 
         for idx, (name, task_func) in enumerate(tasks, 1):
@@ -124,6 +126,11 @@ class BlockARunner:
 
         # 購入対象件数を返す（タスク件数カウント用）
         return result['target_count']
+
+    def _task_payouts(self) -> int:
+        """前日払戻金収集"""
+        yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        return fetch_yesterday_payouts(yesterday)
 
     def _finalize(self) -> bool:
         """最終結果をサマリー表示・通知"""

@@ -21,7 +21,7 @@ from typing import Dict, List, Optional
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from config.bet_conditions import STANDARD_BET_CONDITIONS
+from config.bet_conditions import STANDARD_BET_CONDITIONS, get_active_conditions
 from scripts.backtest.backtest_helpers import get_race_ids_for_condition
 
 VENUE_MAP = {
@@ -39,9 +39,10 @@ def _assign_races(cursor, target_date: str) -> Dict[str, List[int]]:
     all_race_ids = set()
     race_to_condition = {}
 
+    active_conds = get_active_conditions()  # active=False（凍結監視中）の条件を除外
     sorted_conditions = sorted(
-        STANDARD_BET_CONDITIONS,
-        key=lambda x: (x.get('priority', 999), STANDARD_BET_CONDITIONS.index(x))
+        active_conds,
+        key=lambda x: (x.get('priority', 999), active_conds.index(x))
     )
 
     # backtest_helpersのSQLは race_date < end_date なので翌日を渡す
@@ -284,6 +285,121 @@ def _get_race_detail(cursor, race_id: int, cond: Dict) -> Optional[Dict]:
     }
 
 
+def _bet_notifications_table_exists(cursor) -> bool:
+    """bet_notifications テーブルが存在するか確認"""
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='bet_notifications'"
+    )
+    return cursor.fetchone() is not None
+
+
+def _get_notified_bets(cursor, target_date: str) -> List[Dict]:
+    """
+    bet_notifications テーブルから通知済みレースを取得。
+    notification_type='confirmed' のみ（購入通知）を返す。
+    """
+    cursor.execute("""
+        SELECT bn.race_id, bn.combinations, bn.odds_at_notification,
+               bn.bet_amount, bn.condition_id, bn.notified_at, bn.bet_amounts
+        FROM bet_notifications bn
+        JOIN races r ON bn.race_id = r.id
+        WHERE r.race_date = ? AND bn.notification_type = 'confirmed'
+        ORDER BY bn.notified_at
+    """, (target_date,))
+    return [dict(zip(
+        ['race_id', 'combinations', 'odds_at_notification', 'bet_amount', 'condition_id', 'notified_at', 'bet_amounts'],
+        row
+    )) for row in cursor.fetchall()]
+
+
+def _get_race_detail_from_notification(cursor, notif: Dict) -> Optional[Dict]:
+    """
+    bet_notifications の1レースについて実結果と突合せ。
+
+    - 通知時に記録した買い目 (combinations) vs 実際の着順
+    - 払戻はtrifecta_oddsの確定オッズを使用
+    """
+    race_id = notif['race_id']
+    stored_combos = [c.strip() for c in notif['combinations'].split(',') if c.strip()]
+    bet_amount = notif['bet_amount'] or 100
+    condition_id = notif['condition_id'] or '?'
+
+    # 組合せごとの投資額を復元（bet_amounts="200,100,100" 等）
+    raw_amounts = notif.get('bet_amounts') or ''
+    amount_parts = [int(a.strip()) for a in raw_amounts.split(',') if a.strip().isdigit()]
+    if len(amount_parts) == len(stored_combos) and stored_combos:
+        combo_amount_map = dict(zip(stored_combos, amount_parts))
+    else:
+        # 旧レコード（bet_amounts未記録）または組数不一致: 均等割りで近似
+        per_each = (bet_amount // len(stored_combos)) if stored_combos else 100
+        combo_amount_map = {c: per_each for c in stored_combos}
+
+    cursor.execute("SELECT venue_code, race_number FROM races WHERE id = ?", (race_id,))
+    row = cursor.fetchone()
+    if not row:
+        return None
+    venue_name = VENUE_MAP.get(str(row[0]).zfill(2), f'会場{row[0]}')
+    race_number = row[1]
+
+    # 実際の着順
+    cursor.execute(
+        "SELECT pit_number, rank FROM results WHERE race_id = ? AND is_invalid = 0",
+        (race_id,)
+    )
+    rank_map = {}
+    for pit, rank in cursor.fetchall():
+        try:
+            rank_map[int(rank)] = pit
+        except (ValueError, TypeError):
+            pass
+
+    has_result = 1 in rank_map and 2 in rank_map and 3 in rank_map
+    actual_combo = f"{rank_map[1]}-{rank_map[2]}-{rank_map[3]}" if has_result else None
+
+    is_hit = has_result and actual_combo in stored_combos
+    total_payout = 0
+    if is_hit:
+        for combo in stored_combos:
+            if actual_combo == combo:
+                cursor.execute(
+                    "SELECT odds FROM trifecta_odds WHERE race_id = ? AND combination = ?",
+                    (race_id, combo)
+                )
+                r = cursor.fetchone()
+                if r and r[0]:
+                    per_bet = combo_amount_map.get(combo, 100)
+                    total_payout = int(r[0] * per_bet)
+                break
+
+    if is_hit:
+        status = '的中'
+        hit_str = '[OK]'
+    elif not has_result:
+        status = '結果未取得'
+        hit_str = '[?]'
+    else:
+        status = '不的中'
+        hit_str = '[NG]'
+
+    combos_str = ', '.join(stored_combos)
+    odds_str = f"{notif['odds_at_notification']:.1f}倍" if notif.get('odds_at_notification') else ''
+    print(f"  {hit_str} {venue_name}{race_number}R [{condition_id}] "
+          f"買={combos_str} 実={actual_combo or 'N/A'} {odds_str} +{total_payout}円")
+
+    return {
+        'venue': venue_name,
+        'race_num': race_number,
+        'condition_id': condition_id,
+        'combinations': combos_str,
+        'bet_amount': bet_amount,
+        'status': status,
+        'return_amount': total_payout,
+        'actual': actual_combo or 'N/A',
+        'is_candidate': False,
+        'odds_reason': None,
+    }
+
+
 def reconcile_yesterday_bets(db_path: str, target_date: str = None) -> Dict:
     """
     前日予想と結果を突合せ。
@@ -311,20 +427,21 @@ def reconcile_yesterday_bets(db_path: str, target_date: str = None) -> Dict:
 
     try:
         cursor = conn.cursor()
-        cond_id_map = {c['id']: c for c in STANDARD_BET_CONDITIONS}
 
         print(f"  突合せ対象日: {target_date}")
-        condition_to_races = _assign_races(cursor, target_date)
 
-        total_assigned = sum(len(v) for v in condition_to_races.values())
-        print(f"  条件割り当て: {total_assigned}レース（{len(condition_to_races)}条件）")
-
-        for cond_id, race_ids in condition_to_races.items():
-            cond = cond_id_map.get(cond_id)
-            if not cond:
-                continue
-            for race_id in sorted(race_ids):
-                detail = _get_race_detail(cursor, race_id, cond)
+        if _bet_notifications_table_exists(cursor):
+            # bet_amounts カラムがない古いテーブルへの移行対応
+            try:
+                cursor.execute("ALTER TABLE bet_notifications ADD COLUMN bet_amounts TEXT")
+                conn.commit()
+            except Exception:
+                pass  # カラム既存の場合は無視
+            # 新方式: 通知時に記録した buy notification をベースに突合せ
+            notified = _get_notified_bets(cursor, target_date)
+            print(f"  [新方式] bet_notifications 使用: {len(notified)}件の通知記録")
+            for notif in notified:
+                detail = _get_race_detail_from_notification(cursor, notif)
                 if detail is None:
                     continue
                 details.append(detail)
@@ -332,6 +449,26 @@ def reconcile_yesterday_bets(db_path: str, target_date: str = None) -> Dict:
                 total_return += detail['return_amount']
                 if detail['status'] == '結果未取得':
                     no_result_count += 1
+        else:
+            # 旧方式（後方互換）: バックテストと同一ロジックで再導出
+            print(f"  [旧方式] bet_notifications テーブルなし → バックテストロジックで再導出")
+            cond_id_map = {c['id']: c for c in get_active_conditions()}  # active=False除外
+            condition_to_races = _assign_races(cursor, target_date)
+            total_assigned = sum(len(v) for v in condition_to_races.values())
+            print(f"  条件割り当て: {total_assigned}レース（{len(condition_to_races)}条件）")
+            for cond_id, race_ids in condition_to_races.items():
+                cond = cond_id_map.get(cond_id)
+                if not cond:
+                    continue
+                for race_id in sorted(race_ids):
+                    detail = _get_race_detail(cursor, race_id, cond)
+                    if detail is None:
+                        continue
+                    details.append(detail)
+                    total_bet += detail['bet_amount']
+                    total_return += detail['return_amount']
+                    if detail['status'] == '結果未取得':
+                        no_result_count += 1
 
     finally:
         conn.close()

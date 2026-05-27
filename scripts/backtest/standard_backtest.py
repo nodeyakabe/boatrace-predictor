@@ -51,7 +51,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 sys.path.insert(0, PROJECT_ROOT)
 
 from config.settings import DATABASE_PATH
-from config.bet_conditions import STANDARD_BET_CONDITIONS, GLOBAL_VENUE_MONTH_EXCLUDES, GLOBAL_MONTH_EXCLUDES
+from config.bet_conditions import STANDARD_BET_CONDITIONS, get_active_conditions, GLOBAL_VENUE_MONTH_EXCLUDES, GLOBAL_MONTH_EXCLUDES
 from src.betting.evaluator_helpers import create_standard_evaluator
 
 # ============================================================
@@ -60,7 +60,7 @@ from src.betting.evaluator_helpers import create_standard_evaluator
 # ※変更時は config/bet_conditions.py を修正してください
 # ※このファイルを直接編集しないでください
 
-CONDITIONS = STANDARD_BET_CONDITIONS
+CONDITIONS = get_active_conditions()  # active=False（凍結監視中）の条件を除外
 
 # ============================================================
 # RJ条件定義（データ補完後の再検証用）

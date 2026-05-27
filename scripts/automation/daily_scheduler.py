@@ -196,8 +196,6 @@ def block_a_job():
         monitor.fetched_direct_info.clear()
         monitor.fetched_odds_races.clear()
         monitor._bet_target_cache.clear()
-        monitor.candidate_notified_races.clear()
-        monitor.prev_candidate_races.clear()
         monitor._cache_date = None
         print("[INFO] 日次リセット完了（通知済み・直前情報・オッズ取得済みセットをクリア）")
 

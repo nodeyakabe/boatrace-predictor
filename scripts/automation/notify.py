@@ -1,11 +1,13 @@
 """
 Discord Webhook通知モジュール
 
-4チャンネル対応:
-  #購入 (buy)   — 購入確定/暫定/Gap1  ※即行動が必要
-  #監視 (watch) — 候補最終・オッズ変動・重大エラー  ※気になったら確認
-  #結果 (result)— 前日突合せ結果  ※毎朝振り返り
-  #ログ (log)   — 朝サマリー・Aブロック完了・その他  ※参考記録
+6チャンネル対応:
+  #購入    (buy)       — 購入確定/暫定/Gap1/範囲±15%以内候補  ※即行動が必要
+  #候補    (candidate) — 購入候補（範囲外だが監視中）          ※気になったら確認
+  #採点詳細 (detail)   — スコア根拠・加点理由の詳細            ※必要時に参照
+  #監視    (watch)     — オッズ変動・重大エラー                ※システム監視
+  #結果    (result)    — 事前予想・前日突合せ結果              ※毎朝振り返り
+  #ログ    (log)       — 朝サマリー・Aブロック完了・その他      ※参考記録
 """
 
 import os
@@ -30,9 +32,11 @@ _WEBHOOK_BASE  = os.getenv("DISCORD_WEBHOOK_URL")
 _WEBHOOK_ALERT = os.getenv("DISCORD_WEBHOOK_URL_ALERT") or _WEBHOOK_BASE
 _WEBHOOK_LOG   = os.getenv("DISCORD_WEBHOOK_URL_LOG")   or _WEBHOOK_BASE
 
-_WEBHOOK_BUY    = os.getenv("DISCORD_WEBHOOK_URL_BUY")    or _WEBHOOK_ALERT
-_WEBHOOK_WATCH  = os.getenv("DISCORD_WEBHOOK_URL_WATCH")  or _WEBHOOK_ALERT
-_WEBHOOK_RESULT = os.getenv("DISCORD_WEBHOOK_URL_RESULT") or _WEBHOOK_LOG
+_WEBHOOK_BUY       = os.getenv("DISCORD_WEBHOOK_URL_BUY")       or _WEBHOOK_ALERT
+_WEBHOOK_CANDIDATE = os.getenv("DISCORD_WEBHOOK_URL_CANDIDATE") or _WEBHOOK_ALERT
+_WEBHOOK_DETAIL    = os.getenv("DISCORD_WEBHOOK_URL_DETAIL")    or _WEBHOOK_LOG
+_WEBHOOK_WATCH     = os.getenv("DISCORD_WEBHOOK_URL_WATCH")     or _WEBHOOK_ALERT
+_WEBHOOK_RESULT    = os.getenv("DISCORD_WEBHOOK_URL_RESULT")    or _WEBHOOK_LOG
 
 # 全URL未設定時の起動時警告（指摘4対応）
 if not _WEBHOOK_BASE:
@@ -43,6 +47,10 @@ def _get_webhook_url(channel: str):
     """チャンネル名 → Webhook URL"""
     if channel == 'buy':
         return _WEBHOOK_BUY
+    elif channel == 'candidate':
+        return _WEBHOOK_CANDIDATE
+    elif channel == 'detail':
+        return _WEBHOOK_DETAIL
     elif channel == 'watch':
         return _WEBHOOK_WATCH
     elif channel == 'result':
@@ -463,9 +471,109 @@ def send_odds_change_alert(
                                           primary_channel='watch', secondary_channel='log')
 
 
+def format_detail_message(
+    race_info: dict,
+    bet_target,
+    preds: dict,
+) -> str:
+    """
+    採点詳細チャンネル用メッセージ生成
+
+    Args:
+        race_info: {'venue': str, 'race_number': int, 'race_id': int}
+        bet_target: BetTarget オブジェクト
+        preds: {'total_score', 'score_gap', 'score_gap34',
+                'old_prediction', 'new_prediction', 'confidence',
+                'sub_scores': {'course_score', 'racer_score', 'motor_score',
+                               'kimarite_score', 'grade_score'}}
+    """
+    venue = race_info.get('venue', '?')
+    race_num = race_info.get('race_number', '?')
+
+    # --- スコア情報 ---
+    total_score = preds.get('total_score')
+    score_gap = preds.get('score_gap')
+    score_gap34 = preds.get('score_gap34')
+    score_str = f"{total_score:.1f}" if total_score is not None else "N/A"
+    # Issue-2: `:+.1f` で符号を自動付与（gap/gap34 の表示形式を統一）
+    gap_str = f"{score_gap:+.1f}" if score_gap is not None else "N/A"
+    gap34_str = f"{score_gap34:+.1f}" if score_gap34 is not None else "N/A"
+
+    # --- 予測順位 ---
+    adv_pred = preds.get('old_prediction') or []
+    bef_pred = preds.get('new_prediction') or []
+    adv_str = '-'.join(str(p) for p in adv_pred[:4]) if adv_pred else 'N/A'
+    bef_str = '-'.join(str(p) for p in bef_pred[:4]) if bef_pred else '（なし）'
+
+    # --- サブスコア内訳 ---
+    sub = preds.get('sub_scores') or {}
+    # Issue-4: 全角固定幅ラベルで Discord 非等幅フォントでも崩れない
+    _LABELS = [
+        ('コース　　', sub.get('course_score')),
+        ('選手力　　', sub.get('racer_score')),
+        ('モーター　', sub.get('motor_score')),
+        ('決まり手　', sub.get('kimarite_score')),
+        ('グレード　', sub.get('grade_score')),
+    ]
+    has_sub = any(v is not None for _, v in _LABELS)
+
+    # Issue-3: 最大値で正規化してバー本数を決定（最大8本）
+    sub_vals = [v for _, v in _LABELS if v is not None]
+    max_val = max(abs(v) for v in sub_vals) if sub_vals else 1.0
+    sub_lines = []
+    if has_sub:
+        for label, v in _LABELS:
+            if v is not None:
+                bar = '█' * max(0, round(abs(v) / max_val * 8))
+                sign = '+' if v >= 0 else ''
+                sub_lines.append(f"　{label} {sign}{v:.1f}　{bar}")
+            else:
+                sub_lines.append(f"　{label}  N/A")
+
+    # --- 条件適合理由（| 複数分割対応）---
+    # Issue-5: `|` で全分割し各行表示
+    reason = getattr(bet_target, 'reason', '') or ''
+    reason_parts = [p.strip() for p in reason.split('|') if p.strip()]
+    reason_main = reason_parts[0] if reason_parts else ''
+    reason_extras = reason_parts[1:]
+
+    # --- オッズ情報 ---
+    odds = getattr(bet_target, 'odds', None)
+    odds_range = getattr(bet_target, 'odds_range', '-') or '-'
+    odds_str = f"{odds:.1f}倍" if odds is not None and odds != 0 else "未取得"
+    exp_roi = getattr(bet_target, 'expected_roi', None)
+    roi_str = f"{exp_roi:.0f}%" if exp_roi else "N/A"
+
+    lines = [
+        f"🔍 **{venue} {race_num}R** 採点詳細",
+        f"",
+        f"**合計スコア**: {score_str}点  (2位差: {gap_str} / 34位差: {gap34_str})",
+        f"**advance予測**: `{adv_str}`  **before予測**: `{bef_str}`",
+    ]
+
+    if has_sub:
+        lines += [
+            f"",
+            f"**スコア内訳** (1位予測・主要項目)",
+            *sub_lines,
+        ]
+
+    lines += [
+        f"",
+        f"**条件**: {reason_main}",
+    ]
+    for extra in reason_extras:
+        lines.append(f"　　　　{extra}")
+    lines += [
+        f"**オッズ**: {odds_str}  範囲: {odds_range}  期待ROI: {roi_str}",
+    ]
+
+    return '\n'.join(lines)
+
+
 if __name__ == "__main__":
-    print("Discord Webhook通知テスト（4チャンネル）")
+    print("Discord Webhook通知テスト（6チャンネル）")
     print("-" * 50)
-    for ch in ('buy', 'watch', 'result', 'log'):
+    for ch in ('buy', 'candidate', 'detail', 'watch', 'result', 'log'):
         ok = send_discord_notification(f"**テスト** #{ch} チャンネルの確認（ボートレース予想システム）", channel=ch)
         print(f"  {ch}: {'OK' if ok else 'FAIL'}")

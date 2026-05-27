@@ -145,7 +145,7 @@ def save_tenji_data(json_file_path, db_path, update_existing=False):
             race_no = race_data['race_no']
             racers = race_data['racers']
 
-            print(f"[{venue_code:02d}] {race_date} {race_no}R - 保存中...")
+            print(f"[{int(venue_code):02d}] {race_date} {race_no}R - 保存中...")
 
             # race_idを取得または作成
             try:

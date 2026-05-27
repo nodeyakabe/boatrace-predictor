@@ -26,8 +26,7 @@ CSV_BASE  = BASE_DIR / "data" / "predictions_csv" / "before"
 LOG_DIR   = BASE_DIR / "logs"
 LOG_FILE  = LOG_DIR / "before_csv_all_years.log"
 
-# 2024はCSV生成済み（data/predictions_csv/before/2024/ に366日分・Opus品質チェック済み）のため除外
-YEARS = [2020, 2021, 2022, 2023, 2025]
+YEARS = [2020, 2021, 2022, 2023, 2024, 2025]
 
 
 def marker_path(year: int) -> Path:

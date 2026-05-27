@@ -293,13 +293,13 @@ def analyze_mismatches(cursor, tier2_results: Dict, tier3_bet_race_ids: set,
     Returns:
         ミスマッチ分析結果
     """
-    from config.bet_conditions import STANDARD_BET_CONDITIONS
+    from config.bet_conditions import get_active_conditions
 
-    # Tier 2の購入対象race_idを取得（SQLから再実行）
+    # Tier 2の購入対象race_idを取得（SQLから再実行・active=False除外）
     tier2_bet_race_ids = set()
 
     # 各条件ごとにSQLを実行してrace_idを収集
-    for cond in STANDARD_BET_CONDITIONS:
+    for cond in get_active_conditions():
         from scripts.backtest.standard_backtest import build_condition_query
 
         # SQLクエリを構築（race_idを返すように修正）

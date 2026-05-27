@@ -13,7 +13,7 @@ from .multi_bet_generator import MultiBetGenerator, MultiBetPattern, MultiBetRes
 from .venue_evaluator import VenueEvaluator
 from .venue_course_adjuster import VenueCourseAdjuster, AdjustmentResult
 from config.venue_wind_adjustments import should_exclude_race
-from config.bet_conditions import STANDARD_BET_CONDITIONS, GLOBAL_VENUE_MONTH_EXCLUDES, GLOBAL_MONTH_EXCLUDES, GLOBAL_GRADE_EXCLUDES, GLOBAL_ROOKIE_EXCLUDE
+from config.bet_conditions import get_active_conditions, STANDARD_BET_CONDITIONS, GLOBAL_VENUE_MONTH_EXCLUDES, GLOBAL_MONTH_EXCLUDES, GLOBAL_GRADE_EXCLUDES, GLOBAL_ROOKIE_EXCLUDE
 
 
 class BetStatus(Enum):
@@ -122,8 +122,9 @@ class BetTargetEvaluator:
         # 選手バイアス指数キャッシュ（2026-01-13追加）
         self._player_bias_stats_cache = None
 
-        # 購入条件を config/bet_conditions.py から読み込み（2026-02-13統一化）
-        self.BET_CONDITIONS = self._convert_conditions_to_dict(STANDARD_BET_CONDITIONS)
+        # 購入条件を config/bet_conditions.py から読み込み（active=Falseの凍結条件は除外）
+        # 注: get_active_conditions() は active=False の条件を除外する（2026-05-25追加）
+        self.BET_CONDITIONS = self._convert_conditions_to_dict(get_active_conditions())
 
     def _convert_conditions_to_dict(self, conditions_list: List[Dict]) -> Dict[str, List[Dict]]:
         """
@@ -193,6 +194,8 @@ class BetTargetEvaluator:
             'advance_before_match',
             # 市場乖離フィルター（2026-05-18追加）
             'use_market_diverge',
+            # 展示STタイムフィルター（2026-05-20追加: D_ST_CONTRAST条件用）
+            'pit1_st_min', 'pit1_st_max', 'pit2_st_min', 'pit2_st_max',
         ]
         for field in optional_fields:
             value = cond.get(field)
@@ -333,7 +336,9 @@ class BetTargetEvaluator:
         # → バックテスト(prediction_type=before)と整合。advance予測固定ではない。2026-04-23修正済み
         wave_height: Optional[float] = None,  # 波高フィルター用（cm）- 2026-04-06追加
         total_score: Optional[float] = None,  # スコアフィルター用（score_min/score_max）- 2026-04-21追加
-        advance_before_match: bool = True   # advance/before一致フラグ - 2026-04-22追加（per-condition適用）
+        advance_before_match: bool = True,  # advance/before一致フラグ - 2026-04-22追加（per-condition適用）
+        pit1_st: Optional[float] = None,    # 1号艇展示STタイム - 2026-05-20追加（D_ST_CONTRAST用）
+        pit2_st: Optional[float] = None,    # 2号艇展示STタイム - 2026-05-20追加（D_ST_CONTRAST用）
     ) -> BetTarget:
         """
         購入対象を判定する
@@ -532,6 +537,42 @@ class BetTargetEvaluator:
             if 'wave_height_min' in cond:
                 if wave_height is None or wave_height < cond['wave_height_min']:
                     continue
+
+            # 展示STタイムフィルター（2026-05-20追加: D_ST_CONTRAST条件用）
+            # backtest_helpers.py と同じ比較演算子: pit1_st_min は >=、pit2_st_max は <=
+            # STデータ未取得（advance段階=before情報未収集）の場合はCANDIDATE待機
+            _has_st_filter = ('pit1_st_min' in cond or 'pit1_st_max' in cond or
+                              'pit2_st_min' in cond or 'pit2_st_max' in cond)
+            if _has_st_filter:
+                if pit1_st is None and pit2_st is None:
+                    # 展示前（advance段階）→ beforeinfo取得後に再評価するためCANDIDATE候補
+                    if not has_beforeinfo and first_candidate_target is None:
+                        first_candidate_target = BetTarget(
+                            status=BetStatus.CANDIDATE,
+                            confidence=confidence,
+                            method=cond['method'],
+                            combination=old_combo,
+                            odds=None,
+                            odds_range=f"{cond['odds_min']}-{cond['odds_max']}倍",
+                            c1_rank=c1_rank,
+                            expected_roi=cond['expected_roi'],
+                            bet_amount=cond['bet_amount'],
+                            reason='展示ST未取得。beforeinfo取得後に判定',
+                            needs_beforeinfo=True,
+                        )
+                    continue
+                if 'pit1_st_min' in cond:
+                    if pit1_st is None or pit1_st < cond['pit1_st_min']:
+                        continue
+                if 'pit1_st_max' in cond:
+                    if pit1_st is None or pit1_st >= cond['pit1_st_max']:
+                        continue
+                if 'pit2_st_min' in cond:
+                    if pit2_st is None or pit2_st < cond['pit2_st_min']:
+                        continue
+                if 'pit2_st_max' in cond:
+                    if pit2_st is None or pit2_st > cond['pit2_st_max']:
+                        continue
 
             # 方式と買い目の決定
             if cond['method'] == '従来':
@@ -951,6 +992,10 @@ class BetTargetEvaluator:
         wind_speed = race_data.get('wind_speed', 0.0)
         wave_height = race_data.get('wave_height')  # 波高フィルター用（2026-04-06追加）
 
+        # 展示STタイムを取得（D_ST_CONTRAST条件フィルター用・2026-05-20追加）
+        pit1_st = race_data.get('pit1_st')
+        pit2_st = race_data.get('pit2_st')
+
         # 予測情報
         confidence = predictions.get('confidence', 'D')
         old_pred = predictions.get('old_prediction', [1, 2, 3])
@@ -1115,7 +1160,9 @@ class BetTargetEvaluator:
             old_prediction=new_pred if has_beforeinfo else old_pred,  # before時はbefore順位でコンビネーション生成（バックテストと整合・2026-04-23修正）
             wave_height=wave_height,  # 波高フィルター用（2026-04-06追加）
             total_score=total_score,  # スコアフィルター用（2026-04-21追加）
-            advance_before_match=advance_before_match  # per-condition advance/beforeフィルター（2026-04-22追加）
+            advance_before_match=advance_before_match,  # per-condition advance/beforeフィルター（2026-04-22追加）
+            pit1_st=pit1_st,  # 1号艇展示STタイム（2026-05-20追加）
+            pit2_st=pit2_st,  # 2号艇展示STタイム（2026-05-20追加）
         )
 
         # 会場×コース別調整を適用

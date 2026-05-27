@@ -59,7 +59,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 sys.path.insert(0, PROJECT_ROOT)
 
 from config.settings import DATABASE_PATH
-from config.bet_conditions import STANDARD_BET_CONDITIONS, GLOBAL_VENUE_MONTH_EXCLUDES, GLOBAL_MONTH_EXCLUDES
+from config.bet_conditions import STANDARD_BET_CONDITIONS, get_active_conditions, GLOBAL_VENUE_MONTH_EXCLUDES, GLOBAL_MONTH_EXCLUDES
 
 try:
     import pandas as pd
@@ -574,9 +574,10 @@ def run_fast_backtest(df_features: pd.DataFrame, start_date: str, end_date: str)
     assigned = {}   # {race_id: cond_id}  重複除外用
     cond_race_ids = {}  # {cond_id: [race_id, ...]}
 
+    _active_conds = get_active_conditions()  # active=False（凍結監視中）の条件を除外
     sorted_conds = sorted(
-        STANDARD_BET_CONDITIONS,
-        key=lambda x: (x.get('priority', 999), STANDARD_BET_CONDITIONS.index(x))
+        _active_conds,
+        key=lambda x: (x.get('priority', 999), _active_conds.index(x))
     )
 
     for cond in sorted_conds:
@@ -592,9 +593,9 @@ def run_fast_backtest(df_features: pd.DataFrame, start_date: str, end_date: str)
     all_race_ids = list(assigned.keys())
     df_odds, df_results = load_odds_and_results(all_race_ids)
 
-    # 条件ごとの収支計算
+    # 条件ごとの収支計算（active=Falseは sorted_conds から除外済み）
     results = {}
-    for cond in STANDARD_BET_CONDITIONS:
+    for cond in _active_conds:
         cid = cond['id']
         rids = cond_race_ids.get(cid, [])
         if not rids:
@@ -757,7 +758,7 @@ def print_report(yearly_results: dict, param_desc: str):
             cond_totals[cid]['return'] += v['return']
             cond_totals[cid]['races'] += v['races']
 
-    for cond in STANDARD_BET_CONDITIONS:
+    for cond in get_active_conditions():  # active=False除外
         cid = cond['id']
         t = cond_totals.get(cid, {'bet': 0, 'return': 0, 'races': 0})
         roi = t['return'] / t['bet'] * 100 if t['bet'] > 0 else 0.0

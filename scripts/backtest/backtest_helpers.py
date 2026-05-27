@@ -178,6 +178,13 @@ def get_race_ids_for_condition(
     if cond.get('pit1_st_max') is not None:
         pit1_st_clause += f"AND EXISTS (SELECT 1 FROM race_details _rd1 WHERE _rd1.race_id = r.id AND _rd1.pit_number = 1 AND _rd1.st_time < {cond['pit1_st_max']}) "
 
+    # 2号艇スタートタイムフィルター（コントラスト信号用: 1号艇遅延×2号艇速い）
+    pit2_st_clause = ""
+    if cond.get('pit2_st_min') is not None:
+        pit2_st_clause += f"AND EXISTS (SELECT 1 FROM race_details _rd2 WHERE _rd2.race_id = r.id AND _rd2.pit_number = 2 AND _rd2.st_time >= {cond['pit2_st_min']}) "
+    if cond.get('pit2_st_max') is not None:
+        pit2_st_clause += f"AND EXISTS (SELECT 1 FROM race_details _rd2 WHERE _rd2.race_id = r.id AND _rd2.pit_number = 2 AND _rd2.st_time <= {cond['pit2_st_max']}) "
+
     # 予測1位が1号艇（pit_number=1）でないフィルター（独立信号用）
     p1_not_course1_clause = ""
     if cond.get('p1_not_course1', False):
@@ -533,6 +540,7 @@ def get_race_ids_for_condition(
         {wind_filter_clause}
         {market_diverge_clause}
         {pit1_st_clause}
+        {pit2_st_clause}
         {p1_not_course1_clause}
         """
 

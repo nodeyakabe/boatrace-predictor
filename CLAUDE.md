@@ -268,6 +268,27 @@ Tier 3: 実環境確認（一致率95%+）
 
 **詳細ガイド**: [docs/guides/VALIDATION_WORKFLOW.md](docs/guides/VALIDATION_WORKFLOW.md)
 
+### ⚠️ 新規フィルターキーを使う条件を追加するとき【必須】（2026-05-20追加）
+
+条件に **既存条件で使われていない新しいキー**（例: `pit1_st_min`, `pit2_st_max` 等）を使う場合、以下の**両方**への実装が必要:
+
+| 実装場所 | 役割 |
+|---------|------|
+| `scripts/backtest/backtest_helpers.py` | バックテスト時のSQLフィルター |
+| `src/betting/bet_target_evaluator.py` の `evaluate()` | 実運用時のPythonフィルター |
+
+どちらか片方だけでは「バックテストでは機能するが実運用ではスルー」という乖離が生じる。
+**実際の事例**: `D_ST_CONTRAST_100_300` の `pit1_st_min`/`pit2_st_max` が backtest のみに実装され、実運用でSTフィルターが無効になっていた（2026-05-20 修正）。
+
+**確認手順**:
+1. 条件で使う新規キーを `evaluate()` の `optional_fields` リストに追加
+2. `evaluate()` の波高フィルター付近にフィルターロジックを追加
+3. `monitor_race_timing._get_race_data()` でそのキーのデータを取得してdictに含める
+4. Tier 3 で一致率 95%+ を確認
+
+**現在 backtest のみに実装・今後使う場合は evaluator 側の実装も必要なキー**:
+`predicted_rank_has_class/range`, `min_score_gap`, `min_score_gap_3_4`, `p1_motor_second_rate_min`, `p1_avg_st_max`, `p1_not_course1`
+
 ---
 
 ### Tier 1: 簡易テスト（高速検証）

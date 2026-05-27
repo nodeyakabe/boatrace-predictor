@@ -33,7 +33,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 sys.path.insert(0, PROJECT_ROOT)
 
 from config.settings import DATABASE_PATH
-from config.bet_conditions import STANDARD_BET_CONDITIONS
+from config.bet_conditions import STANDARD_BET_CONDITIONS, get_active_conditions
 from scripts.backtest.backtest_helpers import get_race_ids_for_condition
 
 VENUE_NAMES = {
@@ -742,10 +742,11 @@ def run_unique_backtest(year: int = 2025, full_test: bool = False, enable_wind_f
         year_start = f"{year}-01-01"
         year_end = f"{year + 1}-01-01"
 
-    # STEP 1: 全レースを優先度順に条件に割り当て
+    # STEP 1: 全レースを優先度順に条件に割り当て（active=Falseは除外）
+    active_conditions = get_active_conditions()
     condition_to_races = assign_races_to_conditions(
         cursor,
-        STANDARD_BET_CONDITIONS,
+        active_conditions,
         year_start,
         year_end,
         enable_wind_filter=enable_wind_filter
@@ -771,7 +772,7 @@ def run_unique_backtest(year: int = 2025, full_test: bool = False, enable_wind_f
     print("-" * 90)
 
     all_hit_details = []
-    for cond in STANDARD_BET_CONDITIONS:
+    for cond in active_conditions:
         assigned_races = condition_to_races.get(cond['id'], [])
         cond_result = analyze_assigned_races(cursor, cond, assigned_races)
         results['conditions'].append(cond_result)
@@ -824,7 +825,7 @@ def run_unique_backtest(year: int = 2025, full_test: bool = False, enable_wind_f
         print("-" * 72)
         print(f"{'Grade':<20} {'Bets':>6} {'Hits':>5} {'Hit%':>7} {'ROI':>8} {'Profit':>14}")
         print("-" * 72)
-        grade_totals = analyze_grade_breakdown(cursor, condition_to_races, STANDARD_BET_CONDITIONS)
+        grade_totals = analyze_grade_breakdown(cursor, condition_to_races, active_conditions)
         ORDER = ['一般', 'G1', 'G2', 'G3', 'SG', 'オールレディース', 'ヴィーナスシリーズ', 'ルーキーシリーズ']
         all_grades = ORDER + [g for g in sorted(grade_totals) if g not in ORDER]
         gb_total = {'bets': 0, 'hits': 0, 'investment': 0, 'payout': 0.0}

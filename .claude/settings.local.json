@@ -12,7 +12,16 @@
       "TodoWrite",
       "Bash",
       "Bash(tee:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Read(//tmp/**)",
+      "Bash(grep -E --line-buffered \".|$\")",
+      "Bash(Get-Content \"C:\\\\Users\\\\User\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-User-Desktop-BR-BoatRace-package-20251115-172032\\\\1f62ff12-f560-4b9f-9a43-0c1acaba0067\\\\tasks\\\\bmj5hca4r.output\" -Wait)",
+      "Bash(Select-String -Pattern \"完了|Error|Traceback|=== |変更|ベースライン|双方向|差分|昇格\")",
+      "Bash(python -c ' *)",
+      "Bash(Get-Content \"C:\\\\Users\\\\User\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-User-Desktop-BR-BoatRace-package-20251115-172032\\\\93cf8e50-21a8-4226-8698-294627e5f03a\\\\tasks\\\\bgqg0zyhz.output\" -Wait)",
+      "Bash(Select-String -Pattern \"^\\\\s*\\\\[|==|OK|なし|エラー|取得|データ\" --SimpleMatch)",
+      "Bash(powershell -Command \"Get-Process -Id 9784 -ErrorAction SilentlyContinue\")",
+      "Bash(tasklist)"
     ],
     "deny": [
       "Bash(rm -rf:*)",

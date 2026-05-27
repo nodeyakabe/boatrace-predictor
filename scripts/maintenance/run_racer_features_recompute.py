@@ -44,6 +44,9 @@ def recompute_racer_features(start_date: str = None, end_date: str = None) -> bo
     print(f"{'='*60}")
 
     try:
+        # テーブルが未作成の場合も安全に動作するよう初回に作成
+        pc.create_feature_tables()
+
         print(f"\n[Step 1] racer_features 生成中...")
         t0 = datetime.now()
         pc.compute_racer_features(start_date, end_date, batch_size=BATCH_SIZE)

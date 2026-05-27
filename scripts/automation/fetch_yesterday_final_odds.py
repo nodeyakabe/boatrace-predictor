@@ -19,8 +19,12 @@ from scripts.automation.notify import send_discord_notification, send_error_noti
 import sqlite3
 import time
 
-# 確定オッズの最低件数しきい値（三連単は最大120通り。99件以上あれば確定とみなす）
-CONFIRMED_ODDS_THRESHOLD = 90
+# 確定オッズの最低件数しきい値
+# 6艇×通常: スクレイパーは99通り返す
+# 6艇×失格1艇: 5×4×3=60通りのみ有効（失格艇の組み合わせはサイト非表示）
+# 5艇: 5×4×3=60通り
+# 50未満なら本物の取得失敗とみなす
+CONFIRMED_ODDS_THRESHOLD = 50
 
 
 def fetch_yesterday_final_odds(headless: bool = True) -> int:
@@ -112,6 +116,7 @@ def fetch_yesterday_final_odds(headless: bool = True) -> int:
         FROM races r
         LEFT JOIN trifecta_odds t ON r.id = t.race_id
         WHERE r.race_date = ?
+          AND EXISTS (SELECT 1 FROM results res WHERE res.race_id = r.id)
         GROUP BY r.id
         HAVING cnt < ?
         ORDER BY r.venue_code, r.race_number
