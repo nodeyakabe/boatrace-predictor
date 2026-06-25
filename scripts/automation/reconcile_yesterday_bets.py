@@ -664,6 +664,15 @@ def _reconcile_shadow_bets(cursor, target_date: str) -> list:
             if r and r[0]:
                 odds_if_hit = float(r[0])
 
+        # 結果未取得の場合は reconciled_at を立てずスキップ（翌日以降に再突合せ可能）
+        if not has_result:
+            results.append({
+                'venue': venue_name, 'race_num': race_number,
+                'combinations': combos_str, 'actual': None,
+                'hit_combination': None, 'odds_if_hit': None, 'has_result': False,
+            })
+            continue
+
         # shadow_bets を更新
         cursor.execute("""
             UPDATE shadow_bets
@@ -678,7 +687,7 @@ def _reconcile_shadow_bets(cursor, target_date: str) -> list:
             'actual': actual_combo or 'N/A',
             'hit_combination': hit_combo,
             'odds_if_hit': odds_if_hit,
-            'has_result': has_result,
+            'has_result': True,
         })
 
     cursor.connection.commit()

@@ -148,7 +148,7 @@ class RaceMonitor:
         return combos
 
     def _save_shadow_bet(self, race_id: int, combos: list) -> None:
-        """shadow_bets テーブルに5点観測記録を保存（テーブルがなければ自動作成）"""
+        """shadow_bets テーブルに多点観測記録を保存（テーブルがなければ自動作成）"""
         conn = sqlite3.connect(self.db_path)
         try:
             conn.execute("""
@@ -1382,7 +1382,7 @@ class RaceMonitor:
                     shadow_combos = self._build_shadow_combinations(preds)
                     if shadow_combos:
                         self._save_shadow_bet(race_id, shadow_combos)
-                        print(f"  [shadow] 5点記録: {' / '.join(shadow_combos)}")
+                        print(f"  [shadow] {len(shadow_combos)}点記録: {' / '.join(shadow_combos)}")
                 except Exception as _s_err:
                     print(f"  [WARN] shadow記録失敗: {_s_err}")
                 return True

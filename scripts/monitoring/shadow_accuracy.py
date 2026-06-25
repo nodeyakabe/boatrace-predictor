@@ -146,8 +146,9 @@ def main():
     print(f"\n【shadow 多点（仮想観測・100円/点）】")
     if sh['total'] > 0:
         n = sh['total']
-        combos_per_race = len(sh['details'][0]['combinations'].split(',')) if sh['details'] else 5
-        invest = n * combos_per_race * 100
+        # 全件の実際の点数を合計（5点/6点混在に対応）
+        total_combos = sum(len(d['combinations'].split(',')) for d in sh['details'])
+        invest = total_combos * 100
         gross  = sh['gross']
         profit = gross - invest
         rate   = sh['hits'] / n * 100
