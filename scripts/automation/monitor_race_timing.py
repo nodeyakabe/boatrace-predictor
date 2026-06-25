@@ -47,6 +47,7 @@ class RaceMonitor:
         self.fetched_odds_races: Dict[int, datetime] = {}  # オッズ再取得済み: {race_id: 取得時刻}
         self.late_fetched_races: set = set()  # 後期オッズ確認済みレースID
         self.fetched_direct_info_universal = set()  # Gap1対応: 全レース直前情報チェック済み
+        self._gap1_detail_sent: set = set()  # Gap1昇格時にdetailを送信済みのレースID（二重送信防止）
         self._monitoring_active = False  # 重複実行防止（前サイクルが終わっていない場合はスキップ）
         self._bet_target_cache = {}       # {race_id: race_dict} - 購入判定キャッシュ
         self._cache_date = None           # キャッシュの日付
@@ -122,6 +123,54 @@ class RaceMonitor:
         except Exception as e:
             print(f"  [WARN] 通知記録保存失敗: {e}")
 
+    @staticmethod
+    def _build_shadow_combinations(preds: dict) -> list:
+        """
+        before予測からshadow組み合わせを生成。
+        p1固定で2/3着をp2〜p4から展開（p4あり時は6点）。
+        """
+        pred = preds.get('new_prediction') or preds.get('old_prediction') or []
+        if len(pred) < 3:
+            return []
+        p1, p2, p3 = pred[0], pred[1], pred[2]
+        combos = [
+            f"{p1}-{p2}-{p3}",  # 標準（現在の購入対象）
+            f"{p1}-{p3}-{p2}",  # p132: 2/3着入れ替え
+        ]
+        if len(pred) >= 4:
+            p4 = pred[3]
+            combos += [
+                f"{p1}-{p2}-{p4}",  # p124: p4が3着
+                f"{p1}-{p4}-{p2}",  # p142: p4が2着
+                f"{p1}-{p3}-{p4}",  # p134: p3が2着・p4が3着（修正前は欠落）
+                f"{p1}-{p4}-{p3}",  # p143: p4が2着・p3が3着
+            ]
+        return combos
+
+    def _save_shadow_bet(self, race_id: int, combos: list) -> None:
+        """shadow_bets テーブルに5点観測記録を保存（テーブルがなければ自動作成）"""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS shadow_bets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    race_id INTEGER NOT NULL UNIQUE,
+                    combinations TEXT NOT NULL,
+                    actual_result TEXT,
+                    hit_combination TEXT,
+                    odds_if_hit REAL,
+                    created_at TEXT NOT NULL,
+                    reconciled_at TEXT
+                )
+            """)
+            conn.execute("""
+                INSERT OR IGNORE INTO shadow_bets (race_id, combinations, created_at)
+                VALUES (?, ?, ?)
+            """, (race_id, ','.join(combos), datetime.now().isoformat()))
+            conn.commit()
+        finally:
+            conn.close()
+
     def get_todays_target_races(self) -> List[Dict]:
         """
         本日の購入対象レースと候補レースを取得
@@ -141,6 +190,7 @@ class RaceMonitor:
             self.fetched_direct_info = set()
             self.fetched_odds_races = {}
             self.late_fetched_races = set()
+            self._gap1_detail_sent = set()
             self._cache_date = today
 
         conn = self.get_connection()
@@ -521,6 +571,14 @@ class RaceMonitor:
                                            primary_channel='buy', secondary_channel='log')
             print(f"  Gap1新規発生通知送信: {race_id}")
 
+            # 採点詳細を detail チャンネルへも送信（check_and_notify での二重送信を防ぐためフラグ管理）
+            try:
+                detail_msg = format_detail_message(race_info, bet_target, preds)
+                send_discord_notification(detail_msg, channel='detail')
+                self._gap1_detail_sent.add(race_id)
+            except Exception as _detail_err:
+                print(f"  [WARN] Gap1 採点詳細送信失敗: {_detail_err}")
+
         except Exception as e:
             print(f"[ERROR] 昇格通知送信失敗: {race_id} - {e}")
 
@@ -675,18 +733,23 @@ class RaceMonitor:
 
         print(f"[GAP1] 直前情報取得: race_id={race_id} 会場{race_simple['venue_code']} {race_simple['race_number']}R (締切まで{time_until:.0f}分)")
 
-        # beforeinfo取得（失敗時はフラグを立てず次サイクルで再試行）
-        race_for_scraper = {
-            'race_id': race_id,
-            'venue_code': race_simple['venue_code'],
-            'date': race_simple['race_date'],
-            'race_number': race_simple['race_number'],
-        }
-        if not self._fetch_beforeinfo_for_race(race_for_scraper, deadline_minutes=time_until):
-            print(f"  [GAP1] beforeinfo未公開または取得失敗: race_id={race_id}")
-            return True
-        # ナイター対応: 展示タイムなし保存の場合はフラグを立てず次サイクルで再試行可能にする
+        # Fブロック（10:30）が既にDBにbeforeinfoを保存済みなら、Webアクセスをスキップ
         has_exhibition_univ = self.prediction_updater.check_beforeinfo_exists(race_id)
+        if not has_exhibition_univ:
+            # DBに未保存の場合のみWebから取得（失敗時はフラグを立てず次サイクルで再試行）
+            race_for_scraper = {
+                'race_id': race_id,
+                'venue_code': race_simple['venue_code'],
+                'date': race_simple['race_date'],
+                'race_number': race_simple['race_number'],
+            }
+            if not self._fetch_beforeinfo_for_race(race_for_scraper, deadline_minutes=time_until):
+                print(f"  [GAP1] beforeinfo未公開または取得失敗: race_id={race_id}")
+                return True
+            has_exhibition_univ = self.prediction_updater.check_beforeinfo_exists(race_id)
+        else:
+            print(f"  [GAP1] DBにbeforeinfoあり（Fブロック収集済み）: race_id={race_id}")
+        # ナイター対応: 展示タイムなし保存の場合はフラグを立てず次サイクルで再試行可能にする
         if has_exhibition_univ:
             self.fetched_direct_info_universal.add(race_id)
 
@@ -1118,11 +1181,16 @@ class RaceMonitor:
         print(f"最終オッズ確認・通知: {race_id} (締切まであと{time_until_deadline:.0f}分)")
 
         # 最新Webオッズを取得して最終評価
+        odds_fetched_at = datetime.now()
         final_odds_data = self._fetch_web_odds(race)
         if final_odds_data is None:
-            print(f"  [WARNING] 最新オッズ取得失敗: {race_id} - 10-25分前のDBオッズで代替評価")
+            if race_id in self.fetched_odds_races:
+                print(f"  [WARNING] 最新オッズ取得失敗: {race_id} - 10-25分前のDBオッズで代替評価")
+            else:
+                print(f"  [WARNING] 最新オッズ取得失敗: {race_id} - 10-25分前も失敗のため見送り判定へ")
         has_beforeinfo = race_id in self.fetched_direct_info
 
+        _odds_unavailable = False
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
@@ -1137,16 +1205,40 @@ class RaceMonitor:
             if not predictions:
                 return False
             advance_top3 = self._get_advance_top3(cursor, race_id) if has_beforeinfo else None
-            odds_for_eval = final_odds_data if final_odds_data else self._get_odds_data(cursor, race_id, predictions)
-            final_bet_target = self.bet_evaluator.evaluate_race(
-                race_data=race_data,
-                predictions=predictions,
-                odds_data=odds_for_eval,
-                has_beforeinfo=has_beforeinfo,
-                advance_top3=advance_top3,
-            )
+            if final_odds_data:
+                odds_for_eval = final_odds_data
+            elif race_id in self.fetched_odds_races:
+                # 10-25分前には取得成功済み → DBの値は比較的新鮮、ネットワーク一時障害と判断
+                odds_for_eval = self._get_odds_data(cursor, race_id, predictions)
+            else:
+                # 10-25分前も6-10分前も取得失敗 → 中止・公開停止の可能性が高い → 見送り
+                _odds_unavailable = True
+                odds_for_eval = {}  # 評価しない
+            if not _odds_unavailable:
+                final_bet_target = self.bet_evaluator.evaluate_race(
+                    race_data=race_data,
+                    predictions=predictions,
+                    odds_data=odds_for_eval,
+                    has_beforeinfo=has_beforeinfo,
+                    advance_top3=advance_top3,
+                )
         finally:
             conn.close()
+
+        # オッズ取得不可（中止の可能性） → 見送り
+        if _odds_unavailable:
+            venue_name = self.get_venue_name(race['venue_code'])
+            msg = (
+                f"⚪ **{venue_name} {race['race_number']}R** 締切{race['deadline']}\n"
+                f"最新オッズ取得不可（中止の可能性）のため見送り"
+            )
+            try:
+                send_discord_notification(msg, channel='log')
+            except Exception as _notify_err:
+                print(f"  [WARN] 見送り通知送信失敗: {_notify_err}")
+            print(f"  [見送り] {race_id}: オッズ取得不可のため見送り（10-25分前・6-10分前ともに失敗）")
+            self.notified_races.add(race_id)
+            return False
 
         # キャッシュ更新
         old_status = bet_target.status
@@ -1159,12 +1251,38 @@ class RaceMonitor:
         # 最終評価で購入対象外になった場合: 見送り通知
         if final_bet_target.status not in [BetStatus.TARGET_ADVANCE, BetStatus.TARGET_CONFIRMED]:
             venue_name = self.get_venue_name(race['venue_code'])
+            # 見送り時の組合せ・オッズ（見送り前の確定状態から取得）
+            if bet_target.multi_bet_result and bet_target.multi_bet_result.bets:
+                _d_combos = ','.join(b.combination for b in bet_target.multi_bet_result.bets)
+                _d_amounts = ','.join(str(b.bet_amount) for b in bet_target.multi_bet_result.bets)
+                _d_amount = sum(b.bet_amount for b in bet_target.multi_bet_result.bets)
+            elif bet_target.combination:
+                _d_combos = bet_target.combination
+                _d_amounts = str(bet_target.bet_amount or 100)
+                _d_amount = bet_target.bet_amount or 100
+            else:
+                _d_combos = ''
+                _d_amounts = ''
+                _d_amount = 0
+            _d_final_odds = final_bet_target.odds or bet_target.odds or 0.0
+            _d_cond_id = (bet_target.reason or '').split('|')[0].strip()
+            combos_disp = _d_combos.replace(',', ' / ')
             msg = (
                 f"⚪ **{venue_name} {race['race_number']}R** 締切{race['deadline']}\n"
-                f"最終確認でオッズ範囲外のため見送り"
+                f"最終確認でオッズ範囲外のため見送り  `{combos_disp}`  {_d_final_odds:.1f}倍"
             )
             send_discord_notification(msg, channel='log')
-            print(f"  [見送り] {race_id}: 最終確認で対象外 ({old_status.value} → {final_bet_target.status.value})")
+            print(f"  [見送り] {race_id}: 最終確認で対象外 ({old_status.value} → {final_bet_target.status.value}) "
+                  f"combos={_d_combos} odds={_d_final_odds:.1f}")
+            # 見送り記録をDBに保存（翌日reconcile用）
+            if _d_combos:
+                try:
+                    self._save_bet_notification(
+                        race_id, _d_combos, _d_final_odds,
+                        _d_amount, _d_cond_id, 'dismissed', _d_amounts
+                    )
+                except Exception as _d_err:
+                    print(f"  [WARN] 見送り記録失敗: {_d_err}")
             self.notified_races.add(race_id)  # 再チェックしない
             return False
 
@@ -1195,6 +1313,7 @@ class RaceMonitor:
             'rank1_name': rank1_entry['racer_name'] if rank1_entry else None,
         }
 
+        _odds_time_str = odds_fetched_at.strftime('%H:%M:%S')
         if final_bet_target.multi_bet_result and final_bet_target.multi_bet_result.bets:
             odds_info = {
                 'trifecta_odds': final_bet_target.odds if final_bet_target.odds else 10.0,
@@ -1205,7 +1324,8 @@ class RaceMonitor:
                 'bet_amount': sum(b.bet_amount for b in final_bet_target.multi_bet_result.bets),
                 'expected_roi': final_bet_target.expected_roi,
                 'reason': final_bet_target.reason,
-                'odds_fetch_elapsed': None,  # 直前取得のため経過時間は不要
+                'odds_fetch_elapsed': None,
+                'odds_fetch_time': _odds_time_str,
             }
         else:
             odds_info = {
@@ -1214,6 +1334,7 @@ class RaceMonitor:
                 'expected_roi': final_bet_target.expected_roi,
                 'reason': final_bet_target.reason,
                 'odds_fetch_elapsed': None,
+                'odds_fetch_time': _odds_time_str,
             }
 
         try:
@@ -1249,12 +1370,21 @@ class RaceMonitor:
                     )
                 except Exception as _log_err:
                     print(f"  [WARN] 通知記録失敗(confirmed): {_log_err}")
-                # 採点詳細を detail チャンネルへ送信
+                # 採点詳細を detail チャンネルへ送信（Gap1昇格時に送信済みの場合は省略）
+                if race_id not in self._gap1_detail_sent:
+                    try:
+                        detail_msg = format_detail_message(race_info, final_bet_target, preds)
+                        send_discord_notification(detail_msg, channel='detail')
+                    except Exception as detail_err:
+                        print(f"  [WARN] 採点詳細送信失敗: {detail_err}")
+                # shadow 5点記録（観測モード）
                 try:
-                    detail_msg = format_detail_message(race_info, final_bet_target, preds)
-                    send_discord_notification(detail_msg, channel='detail')
-                except Exception as detail_err:
-                    print(f"  [WARN] 採点詳細送信失敗: {detail_err}")
+                    shadow_combos = self._build_shadow_combinations(preds)
+                    if shadow_combos:
+                        self._save_shadow_bet(race_id, shadow_combos)
+                        print(f"  [shadow] 5点記録: {' / '.join(shadow_combos)}")
+                except Exception as _s_err:
+                    print(f"  [WARN] shadow記録失敗: {_s_err}")
                 return True
             else:
                 print(f"[ERROR] 通知送信失敗: {race_id}")
