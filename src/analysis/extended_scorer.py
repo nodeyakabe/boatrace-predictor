@@ -1356,7 +1356,7 @@ class ExtendedScorer:
             detail = self.batch_loader.get_race_details(race_id, pit_number)
             if detail is not None:
                 tilt = detail.get('tilt_angle')
-        if tilt is None and not (self.batch_loader and self.batch_loader._cache_loaded):
+        if tilt is None:  # batch_loader pop後もDB直読みにフォールバック
             conn = get_connection(self.db_path)
             cursor = conn.cursor()
             try:

@@ -35,7 +35,8 @@ def recompute_racer_features(start_date: str = None, end_date: str = None) -> bo
         two_years_ago = (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d')
         start_date = two_years_ago
 
-    pc = FeaturePrecomputer()
+    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data', 'boatrace.db')
+    pc = FeaturePrecomputer(db_path=db_path)
 
     print(f"{'='*60}")
     print(f"racer_features / racer_venue_features 再生成")

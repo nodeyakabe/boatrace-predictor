@@ -469,6 +469,14 @@ class PredictionUpdater:
                 logger.info(f"Race {race_id}: 直前予想は既に存在します")
                 return True
 
+            # force=True: 最新DBデータで再生成するためキャッシュを無効化
+            if force:
+                self.predictor.race_data_cache.invalidate_race(race_id)
+                # batch_loaderのrace_detailsスナップショットも無効化（展示データの鮮度保証）
+                bl = self.predictor.batch_loader
+                if bl and bl._cache_loaded:
+                    bl._cache.get('race_details', {}).pop(race_id, None)
+
             # 予想を生成
             logger.info(f"Race {race_id}: 直前予想を生成中...")
             predictions = self.predictor.predict_race(race_id)

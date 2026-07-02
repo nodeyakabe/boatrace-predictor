@@ -17,7 +17,10 @@ import os
 import io
 
 # Windows環境でのstdout/stderrエンコーディングをUTF-8に設定
-if sys.platform == 'win32':
+# __main__のときのみ実行（importされた場合はスキップ）
+# scheduler の _TeeStream が sys.stdout を管理しているため、
+# モジュールインポート時に上書きすると scheduler log への出力が失われる
+if __name__ == '__main__' and sys.platform == 'win32':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 import time

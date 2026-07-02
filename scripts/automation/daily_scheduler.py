@@ -1,18 +1,20 @@
 """
-メインスケジューラ（5ブロック構成）
+メインスケジューラ（6ブロック構成）
 
 常駐して以下のタスクを自動実行:
-- 毎朝3:00 Aブロック（前日データ完全収集）
-- 毎朝6:00 Cブロック（本日データ収集 + advance予測生成）
-- 毎朝7:30 Dブロック（本日予想生成）
-- 毎朝8:00 Eブロック（当日オッズ収集）
-- 動的     各レース締切10分前通知
+- 毎朝3:00  Aブロック（前日データ完全収集）
+- 毎朝6:00  Cブロック（本日データ収集 + advance予測生成）
+- 毎朝8:00  Eブロック（当日オッズ収集）
+- 毎朝8:30  Dブロック（本日予想生成）
+- 毎朝10:30 Fブロック（直前情報一括収集 + before予測生成）
+- 動的      各レース締切10分前通知
 
 【ブロック詳細】
 Aブロック: 結果→確定オッズ→直前情報→展示→直前予想（5タスク）
 Cブロック: レースデータ→advance予測生成（2タスク）
 Dブロック: 予想生成（1タスク）
 Eブロック: 当日オッズ収集（1タスク、6:00は未公開のため8:00に分離）
+Fブロック: 直前情報一括収集 + before予測生成（2タスク、GAP1 Timeout補完用）
 """
 
 import os
@@ -83,6 +85,7 @@ from scripts.automation.notify import send_discord_notification, send_error_noti
 from scripts.automation.block_a_yesterday_data import BlockARunner
 from scripts.automation.block_c_today_data import BlockCRunner
 from scripts.automation.block_d_today_prediction import BlockDRunner
+from scripts.automation.block_f_before_prediction import BlockFRunner
 from scripts.automation.fetch_today_odds import fetch_todays_odds
 from scripts.automation.fetch_today_races import fetch_todays_races
 from scripts.maintenance.run_racer_features_recompute import recompute_racer_features
@@ -296,6 +299,25 @@ def block_e_job():
         send_error_notification("Eブロックエラー", error_msg, severity='critical')
 
 
+def block_f_job():
+    """Fブロック: 当日直前情報一括収集 + before予測生成（10:30）
+
+    GAP1（monitor_race_timing）のReadTimeoutで取得できなかった直前情報を補完し、
+    D_ST_CONTRAST等のbefore予測依存条件を当日のmonitorが評価できるようにする。
+    """
+    try:
+        runner = BlockFRunner()
+        success = runner.run_all()
+
+        if not success:
+            print("[WARNING] Fブロックでエラーが発生しましたが続行します")
+
+    except Exception as e:
+        error_msg = f"Fブロック実行中にエラー: {str(e)}"
+        print(f"[ERROR] {error_msg}")
+        send_error_notification("Fブロックエラー", error_msg, severity='critical')
+
+
 def refresh_race_times_job():
     """発走時刻再取得ジョブ（10:00 / 13:00 / 16:00）
 
@@ -352,7 +374,7 @@ def startup_notification():
     """起動通知"""
     message = (
         f"🤖 **システム起動** {datetime.now().strftime('%m/%d %H:%M')}\n"
-        f"A 03:00 → C 06:00 → E 08:00 → D 08:30"
+        f"A 03:00 → C 06:00 → E 08:00 → D 08:30 → F 10:30"
     )
     send_discord_notification(message, channel='log')
 
@@ -376,6 +398,7 @@ def print_status():
     print("  - 毎朝 6:00 - Cブロック（本日データ収集 + advance予測生成）")
     print("  - 毎朝 8:00 - Eブロック（当日オッズ収集）")
     print("  - 毎朝 8:30 - Dブロック（予想生成・オッズあり状態で通知）")
+    print("  - 毎朝10:30 - Fブロック（直前情報一括収集 + before予測生成）")
     print("  - 10:00 / 13:00 / 16:00 - 発走時刻再取得（当日変更対応）")
     print("  - 1分ごと - レース監視（オッズ再取得→直前情報→通知）")
     print("\n操作:")
@@ -413,7 +436,7 @@ def main():
     startup_notification()
     print("[OK] 起動通知送信完了\n")
 
-    # スケジュール設定（4ブロック構成）
+    # スケジュール設定（5ブロック構成）
     print("スケジュール設定中...")
 
     # 毎朝3:00にAブロック（前日データ完全収集）- 1時間前倒し
@@ -423,6 +446,11 @@ def main():
     # 毎朝6:00にCブロック（本日データ収集）- 30分前倒し
     schedule.every().day.at("06:00").do(block_c_job)
     print("[OK] 毎朝 6:00 - Cブロック（本日データ収集）[30分前倒し]")
+
+    # 毎朝10:30にFブロック（直前情報一括収集 + before予測生成）
+    # GAP1 ReadTimeoutで取得できなかった直前情報を補完し、before予測を当日中に生成
+    schedule.every().day.at("10:30").do(block_f_job)
+    print("[OK] 毎朝 10:30 - Fブロック（直前情報一括収集 + before予測生成）")
 
     # 10:00 / 13:00 / 16:00 に発走時刻を再取得（当日変更対応）
     schedule.every().day.at("10:00").do(refresh_race_times_job)

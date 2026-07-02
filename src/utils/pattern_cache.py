@@ -71,6 +71,13 @@ class PatternCache:
             'created_at': datetime.now()
         }
 
+    def invalidate(self, key: str) -> bool:
+        """指定キーをキャッシュから削除"""
+        if key in self._cache:
+            del self._cache[key]
+            return True
+        return False
+
     def clear(self) -> None:
         """キャッシュをクリア"""
         self._cache.clear()
@@ -202,6 +209,12 @@ class RaceDataCache:
     def set_pattern_matches(self, race_id: int, pit_number: int, data: Any) -> None:
         """パターンマッチ結果をキャッシュに保存"""
         self.pattern_match_cache.set(f"pattern_{race_id}_{pit_number}", data)
+
+    def invalidate_race(self, race_id: int) -> None:
+        """指定レースの予測・beforeinfoキャッシュを無効化（force再生成前に呼ぶ）"""
+        self.prediction_cache.invalidate(f"pred_{race_id}_before")
+        self.prediction_cache.invalidate(f"pred_{race_id}_advance")
+        self.before_info_cache.invalidate(f"before_{race_id}")
 
     def clear_all(self) -> None:
         """全キャッシュをクリア"""

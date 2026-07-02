@@ -21,9 +21,7 @@ from scripts.automation.notify import (
     send_race_notification,
     send_error_notification,
     send_discord_notification,
-    send_discord_notification_dual,
     format_race_notification,
-    format_race_notification_short,
     format_detail_message,
     calc_prediction_score,
 )
@@ -45,7 +43,6 @@ class RaceMonitor:
         self.notified_races = set()  # 通知済みレースID
         self.fetched_direct_info = set()  # 直前情報取得済みレースID
         self.fetched_odds_races: Dict[int, datetime] = {}  # オッズ再取得済み: {race_id: 取得時刻}
-        self.late_fetched_races: set = set()  # 後期オッズ確認済みレースID
         self.fetched_direct_info_universal = set()  # Gap1対応: 全レース直前情報チェック済み
         self._gap1_detail_sent: set = set()  # Gap1昇格時にdetailを送信済みのレースID（二重送信防止）
         self._monitoring_active = False  # 重複実行防止（前サイクルが終わっていない場合はスキップ）
@@ -74,12 +71,22 @@ class RaceMonitor:
         condition_id: str,
         notification_type: str = 'confirmed',
         bet_amounts: str = '',
+        had_exhibition: int = None,
+        exhibition_count: int = None,
+        pred_generated_at: str = None,
+        pred_type_used: str = None,
     ) -> None:
         """
         通知済みレースをbet_notificationsテーブルに記録する。
         翌朝のreconcile_yesterday_betsで使用し、通知時オッズと実結果を突合せる。
 
         bet_amounts: 組合せごとの投資額（カンマ区切り）。例: "200,100,100" / "100"
+
+        予測品質スナップショット（購入判断時の状態を永続化。Aブロック翌朝上書きと無関係）:
+          had_exhibition    : 1=展示タイム込み / 0=展示なし / None=不明
+          exhibition_count  : exhibition_timeが入った艇数(0-6)
+          pred_generated_at : 購入時点のbefore予測のgenerated_at
+          pred_type_used    : 'before' / 'advance'（advance=before未生成のまま購入の異常）
         """
         try:
             conn = sqlite3.connect(self.db_path)
@@ -94,19 +101,42 @@ class RaceMonitor:
                     condition_id TEXT,
                     notified_at TEXT NOT NULL,
                     notification_type TEXT DEFAULT 'confirmed',
+                    had_exhibition INTEGER,
+                    exhibition_count INTEGER,
+                    pred_generated_at TEXT,
+                    pred_type_used TEXT,
                     UNIQUE(race_id, notification_type)
                 )
             """)
-            # 既存テーブルへの bet_amounts カラム追加（移行対応）
-            try:
-                conn.execute("ALTER TABLE bet_notifications ADD COLUMN bet_amounts TEXT")
-            except Exception:
-                pass
+            # 既存テーブルへのカラム追加（移行対応・存在済みは無視）
+            for _ddl in (
+                "ALTER TABLE bet_notifications ADD COLUMN bet_amounts TEXT",
+                "ALTER TABLE bet_notifications ADD COLUMN had_exhibition INTEGER",
+                "ALTER TABLE bet_notifications ADD COLUMN exhibition_count INTEGER",
+                "ALTER TABLE bet_notifications ADD COLUMN pred_generated_at TEXT",
+                "ALTER TABLE bet_notifications ADD COLUMN pred_type_used TEXT",
+            ):
+                try:
+                    conn.execute(_ddl)
+                except Exception:
+                    pass
             conn.execute("""
-                INSERT OR REPLACE INTO bet_notifications
+                INSERT INTO bet_notifications
                     (race_id, combinations, odds_at_notification, bet_amount,
-                     bet_amounts, condition_id, notified_at, notification_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                     bet_amounts, condition_id, notified_at, notification_type,
+                     had_exhibition, exhibition_count, pred_generated_at, pred_type_used)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(race_id, notification_type) DO UPDATE SET
+                    combinations         = excluded.combinations,
+                    odds_at_notification = excluded.odds_at_notification,
+                    bet_amount           = excluded.bet_amount,
+                    bet_amounts          = excluded.bet_amounts,
+                    condition_id         = excluded.condition_id,
+                    had_exhibition       = excluded.had_exhibition,
+                    exhibition_count     = excluded.exhibition_count,
+                    pred_generated_at    = excluded.pred_generated_at,
+                    pred_type_used       = excluded.pred_type_used
+                    -- notified_at は初回確定時刻を保持（上書きしない）
             """, (
                 race_id,
                 combinations,
@@ -116,12 +146,84 @@ class RaceMonitor:
                 condition_id,
                 datetime.now().isoformat(),
                 notification_type,
+                had_exhibition,
+                exhibition_count,
+                pred_generated_at,
+                pred_type_used,
             ))
             conn.commit()
             conn.close()
-            print(f"  [BET_LOG] 通知記録保存: race_id={race_id} type={notification_type} combos={combinations} amounts={bet_amounts}")
+            print(f"  [BET_LOG] 通知記録保存: race_id={race_id} type={notification_type} "
+                  f"combos={combinations} amounts={bet_amounts} "
+                  f"exhib={exhibition_count} had_exhib={had_exhibition} "
+                  f"pred_type={pred_type_used} pred_at={pred_generated_at}")
         except Exception as e:
             print(f"  [WARN] 通知記録保存失敗: {e}")
+
+    def _snapshot_prediction_quality(self, race_id: int) -> dict:
+        """
+        購入確定の瞬間にrace_details/race_predictionsから予測品質メタデータを取得。
+        Aブロックによる翌朝上書きより前に呼ぶことで、購入判断時の状態を永続化できる。
+
+        Returns:
+            {'had_exhibition', 'exhibition_count', 'pred_generated_at', 'pred_type_used'}
+            取得失敗時は全てNone（記録は継続、検知側でNULLを扱う）
+        """
+        snap = {
+            'had_exhibition': None,
+            'exhibition_count': None,
+            'pred_generated_at': None,
+            'pred_type_used': None,
+        }
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+
+            # 展示タイムが入っている艇数（check_beforeinfo_existsと同じ判定基準）
+            cur.execute("""
+                SELECT COUNT(*) FROM race_details
+                WHERE race_id = ? AND exhibition_time IS NOT NULL
+            """, (race_id,))
+            row = cur.fetchone()
+            ex_count = int(row[0]) if row and row[0] is not None else 0
+            snap['exhibition_count'] = ex_count
+            snap['had_exhibition'] = 1 if ex_count >= 1 else 0
+
+            # 購入判断に使われた予測のgenerated_atとtype（before優先、なければadvance）
+            cur.execute("""
+                SELECT prediction_type, MAX(generated_at)
+                FROM race_predictions
+                WHERE race_id = ? AND prediction_type IN ('before', 'advance')
+                GROUP BY prediction_type
+            """, (race_id,))
+            rows = {r[0]: r[1] for r in cur.fetchall()}
+            if 'before' in rows:
+                snap['pred_type_used'] = 'before'
+                snap['pred_generated_at'] = rows['before']
+            elif 'advance' in rows:
+                snap['pred_type_used'] = 'advance'
+                snap['pred_generated_at'] = rows['advance']
+
+            conn.close()
+        except Exception as e:
+            print(f"  [WARN] 予測品質スナップショット取得失敗: race_id={race_id} - {e}")
+        return snap
+
+    def _log_before_gen(self, race_id: int, phase: str, force: bool) -> None:
+        """
+        before予測再生成の結果を構造化ログ出力する。
+        grep '[BEFORE_GEN]' で全経路の展示反映状況を一覧確認できる。
+
+        phase: 呼び出し経路識別子（'gap1' / 'reeval'）
+        force: update_to_before_predictionに渡したforce値
+        """
+        try:
+            q = self._snapshot_prediction_quality(race_id)
+            print(f"[BEFORE_GEN] race_id={race_id} phase={phase} force={force} "
+                  f"exhib_count={q['exhibition_count']} had_exhibition={q['had_exhibition']} "
+                  f"pred_type={q['pred_type_used']} pred_at={q['pred_generated_at']}")
+        except Exception as e:
+            print(f"[BEFORE_GEN] race_id={race_id} phase={phase} force={force} log_error={e}")
 
     @staticmethod
     def _build_shadow_combinations(preds: dict) -> list:
@@ -189,7 +291,6 @@ class RaceMonitor:
             self.notified_races = set()
             self.fetched_direct_info = set()
             self.fetched_odds_races = {}
-            self.late_fetched_races = set()
             self._gap1_detail_sent = set()
             self._cache_date = today
 
@@ -564,12 +665,9 @@ class RaceMonitor:
 
             status_name = bet_target.status.name if bet_target.status else None
             log_base = format_race_notification(race_info, prediction, odds_info, status=status_name)
-            log_msg = f"🆕 **朝の見通しにないレース** {log_base}\n_締切10分前に改めて購入通知が届きます_"
-            alert_msg = format_race_notification_short(race_info, prediction, odds_info, status=status_name, gap1=True)
-            alert_msg += "\n_（10分前に改めて通知）_"
-            send_discord_notification_dual(alert_msg, log_msg,
-                                           primary_channel='buy', secondary_channel='log')
-            print(f"  Gap1新規発生通知送信: {race_id}")
+            log_msg = f"🆕 **朝の見通しにないレース** {log_base}\n_締切直前に購入通知が届きます_"
+            send_discord_notification(log_msg, channel='candidate')
+            print(f"  Gap1新規発生通知（候補チャンネル）: {race_id}")
 
             # 採点詳細を detail チャンネルへも送信（check_and_notify での二重送信を防ぐためフラグ管理）
             try:
@@ -687,8 +785,10 @@ class RaceMonitor:
                     if race['bet_target'].status == BetStatus.CANDIDATE:
                         self._check_and_fetch_odds(race)
 
-                    # 直前情報取得後、購入判定を再評価（展示タイムなし保存時はforce_before=Trueで強制生成）
-                    self._reevaluate_after_beforeinfo(race, force_before=not has_exhibition)
+                    # 直前情報取得後、購入判定を再評価
+                    # force_before=True: 直前情報を新鮮にスクレイプした直後は必ず最新データでbefore予測を再生成
+                    # (block_fが10:30に古い展示データで生成した予測をそのまま使わない)
+                    self._reevaluate_after_beforeinfo(race, force_before=True)
 
                     return True
                 else:
@@ -763,9 +863,10 @@ class RaceMonitor:
         except Exception:
             pass
 
-        # before予測生成（展示タイムなし保存の場合はforce=Trueで強制生成）
+        # before予測生成（直前情報取得直後は常にforce=Trueで再生成し最新の展示データを使う）
         try:
-            self.prediction_updater.update_to_before_prediction(race_id, force=not has_exhibition_univ)
+            self.prediction_updater.update_to_before_prediction(race_id, force=True)
+            self._log_before_gen(race_id, phase='gap1', force=True)
         except Exception as e:
             print(f"  [GAP1][WARNING] before予測生成エラー: race_id={race_id} - {e}")
             return True
@@ -837,6 +938,7 @@ class RaceMonitor:
                 updated = self.prediction_updater.update_to_before_prediction(race_id, force=force_before)
                 if updated:
                     print(f"  [INFO] before予測生成完了: {race_id}")
+                self._log_before_gen(race_id, phase='reeval', force=force_before)
             except Exception as e:
                 print(f"  [WARNING] before予測生成エラー: {race_id} - {e}")
 
@@ -1149,8 +1251,8 @@ class RaceMonitor:
         """
         締切7-9分前に最新Webオッズを取得して最終購入判定・通知
 
-        旧: 8-12分前に通知（オッズ取得は別途10-25分前）
-        新: 7-9分前に最新Webオッズ取得 → 再評価 → 通知
+        旧: 6-10分前に通知
+        新: 3-7分前に最新Webオッズ取得 → 再評価 → 通知（唯一の購入アクション通知）
             対象外になった場合は「見送り」通知を送信してnotified_racesに追加（再チェックなし）
 
         Args:
@@ -1174,8 +1276,8 @@ class RaceMonitor:
         now = datetime.now()
         time_until_deadline = (deadline - now).total_seconds() / 60
 
-        # 締切6-10分前に最終判定・通知（4分窓: 旧8-12分前の4分窓を維持しつつ締め切りに寄せ）
-        if not (6 <= time_until_deadline <= 10):
+        # 締切3-7分前に最終判定・通知（唯一の購入アクション通知）
+        if not (3 <= time_until_deadline <= 7):
             return False
 
         print(f"最終オッズ確認・通知: {race_id} (締切まであと{time_until_deadline:.0f}分)")
@@ -1211,7 +1313,7 @@ class RaceMonitor:
                 # 10-25分前には取得成功済み → DBの値は比較的新鮮、ネットワーク一時障害と判断
                 odds_for_eval = self._get_odds_data(cursor, race_id, predictions)
             else:
-                # 10-25分前も6-10分前も取得失敗 → 中止・公開停止の可能性が高い → 見送り
+                # 10-25分前も3-7分前も取得失敗 → 中止・公開停止の可能性が高い → 見送り
                 _odds_unavailable = True
                 odds_for_eval = {}  # 評価しない
             if not _odds_unavailable:
@@ -1236,7 +1338,7 @@ class RaceMonitor:
                 send_discord_notification(msg, channel='log')
             except Exception as _notify_err:
                 print(f"  [WARN] 見送り通知送信失敗: {_notify_err}")
-            print(f"  [見送り] {race_id}: オッズ取得不可のため見送り（10-25分前・6-10分前ともに失敗）")
+            print(f"  [見送り] {race_id}: オッズ取得不可のため見送り（10-25分前・3-7分前ともに失敗）")
             self.notified_races.add(race_id)
             return False
 
@@ -1344,15 +1446,6 @@ class RaceMonitor:
             )
             if success:
                 self.notified_races.add(race_id)
-                # 後期オッズ確認用に通知時点の買い目オッズを保存
-                if final_bet_target.multi_bet_result and final_bet_target.multi_bet_result.bets:
-                    race['notified_odds_map'] = {
-                        bet.combination: bet.odds for bet in final_bet_target.multi_bet_result.bets
-                    }
-                else:
-                    race['notified_odds_map'] = (
-                        {final_bet_target.combination: final_bet_target.odds} if final_bet_target.combination else {}
-                    )
                 # 通知記録をDBに保存（翌日reconcile用）
                 try:
                     if final_bet_target.multi_bet_result and final_bet_target.multi_bet_result.bets:
@@ -1364,9 +1457,18 @@ class RaceMonitor:
                         _amounts = str(final_bet_target.bet_amount or 100)
                         _amount = final_bet_target.bet_amount or 100
                     _cond_id = (final_bet_target.reason or '').split('|')[0].strip()
+                    # 購入確定の瞬間に予測品質をスナップショット（Aブロック翌朝上書き前の状態を保存）
+                    _q = self._snapshot_prediction_quality(race_id)
+                    if _q['had_exhibition'] == 0:
+                        print(f"  [ANOMALY] 展示タイムなしで購入確定: race_id={race_id} "
+                              f"pred_type={_q['pred_type_used']} pred_at={_q['pred_generated_at']}")
                     self._save_bet_notification(
                         race_id, _combos, final_bet_target.odds or 0.0,
-                        _amount, _cond_id, 'confirmed', _amounts
+                        _amount, _cond_id, 'confirmed', _amounts,
+                        had_exhibition=_q['had_exhibition'],
+                        exhibition_count=_q['exhibition_count'],
+                        pred_generated_at=_q['pred_generated_at'],
+                        pred_type_used=_q['pred_type_used'],
                     )
                 except Exception as _log_err:
                     print(f"  [WARN] 通知記録失敗(confirmed): {_log_err}")
@@ -1420,83 +1522,6 @@ class RaceMonitor:
             pass
         return (None, None)
 
-    def _check_and_refresh_odds_late(self, race: Dict) -> Dict:
-        """
-        締切3-5分前の最終オッズ確認。購入対象の組み合わせが条件のオッズ範囲外に変動した場合に
-        「キャンセル検討」通知を送信。
-
-        旧: 変動率30%以上で補足通知
-        新: 購入条件のodds_range外に出たかどうかで判定
-
-        Returns:
-            dict: {'checked': bool, 'alerted': int}
-        """
-        race_id = race['race_id']
-        result = {'checked': False, 'alerted': 0}
-
-        # 購入通知済みレースのみ対象
-        if race_id not in self.notified_races:
-            return result
-        # 既に後期確認済みならスキップ
-        if race_id in self.late_fetched_races:
-            return result
-
-        deadline = self.parse_deadline(race['date'], race['deadline'])
-        now = datetime.now()
-        time_until = (deadline - now).total_seconds() / 60
-
-        if not (2 <= time_until <= 6):
-            return result
-
-        try:
-            new_odds_data = self._fetch_web_odds(race)
-            result['checked'] = True
-
-            if not new_odds_data:
-                # 取得失敗の場合は再試行可能にするためaddしない
-                return result
-
-            self.late_fetched_races.add(race_id)
-
-            bet_target = race['bet_target']
-            min_v, max_v = self._parse_odds_range(getattr(bet_target, 'odds_range', None) or '-')
-            # odds_range未設定のレースは判定不能なのでスキップ
-            if min_v is None and max_v is None:
-                return result
-            venue_name = self.get_venue_name(race['venue_code'])
-            out_of_range = []
-
-            # 通知時の買い目それぞれについて範囲外チェック
-            # 購入判定と整合させるため上限は半開区間（odds_min <= odds < odds_max）
-            notified_odds_map = race.get('notified_odds_map', {})
-            for combination in notified_odds_map:
-                current_odds = new_odds_data.get(combination, 0.0)
-                if current_odds <= 0:
-                    continue
-                is_out = (
-                    (min_v is not None and current_odds < min_v) or
-                    (max_v is not None and current_odds >= max_v)
-                )
-                if is_out:
-                    out_of_range.append((combination, current_odds))
-                    print(f"  [範囲外] {race_id} {combination}: {current_odds:.1f}倍 (範囲{min_v}-{max_v}倍)")
-
-            if out_of_range:
-                combo_str = '、'.join(f"`{c}` {o:.1f}倍" for c, o in out_of_range)
-                range_str = f"{min_v}-{max_v}倍" if min_v and max_v else '-'
-                msg = (
-                    f"⚠️ **{venue_name} {race['race_number']}R** 締切{race['deadline']}\n"
-                    f"購入対象オッズが範囲外に変動（キャンセル検討）\n"
-                    f"{combo_str}　条件範囲: {range_str}"
-                )
-                send_discord_notification(msg, channel='buy')
-                result['alerted'] += len(out_of_range)
-
-        except Exception as e:
-            print(f"[ERROR] 後期オッズ確認エラー: {race_id} - {e}")
-
-        return result
-
     def monitor_once(self) -> Dict[str, int]:
         """
         1回の監視サイクルを実行
@@ -1518,8 +1543,6 @@ class RaceMonitor:
             'odds_fetched': 0,
             'direct_info_fetched': 0,
             'notifications_sent': 0,
-            'late_odds_checks': 0,
-            'odds_change_alerts': 0,
             'errors': 0
         }
 
@@ -1544,14 +1567,9 @@ class RaceMonitor:
                     if self.check_and_fetch_direct_info(race):
                         stats['direct_info_fetched'] += 1
 
-                    # 最終判定・通知（締切7-9分前、最新Webオッズ取得→再評価→購入通知 or 見送り通知）
+                    # 最終判定・通知（締切3-7分前、最新Webオッズ取得→再評価→購入通知 or 見送り通知）
                     if self.check_and_notify(race):
                         stats['notifications_sent'] += 1
-
-                    # 後期オッズ確認（締切3-5分前、購入通知済みレースのみ・範囲外変動で警告通知）
-                    late_result = self._check_and_refresh_odds_late(race)
-                    stats['late_odds_checks'] += late_result['checked']
-                    stats['odds_change_alerts'] += late_result['alerted']
 
                 except Exception as e:
                     print(f"[ERROR] レース処理エラー: {race['race_id']} - {e}")

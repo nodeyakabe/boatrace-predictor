@@ -285,17 +285,20 @@ def format_race_notification_short(
     reason_short = reason.split('|')[0].strip() if reason else ''
     reason_line = f"\n_{reason_short[:60]}{'…' if len(reason_short) > 60 else ''}_" if reason_short else ""
 
+    fetch_time = odds_info.get('odds_fetch_time')
+    fetch_line = f"\n_⏱ オッズ確認 {fetch_time}_" if fetch_time else ""
+
     if multi_bets and len(multi_bets) > 1:
         combos_str = ' '.join(f"`{b['combination']}`" for b in multi_bets)
         bet_str = f"  計**{total_bet}円**" if total_bet else ""
         return (
             f"{header_emoji} **{venue} {race_num}R{suffix}** 締切{deadline}\n"
-            f"{combos_str}{bet_str}{name_str}{reason_line}"
+            f"{combos_str}{bet_str}{name_str}{reason_line}{fetch_line}"
         )
 
     pit_numbers = prediction.get('pit_numbers', [])
     if not pit_numbers:
-        return f"{header_emoji} **{venue} {race_num}R{suffix}** 締切{deadline}\n[買い目未確定]{name_str}{reason_line}"
+        return f"{header_emoji} **{venue} {race_num}R{suffix}** 締切{deadline}\n[買い目未確定]{name_str}{reason_line}{fetch_line}"
     if isinstance(pit_numbers[0], list):
         combo = '-'.join(map(str, pit_numbers[0])) if pit_numbers[0] else '?'
     else:
@@ -304,7 +307,7 @@ def format_race_notification_short(
     bet_str = f"  **{total_bet}円**" if total_bet else ""
     return (
         f"{header_emoji} **{venue} {race_num}R{suffix}** 締切{deadline}\n"
-        f"`{combo}`  {odds:.1f}倍{bet_str}{name_str}{reason_line}"
+        f"`{combo}`  {odds:.1f}倍{bet_str}{name_str}{reason_line}{fetch_line}"
     )
 
 
@@ -567,6 +570,19 @@ def format_detail_message(
     lines += [
         f"**オッズ**: {odds_str}  範囲: {odds_range}  期待ROI: {roi_str}",
     ]
+
+    # --- shadow 5点（観測モード）---
+    _pred = preds.get('new_prediction') or preds.get('old_prediction') or []
+    if len(_pred) >= 3:
+        _p1, _p2, _p3 = _pred[0], _pred[1], _pred[2]
+        _s = [f"`{_p1}-{_p2}-{_p3}`", f"`{_p1}-{_p3}-{_p2}`"]
+        if len(_pred) >= 4:
+            _p4 = _pred[3]
+            _s += [f"`{_p1}-{_p2}-{_p4}`", f"`{_p1}-{_p4}-{_p2}`", f"`{_p1}-{_p4}-{_p3}`"]
+        lines += [
+            f"",
+            f"👁 **shadow 5点**: {'  /  '.join(_s)}",
+        ]
 
     return '\n'.join(lines)
 

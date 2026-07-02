@@ -14,7 +14,7 @@ from src.utils.retry_handler import retry_with_backoff, SCRAPER_CONFIG
 class BeforeInfoScraper:
     """事前情報ページのスクレイパー"""
 
-    def __init__(self, delay=1.0, timeout=10):
+    def __init__(self, delay=1.0, timeout=20):
         """
         初期化
 

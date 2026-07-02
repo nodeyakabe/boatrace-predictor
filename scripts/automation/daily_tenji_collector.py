@@ -25,7 +25,10 @@ import argparse
 import logging
 
 # Windows環境での文字化け対策
-if sys.platform == 'win32' and hasattr(sys.stdout, 'buffer'):
+# __main__のときのみ実行（importされた場合はスキップ）
+# scheduler の _TeeStream が sys.stdout を管理しているため、
+# モジュールインポート時に上書きすると scheduler log への出力が失われる
+if __name__ == '__main__' and sys.platform == 'win32' and hasattr(sys.stdout, 'buffer'):
     import codecs
     sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'replace')
     sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'replace')
