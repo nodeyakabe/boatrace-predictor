@@ -175,6 +175,7 @@ class RaceMonitor:
             'pred_generated_at': None,
             'pred_type_used': None,
         }
+        conn = None
         try:
             conn = sqlite3.connect(self.db_path)
             cur = conn.cursor()
@@ -203,10 +204,11 @@ class RaceMonitor:
             elif 'advance' in rows:
                 snap['pred_type_used'] = 'advance'
                 snap['pred_generated_at'] = rows['advance']
-
-            conn.close()
         except Exception as e:
             print(f"  [WARN] 予測品質スナップショット取得失敗: race_id={race_id} - {e}")
+        finally:
+            if conn:
+                conn.close()
         return snap
 
     def _log_before_gen(self, race_id: int, phase: str, force: bool) -> None:

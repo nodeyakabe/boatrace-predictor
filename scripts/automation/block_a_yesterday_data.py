@@ -24,7 +24,11 @@ from scripts.automation.fetch_yesterday_final_odds import fetch_yesterday_final_
 from scripts.automation.fetch_yesterday_beforeinfo import fetch_yesterday_beforeinfo
 from scripts.automation.daily_tenji_collector import collect_previous_day_tenji
 from scripts.automation.generate_yesterday_before_predictions import generate_yesterday_before_predictions
-from scripts.automation.reconcile_yesterday_bets import reconcile_yesterday_bets
+from scripts.automation.reconcile_yesterday_bets import (
+    reconcile_yesterday_bets,
+    log_reconcile_sent,
+    get_unreconciled_purchase_dates,
+)
 from scripts.automation.fetch_yesterday_payouts import fetch_yesterday_payouts
 from scripts.automation.notify import send_discord_notification, send_error_notification, send_reconcile_notification
 
@@ -119,9 +123,9 @@ class BlockARunner:
 
     def _task_reconcile(self) -> int:
         """前日予想結果突合せ"""
-        db_path = str(project_root / 'data' / 'boatrace.db')
+        self._db_path = str(project_root / 'data' / 'boatrace.db')
         yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-        result = reconcile_yesterday_bets(db_path=db_path, target_date=yesterday)
+        result = reconcile_yesterday_bets(db_path=self._db_path, target_date=yesterday)
         self._reconcile_result = result
 
         # 購入対象件数を返す（タスク件数カウント用）
@@ -179,11 +183,39 @@ class BlockARunner:
         if self.errors:
             message += "\n" + "\n".join(f"❌ {e[:80]}" for e in self.errors)
 
-        # 突合せ結果を別通知で送信（alert: 1行要約 / log: 詳細）
+        # 突合せ結果を別通知で送信
         if self._reconcile_result is not None:
             send_reconcile_notification(self._reconcile_result)
+            db_path = getattr(self, '_db_path', str(project_root / 'data' / 'boatrace.db'))
+            log_reconcile_sent(db_path, self._reconcile_result['date'], self._reconcile_result['target_count'])
+
+        # キャッチアップ: PC スリープ等で reconcile が飛んだ日を検出して送信
+        self._catchup_missed_reconciles()
 
         send_discord_notification(message, channel='log')
+
+
+    def _catchup_missed_reconciles(self):
+        """PC スリープ等で飛んだ日の reconcile をキャッチアップ送信する"""
+        db_path = getattr(self, '_db_path', str(project_root / 'data' / 'boatrace.db'))
+        yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        today = datetime.now().strftime('%Y-%m-%d')
+        try:
+            missed = [d for d in get_unreconciled_purchase_dates(db_path, lookback_days=14)
+                      if d not in (yesterday, today)]
+            if not missed:
+                return
+            print(f"\n[キャッチアップ] 未reconcile購入日を検出: {missed}")
+            for target_date in missed:
+                try:
+                    result = reconcile_yesterday_bets(db_path=db_path, target_date=target_date)
+                    print(f"  [キャッチアップ] {target_date}: {result['target_count']}件")
+                    send_reconcile_notification(result)
+                    log_reconcile_sent(db_path, target_date, result['target_count'])
+                except Exception as e:
+                    print(f"  [キャッチアップ] {target_date} エラー: {e}")
+        except Exception as e:
+            print(f"  [キャッチアップ] 全体エラー: {e}")
 
 
 def main():

@@ -792,3 +792,67 @@ def format_reconcile_message(result: Dict) -> str:
                 lines.append(f"  ❌ {d['venue']} {d['race_num']}R  実=`{actual}`  {'/'.join(combos_list)}")
 
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# reconcile_log: 送信済み日付トラッキング（キャッチアップ重複送信防止用）
+# ---------------------------------------------------------------------------
+
+def _ensure_reconcile_log(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS reconcile_log (
+            date TEXT PRIMARY KEY,
+            sent_at TEXT NOT NULL,
+            target_count INTEGER
+        )
+    """)
+
+
+def log_reconcile_sent(db_path: str, target_date: str, target_count: int) -> None:
+    """reconcile 送信完了を DB に記録（block_a から呼ぶ）"""
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        _ensure_reconcile_log(conn)
+        conn.execute(
+            "INSERT OR REPLACE INTO reconcile_log (date, sent_at, target_count) VALUES (?, ?, ?)",
+            (target_date, datetime.now().isoformat(), target_count)
+        )
+        conn.commit()
+    except Exception as e:
+        print(f"  [WARN] reconcile_log 記録失敗: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_unreconciled_purchase_dates(db_path: str, lookback_days: int = 14) -> list:
+    """
+    直近 lookback_days 日間で confirmed 購入があるが reconcile_log に記録されていない日付を返す。
+    block_a キャッチアップ用。今日・未来日付は除外（結果未確定のため）。
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        _ensure_reconcile_log(conn)
+        conn.commit()
+        cur = conn.cursor()
+        # r.race_date < date('now','localtime') で今日以降を除外
+        cur.execute("""
+            SELECT DISTINCT r.race_date
+            FROM bet_notifications bn
+            JOIN races r ON bn.race_id = r.id
+            WHERE bn.notification_type = 'confirmed'
+              AND r.race_date >= date('now', 'localtime', ?)
+              AND r.race_date < date('now', 'localtime')
+              AND r.race_date NOT IN (SELECT date FROM reconcile_log)
+            ORDER BY r.race_date
+        """, (f'-{lookback_days} days',))
+        dates = [row[0] for row in cur.fetchall()]
+        return dates
+    except Exception as e:
+        print(f"  [WARN] 未reconcile日付取得失敗: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
