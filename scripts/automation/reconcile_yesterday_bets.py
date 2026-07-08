@@ -615,6 +615,7 @@ def _reconcile_shadow_bets(cursor, target_date: str) -> list:
 
     cursor.execute("""
         SELECT sb.id, sb.race_id, sb.combinations,
+               COALESCE(sb.notification_type, 'confirmed'),
                r.venue_code, r.race_number
         FROM shadow_bets sb
         JOIN races r ON sb.race_id = r.id
@@ -632,8 +633,9 @@ def _reconcile_shadow_bets(cursor, target_date: str) -> list:
         sb_id = row[0]
         race_id = row[1]
         combos_str = row[2]
-        venue_name = VENUE_MAP.get(str(row[3]).zfill(2), f'会場{row[3]}')
-        race_number = row[4]
+        notif_type = row[3]
+        venue_name = VENUE_MAP.get(str(row[4]).zfill(2), f'会場{row[4]}')
+        race_number = row[5]
         combos = [c.strip() for c in combos_str.split(',') if c.strip()]
 
         # 実着順を取得
@@ -670,6 +672,7 @@ def _reconcile_shadow_bets(cursor, target_date: str) -> list:
                 'venue': venue_name, 'race_num': race_number,
                 'combinations': combos_str, 'actual': None,
                 'hit_combination': None, 'odds_if_hit': None, 'has_result': False,
+                'notification_type': notif_type,
             })
             continue
 
@@ -688,6 +691,7 @@ def _reconcile_shadow_bets(cursor, target_date: str) -> list:
             'hit_combination': hit_combo,
             'odds_if_hit': odds_if_hit,
             'has_result': True,
+            'notification_type': notif_type,
         })
 
     cursor.connection.commit()
@@ -775,21 +779,33 @@ def format_reconcile_message(result: Dict) -> str:
     # shadow 多点観測（hit/miss + 実結果表示）
     shadow_details = result.get('shadow_details', [])
     if shadow_details:
-        sh_hit = sum(1 for d in shadow_details if d.get('hit_combination'))
-        lines.append("")
-        lines.append(f"👁 **shadow** {sh_hit}/{len(shadow_details)}的中")
-        for d in shadow_details:
-            combos_list = [c.strip() for c in d['combinations'].split(',') if c.strip()]
-            actual = d.get('actual', 'N/A')
-            hit = d.get('hit_combination')
-            odds_h = d.get('odds_if_hit')
-            if not d.get('has_result'):
-                lines.append(f"  ⏳ {d['venue']} {d['race_num']}R  実=未取得  {'/'.join(combos_list)}")
-            elif hit:
-                odds_str = f"  {odds_h:.1f}倍" if odds_h else ''
-                lines.append(f"  ✅ {d['venue']} {d['race_num']}R  実=`{actual}`  hit=`{hit}`{odds_str}")
-            else:
-                lines.append(f"  ❌ {d['venue']} {d['race_num']}R  実=`{actual}`  {'/'.join(combos_list)}")
+        confirmed_shadow = [d for d in shadow_details if d.get('notification_type', 'confirmed') == 'confirmed']
+        dismissed_shadow = [d for d in shadow_details if d.get('notification_type') == 'dismissed']
+
+        def _render_shadow_rows(group: list) -> None:
+            for d in group:
+                combos_list = [c.strip() for c in d['combinations'].split(',') if c.strip()]
+                actual = d.get('actual', 'N/A')
+                hit = d.get('hit_combination')
+                odds_h = d.get('odds_if_hit')
+                if not d.get('has_result'):
+                    lines.append(f"  ⏳ {d['venue']} {d['race_num']}R  実=未取得  {'/'.join(combos_list)}")
+                elif hit:
+                    odds_str = f"  {odds_h:.1f}倍" if odds_h else ''
+                    lines.append(f"  ✅ {d['venue']} {d['race_num']}R  実=`{actual}`  hit=`{hit}`{odds_str}")
+                else:
+                    lines.append(f"  ❌ {d['venue']} {d['race_num']}R  実=`{actual}`  {'/'.join(combos_list)}")
+
+        if confirmed_shadow:
+            sh_hit = sum(1 for d in confirmed_shadow if d.get('hit_combination'))
+            lines.append("")
+            lines.append(f"👁 **shadow（購入分）** {sh_hit}/{len(confirmed_shadow)}的中")
+            _render_shadow_rows(confirmed_shadow)
+        if dismissed_shadow:
+            sh_hit = sum(1 for d in dismissed_shadow if d.get('hit_combination'))
+            lines.append("")
+            lines.append(f"👁 **shadow（見送り分）** {sh_hit}/{len(dismissed_shadow)}的中")
+            _render_shadow_rows(dismissed_shadow)
 
     return "\n".join(lines)
 

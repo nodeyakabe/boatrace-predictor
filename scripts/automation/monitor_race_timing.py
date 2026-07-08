@@ -251,7 +251,7 @@ class RaceMonitor:
             ]
         return combos
 
-    def _save_shadow_bet(self, race_id: int, combos: list) -> None:
+    def _save_shadow_bet(self, race_id: int, combos: list, notification_type: str = 'confirmed') -> None:
         """shadow_bets テーブルに多点観測記録を保存（テーブルがなければ自動作成）"""
         conn = sqlite3.connect(self.db_path)
         try:
@@ -260,6 +260,7 @@ class RaceMonitor:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     race_id INTEGER NOT NULL UNIQUE,
                     combinations TEXT NOT NULL,
+                    notification_type TEXT DEFAULT 'confirmed',
                     actual_result TEXT,
                     hit_combination TEXT,
                     odds_if_hit REAL,
@@ -267,10 +268,14 @@ class RaceMonitor:
                     reconciled_at TEXT
                 )
             """)
+            try:
+                conn.execute("ALTER TABLE shadow_bets ADD COLUMN notification_type TEXT DEFAULT 'confirmed'")
+            except Exception:
+                pass
             conn.execute("""
-                INSERT OR IGNORE INTO shadow_bets (race_id, combinations, created_at)
-                VALUES (?, ?, ?)
-            """, (race_id, ','.join(combos), datetime.now().isoformat()))
+                INSERT OR IGNORE INTO shadow_bets (race_id, combinations, notification_type, created_at)
+                VALUES (?, ?, ?, ?)
+            """, (race_id, ','.join(combos), notification_type, datetime.now().isoformat()))
             conn.commit()
         finally:
             conn.close()
@@ -1387,6 +1392,14 @@ class RaceMonitor:
                     )
                 except Exception as _d_err:
                     print(f"  [WARN] 見送り記録失敗: {_d_err}")
+            # shadow 記録（見送り分）
+            try:
+                shadow_combos = self._build_shadow_combinations(predictions)
+                if shadow_combos:
+                    self._save_shadow_bet(race_id, shadow_combos, notification_type='dismissed')
+                    print(f"  [shadow] 見送り {len(shadow_combos)}点記録: {' / '.join(shadow_combos)}")
+            except Exception as _s_err:
+                print(f"  [WARN] shadow記録失敗(dismissed): {_s_err}")
             self.notified_races.add(race_id)  # 再チェックしない
             return False
 
