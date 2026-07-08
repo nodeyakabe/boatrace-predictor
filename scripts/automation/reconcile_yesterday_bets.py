@@ -381,6 +381,17 @@ def _get_dismissed_detail(cursor, notif: Dict) -> Optional[Dict]:
             per_bet = combo_amount_map.get(actual_combo, 100)
             payout = int(r[0] * per_bet)
 
+    # 結果が確定した時点で bet_notifications に書き戻す（dismissed も追跡）
+    if has_result:
+        try:
+            cursor.execute("""
+                UPDATE bet_notifications
+                SET is_hit = ?, actual_payout = ?, actual_result = ?, reconciled_at = ?
+                WHERE race_id = ? AND notification_type = 'dismissed'
+            """, (1 if is_hit else 0, payout, actual_combo, datetime.now().isoformat(), race_id))
+        except Exception:
+            pass
+
     odds_str = f"{odds:.1f}倍" if odds else ''
     status = '的中' if is_hit else ('結果未取得' if not has_result else '不的中')
     hit_str = '[HIT]' if is_hit else ('[?]' if not has_result else '[NG]')
@@ -469,6 +480,17 @@ def _get_race_detail_from_notification(cursor, notif: Dict) -> Optional[Dict]:
         status = '不的中'
         hit_str = '[NG]'
 
+    # 結果が確定した時点で bet_notifications に書き戻す
+    if has_result:
+        try:
+            cursor.execute("""
+                UPDATE bet_notifications
+                SET is_hit = ?, actual_payout = ?, actual_result = ?, reconciled_at = ?
+                WHERE race_id = ? AND notification_type = 'confirmed'
+            """, (1 if is_hit else 0, total_payout, actual_combo, datetime.now().isoformat(), race_id))
+        except Exception:
+            pass
+
     combos_str = ', '.join(stored_combos)
     odds_str = f"{notif['odds_at_notification']:.1f}倍" if notif.get('odds_at_notification') else ''
     print(f"  {hit_str} {venue_name}{race_number}R [{condition_id}] "
@@ -520,12 +542,19 @@ def reconcile_yesterday_bets(db_path: str, target_date: str = None) -> Dict:
         print(f"  突合せ対象日: {target_date}")
 
         if _bet_notifications_table_exists(cursor):
-            # bet_amounts カラムがない古いテーブルへの移行対応
-            try:
-                cursor.execute("ALTER TABLE bet_notifications ADD COLUMN bet_amounts TEXT")
-                conn.commit()
-            except Exception:
-                pass  # カラム既存の場合は無視
+            # カラム追加マイグレーション（既存カラムはALTER TABLE失敗で無視）
+            for _col_def in [
+                "ADD COLUMN bet_amounts TEXT",
+                "ADD COLUMN is_hit INTEGER",
+                "ADD COLUMN actual_payout INTEGER",
+                "ADD COLUMN actual_result TEXT",
+                "ADD COLUMN reconciled_at TEXT",
+            ]:
+                try:
+                    cursor.execute(f"ALTER TABLE bet_notifications {_col_def}")
+                except Exception:
+                    pass
+            conn.commit()
             # 新方式: 通知時に記録した buy notification をベースに突合せ
             notified = _get_notified_bets(cursor, target_date)
             print(f"  [新方式] bet_notifications 使用: {len(notified)}件の通知記録")
@@ -566,6 +595,9 @@ def reconcile_yesterday_bets(db_path: str, target_date: str = None) -> Dict:
                     total_return += detail['return_amount']
                     if detail['status'] == '結果未取得':
                         no_result_count += 1
+
+        # bet_notifications の書き戻し結果をコミット
+        conn.commit()
 
         # shadow 5点突合せ（bet_notifications の有無に関わらず実行）
         shadow_details = []
@@ -612,6 +644,13 @@ def _reconcile_shadow_bets(cursor, target_date: str) -> list:
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='shadow_bets'")
     if not cursor.fetchone():
         return []
+
+    # notification_type カラムのマイグレーション（_save_shadow_bet より先に呼ばれる場合に備え）
+    try:
+        cursor.execute("ALTER TABLE shadow_bets ADD COLUMN notification_type TEXT DEFAULT 'confirmed'")
+        cursor.connection.commit()
+    except Exception:
+        pass
 
     cursor.execute("""
         SELECT sb.id, sb.race_id, sb.combinations,

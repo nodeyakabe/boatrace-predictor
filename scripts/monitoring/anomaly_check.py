@@ -470,6 +470,166 @@ def check_bet_prediction_quality(days: int = 30) -> dict:
     return result
 
 
+def check_condition_fire_rate(days: int = 30) -> dict:
+    """6. 条件別発火率チェック（特定条件が急に0件になっていないか）"""
+    result = {'status': 'OK', 'details': [], 'warnings': [], 'rates': {}}
+    conn = sqlite3.connect(DATABASE_PATH)
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='bet_notifications'")
+        if not cur.fetchone():
+            result['details'].append('bet_notifications未作成（運用前）')
+            return result
+
+        today = datetime.now().date()
+        cutoff = str(today - timedelta(days=days))
+
+        cur.execute("""
+            SELECT condition_id, COUNT(*) AS cnt
+            FROM bet_notifications
+            WHERE notification_type = 'confirmed'
+              AND DATE(notified_at) >= ?
+            GROUP BY condition_id
+            ORDER BY cnt DESC
+        """, (cutoff,))
+        rows = cur.fetchall()
+        fire_map = {r[0]: r[1] for r in rows}
+
+        # バックテスト6年 / 72ヶ月 × 1ヶ月 ≒ 月期待件数（バックテスト統計は未保持のため簡易チェック）
+        total_confirmed = sum(fire_map.values())
+        result['rates'] = fire_map
+        if total_confirmed == 0:
+            result['status'] = 'WARN'
+            result['warnings'].append(f'直近{days}日に confirmed 通知が0件（自動化停止の可能性）')
+        else:
+            result['details'].append(
+                f'直近{days}日の条件別件数（合計{total_confirmed}件）: '
+                + ', '.join(f'{k}:{v}件' for k, v in sorted(fire_map.items(), key=lambda x: -x[1]))
+            )
+        # 直近7日でも0件ならWARN（直近30日ありでも直近1週間に全く発火しないのは異常）
+        cutoff7 = str(today - timedelta(days=7))
+        cur.execute("""
+            SELECT COUNT(*) FROM bet_notifications
+            WHERE notification_type = 'confirmed' AND DATE(notified_at) >= ?
+        """, (cutoff7,))
+        recent7 = cur.fetchone()[0] or 0
+        if recent7 == 0 and total_confirmed > 0:
+            result['status'] = 'WARN'
+            result['warnings'].append(f'直近7日に confirmed 通知が0件（条件フィルタ異常 or 開催なし）')
+    finally:
+        conn.close()
+    return result
+
+
+def check_dismissal_rate(days: int = 7) -> dict:
+    """7. 見送り率チェック（dismissedが多すぎる場合はオッズ取得障害 or フィルタ異常）"""
+    result = {'status': 'OK', 'details': [], 'warnings': [], 'stats': {}}
+    conn = sqlite3.connect(DATABASE_PATH)
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='bet_notifications'")
+        if not cur.fetchone():
+            result['details'].append('bet_notifications未作成（運用前）')
+            return result
+
+        today = datetime.now().date()
+        cutoff = str(today - timedelta(days=days))
+
+        cur.execute("""
+            SELECT
+                SUM(CASE WHEN notification_type='confirmed' THEN 1 ELSE 0 END) AS confirmed,
+                SUM(CASE WHEN notification_type='dismissed' THEN 1 ELSE 0 END) AS dismissed
+            FROM bet_notifications
+            WHERE DATE(notified_at) >= ?
+        """, (cutoff,))
+        row = cur.fetchone()
+        confirmed = row[0] or 0
+        dismissed = row[1] or 0
+        total = confirmed + dismissed
+
+        result['stats'] = {'confirmed': confirmed, 'dismissed': dismissed, 'total': total}
+
+        if total == 0:
+            result['details'].append(f'直近{days}日に購入・見送り記録なし（開催なし or 自動化停止）')
+            return result
+
+        dismissal_rate = 100.0 * dismissed / total
+        result['stats']['dismissal_rate_pct'] = round(dismissal_rate, 1)
+
+        if dismissal_rate > 60.0:
+            result['status'] = 'WARN'
+            result['warnings'].append(
+                f'見送り率 {dismissal_rate:.1f}% ({dismissed}/{total}件) — '
+                f'3-7分前再評価でほぼ全件落ちている。Webオッズ取得障害の可能性。'
+            )
+        elif total > 0 and dismissed == 0 and confirmed > 3:
+            result['status'] = 'WARN'
+            result['warnings'].append(
+                f'見送り記録が0件({confirmed}件全確定) — dismissed 保存ロジックの異常の可能性'
+            )
+        else:
+            result['details'].append(
+                f'直近{days}日の見送り率: {dismissal_rate:.1f}% '
+                f'(confirmed={confirmed}, dismissed={dismissed}) [OK]'
+            )
+    finally:
+        conn.close()
+    return result
+
+
+def check_scheduler_log_errors(recent_days: int = 3) -> dict:
+    """8. schedulerログの WARN/ERROR 行数チェック（サイレント例外の早期検知）"""
+    result = {'status': 'OK', 'details': [], 'warnings': [], 'log_stats': []}
+
+    pattern = os.path.join(LOGS_DIR, 'scheduler_2026*.log')
+    files = sorted(glob.glob(pattern))
+    if not files:
+        result['details'].append('scheduler ログなし（チェックスキップ）')
+        return result
+
+    today = datetime.now().date()
+    target_files = []
+    for f in files:
+        m = re.search(r'scheduler_(\d{8})\.log', os.path.basename(f))
+        if m:
+            try:
+                d = datetime.strptime(m.group(1), '%Y%m%d').date()
+                if (today - d).days < recent_days:
+                    target_files.append((d, f))
+            except ValueError:
+                pass
+
+    if not target_files:
+        result['details'].append(f'直近{recent_days}日のログなし（チェックスキップ）')
+        return result
+
+    WARN_THRESHOLD = 20
+    ERROR_THRESHOLD = 3
+
+    for d, fpath in sorted(target_files):
+        try:
+            with open(fpath, 'r', encoding='utf-8', errors='ignore') as fh:
+                lines = fh.readlines()
+            warn_cnt = sum(1 for l in lines if '[WARN]' in l or '[WARNING]' in l)
+            error_cnt = sum(1 for l in lines if '[ERROR]' in l)
+            stat = {'date': str(d), 'warn_count': warn_cnt, 'error_count': error_cnt}
+            result['log_stats'].append(stat)
+            if error_cnt >= ERROR_THRESHOLD or warn_cnt >= WARN_THRESHOLD:
+                result['status'] = 'WARN'
+                result['warnings'].append(
+                    f'{d}: ERROR {error_cnt}行 / WARN {warn_cnt}行 '
+                    f'(閾値: ERROR>={ERROR_THRESHOLD} / WARN>={WARN_THRESHOLD})'
+                )
+            else:
+                result['details'].append(
+                    f'{d}: ERROR {error_cnt}行 / WARN {warn_cnt}行 [OK]'
+                )
+        except Exception as e:
+            result['warnings'].append(f'{d}: ログ読み取りエラー ({e})')
+
+    return result
+
+
 def main():
     print("# 異常チェック結果レポート", flush=True)
     print(f"# 実行日時: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", flush=True)
@@ -486,6 +646,9 @@ def main():
         ('a_rate',          'A率（信頼度分布）',         check_a_rate),
         ('performance',     '直近購入・的中推移',        check_recent_performance),
         ('pred_quality',    '購入予測品質',              check_bet_prediction_quality),
+        ('condition_fire',  '条件別発火率',              check_condition_fire_rate),
+        ('dismissal_rate',  '見送り率',                  check_dismissal_rate),
+        ('log_errors',      'ログERROR/WARN件数',        check_scheduler_log_errors),
     ]
 
     overall_status = 'OK'
