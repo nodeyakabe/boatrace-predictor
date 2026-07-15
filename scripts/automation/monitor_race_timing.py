@@ -34,6 +34,8 @@ from src.scraper.beforeinfo_scraper import BeforeInfoScraper
 class RaceMonitor:
     """レース監視クラス"""
 
+    _migrated_dbs: set = set()  # マイグレーション済みDBパス（プロセス内1回のみ実行）
+
     def __init__(self, db_path: str):
         """
         Args:
@@ -75,6 +77,8 @@ class RaceMonitor:
         exhibition_count: int = None,
         pred_generated_at: str = None,
         pred_type_used: str = None,
+        minutes_before_deadline: int = None,
+        is_gap1: int = None,
     ) -> None:
         """
         通知済みレースをbet_notificationsテーブルに記録する。
@@ -105,27 +109,36 @@ class RaceMonitor:
                     exhibition_count INTEGER,
                     pred_generated_at TEXT,
                     pred_type_used TEXT,
+                    minutes_before_deadline INTEGER,
+                    is_gap1 INTEGER,
                     UNIQUE(race_id, notification_type)
                 )
             """)
             # 既存テーブルへのカラム追加（移行対応・存在済みは無視）
-            for _ddl in (
-                "ALTER TABLE bet_notifications ADD COLUMN bet_amounts TEXT",
-                "ALTER TABLE bet_notifications ADD COLUMN had_exhibition INTEGER",
-                "ALTER TABLE bet_notifications ADD COLUMN exhibition_count INTEGER",
-                "ALTER TABLE bet_notifications ADD COLUMN pred_generated_at TEXT",
-                "ALTER TABLE bet_notifications ADD COLUMN pred_type_used TEXT",
-            ):
-                try:
-                    conn.execute(_ddl)
-                except Exception:
-                    pass
+            # プロセス内で1回だけ実行（毎回実行すると全DDLが例外を投げるため）
+            if self.db_path not in RaceMonitor._migrated_dbs:
+                for _ddl in (
+                    "ALTER TABLE bet_notifications ADD COLUMN condition_id TEXT",
+                    "ALTER TABLE bet_notifications ADD COLUMN bet_amounts TEXT",
+                    "ALTER TABLE bet_notifications ADD COLUMN had_exhibition INTEGER",
+                    "ALTER TABLE bet_notifications ADD COLUMN exhibition_count INTEGER",
+                    "ALTER TABLE bet_notifications ADD COLUMN pred_generated_at TEXT",
+                    "ALTER TABLE bet_notifications ADD COLUMN pred_type_used TEXT",
+                    "ALTER TABLE bet_notifications ADD COLUMN minutes_before_deadline INTEGER",
+                    "ALTER TABLE bet_notifications ADD COLUMN is_gap1 INTEGER",
+                ):
+                    try:
+                        conn.execute(_ddl)
+                    except Exception:
+                        pass
+                RaceMonitor._migrated_dbs.add(self.db_path)
             conn.execute("""
                 INSERT INTO bet_notifications
                     (race_id, combinations, odds_at_notification, bet_amount,
                      bet_amounts, condition_id, notified_at, notification_type,
-                     had_exhibition, exhibition_count, pred_generated_at, pred_type_used)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     had_exhibition, exhibition_count, pred_generated_at, pred_type_used,
+                     minutes_before_deadline, is_gap1)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(race_id, notification_type) DO UPDATE SET
                     combinations         = excluded.combinations,
                     odds_at_notification = excluded.odds_at_notification,
@@ -135,8 +148,11 @@ class RaceMonitor:
                     had_exhibition       = excluded.had_exhibition,
                     exhibition_count     = excluded.exhibition_count,
                     pred_generated_at    = excluded.pred_generated_at,
-                    pred_type_used       = excluded.pred_type_used
-                    -- notified_at は初回確定時刻を保持（上書きしない）
+                    pred_type_used       = excluded.pred_type_used,
+                    minutes_before_deadline = COALESCE(bet_notifications.minutes_before_deadline, excluded.minutes_before_deadline),
+                    is_gap1              = MAX(COALESCE(bet_notifications.is_gap1, 0), COALESCE(excluded.is_gap1, 0))
+                    -- notified_at / minutes_before_deadline は初回確定時の値を保持（再起動後の上書きなし）
+                    -- is_gap1 は一度でも1になったら保持（再起動後の上書き防止）
             """, (
                 race_id,
                 combinations,
@@ -150,6 +166,8 @@ class RaceMonitor:
                 exhibition_count,
                 pred_generated_at,
                 pred_type_used,
+                minutes_before_deadline,
+                is_gap1,
             ))
             conn.commit()
             conn.close()
@@ -1306,10 +1324,24 @@ class RaceMonitor:
             race_data = self._get_race_data(cursor, race_id)
             if not race_data:
                 return False
+            # before予測の存在確認: なければ購入スキップ（バックテストと整合させるため）
+            if not has_beforeinfo:
+                cursor.execute("""
+                    SELECT COUNT(*) FROM race_predictions
+                    WHERE race_id = ? AND prediction_type = 'before' AND rank_prediction <= 3
+                """, (race_id,))
+                bef_count = cursor.fetchone()[0]
+                if bef_count < 3:
+                    print(f"  [SKIP] before予測未生成のため購入スキップ: {race_id}")
+                    import os, datetime
+                    skip_log = os.path.join(os.path.dirname(__file__), '../../logs/before_missing_skips.log')
+                    with open(skip_log, 'a', encoding='utf-8') as _sf:
+                        _sf.write(f"{datetime.datetime.now().isoformat()}\trace_id={race_id}\tbefore予測未生成\n")
+                    return False
             predictions = (
                 self._get_predictions_with_beforeinfo(cursor, race_id)
                 if has_beforeinfo
-                else race.get('predictions') or self._get_predictions(cursor, race_id)
+                else self._get_predictions(cursor, race_id)
             )
             if not predictions:
                 return False
@@ -1374,7 +1406,7 @@ class RaceMonitor:
                 _d_amounts = ''
                 _d_amount = 0
             _d_final_odds = final_bet_target.odds or bet_target.odds or 0.0
-            _d_cond_id = (bet_target.reason or '').split('|')[0].strip()
+            _d_cond_id = bet_target.condition_id or (bet_target.reason or '').split('|')[0].strip()
             combos_disp = _d_combos.replace(',', ' / ')
             msg = (
                 f"⚪ **{venue_name} {race['race_number']}R** 締切{race['deadline']}\n"
@@ -1388,7 +1420,8 @@ class RaceMonitor:
                 try:
                     self._save_bet_notification(
                         race_id, _d_combos, _d_final_odds,
-                        _d_amount, _d_cond_id, 'dismissed', _d_amounts
+                        _d_amount, _d_cond_id, 'dismissed', _d_amounts,
+                        minutes_before_deadline=int(time_until_deadline),
                     )
                 except Exception as _d_err:
                     print(f"  [WARN] 見送り記録失敗: {_d_err}")
@@ -1471,12 +1504,15 @@ class RaceMonitor:
                         _combos = final_bet_target.combination or ''
                         _amounts = str(final_bet_target.bet_amount or 100)
                         _amount = final_bet_target.bet_amount or 100
-                    _cond_id = (final_bet_target.reason or '').split('|')[0].strip()
+                    _cond_id = final_bet_target.condition_id or (final_bet_target.reason or '').split('|')[0].strip()
                     # 購入確定の瞬間に予測品質をスナップショット（Aブロック翌朝上書き前の状態を保存）
                     _q = self._snapshot_prediction_quality(race_id)
                     if _q['had_exhibition'] == 0:
                         print(f"  [ANOMALY] 展示タイムなしで購入確定: race_id={race_id} "
                               f"pred_type={_q['pred_type_used']} pred_at={_q['pred_generated_at']}")
+                    if _q['pred_type_used'] == 'advance':
+                        print(f"  [ANOMALY] advance予測のまま購入確定: race_id={race_id} "
+                              f"had_exhibition={_q['had_exhibition']} pred_at={_q['pred_generated_at']}")
                     self._save_bet_notification(
                         race_id, _combos, final_bet_target.odds or 0.0,
                         _amount, _cond_id, 'confirmed', _amounts,
@@ -1484,6 +1520,8 @@ class RaceMonitor:
                         exhibition_count=_q['exhibition_count'],
                         pred_generated_at=_q['pred_generated_at'],
                         pred_type_used=_q['pred_type_used'],
+                        minutes_before_deadline=int(time_until_deadline),
+                        is_gap1=1 if race_id in self._gap1_detail_sent else 0,
                     )
                 except Exception as _log_err:
                     print(f"  [WARN] 通知記録失敗(confirmed): {_log_err}")

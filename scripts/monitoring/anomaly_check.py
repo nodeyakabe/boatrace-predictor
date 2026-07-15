@@ -556,16 +556,24 @@ def check_dismissal_rate(days: int = 7) -> dict:
         dismissal_rate = 100.0 * dismissed / total
         result['stats']['dismissal_rate_pct'] = round(dismissal_rate, 1)
 
-        if dismissal_rate > 60.0:
+        # サンプル < 20件は小サンプル誤発火防止のためスキップ
+        # 閾値 70%: 14/20件以上見送りで初めてWARN（7日間の低ボリューム週でも偽陽性を抑制）
+        if total < 20:
+            result['details'].append(
+                f'直近{days}日の見送り率: {dismissal_rate:.1f}% '
+                f'(confirmed={confirmed}, dismissed={dismissed}, 計{total}件) '
+                f'[サンプル不足のためレート判定スキップ]'
+            )
+        elif dismissal_rate > 70.0:
             result['status'] = 'WARN'
             result['warnings'].append(
-                f'見送り率 {dismissal_rate:.1f}% ({dismissed}/{total}件) — '
+                f'見送り率 {dismissal_rate:.1f}% ({dismissed}/{total}件): '
                 f'3-7分前再評価でほぼ全件落ちている。Webオッズ取得障害の可能性。'
             )
         elif total > 0 and dismissed == 0 and confirmed > 3:
             result['status'] = 'WARN'
             result['warnings'].append(
-                f'見送り記録が0件({confirmed}件全確定) — dismissed 保存ロジックの異常の可能性'
+                f'見送り記録が0件({confirmed}件全確定): dismissed 保存ロジックの異常の可能性'
             )
         else:
             result['details'].append(
@@ -630,6 +638,268 @@ def check_scheduler_log_errors(recent_days: int = 3) -> dict:
     return result
 
 
+def check_new_log_fields(days: int = 7) -> dict:
+    """9. 新規ログフィールド品質チェック（A-1〜B-2で追加したカラムが正しく保存されているか）
+
+    確認対象:
+      bet_notifications（confirmed）: condition_id / minutes_before_deadline / is_gap1
+      reconcile_log: hit_count / total_bet / total_return
+
+    days=7 のみチェック（2026-07-09実装。それ以前のレコードはNULLが正常のため除外）
+    """
+    result = {'status': 'OK', 'details': [], 'warnings': [], 'metrics': {}}
+    conn = sqlite3.connect(DATABASE_PATH)
+    cur = conn.cursor()
+
+    try:
+        today = datetime.now().date()
+        cutoff = str(today - timedelta(days=days))
+        # hit_count/total_bet/total_return / minutes_before_deadline/is_gap1 は 2026-07-09 実装
+        # それ以前のNULLは正常。bn/rl両方に同じクランプを適用（非対称防止）
+        QUALITY_IMPL_DATE = '2026-07-09'
+        bn_cutoff = max(cutoff, QUALITY_IMPL_DATE)
+        rl_cutoff = max(cutoff, QUALITY_IMPL_DATE)
+
+        # ── bet_notifications ──────────────────────────────────────
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='bet_notifications'")
+        if not cur.fetchone():
+            result['details'].append('bet_notifications未作成（運用前）')
+            return result
+
+        cur.execute("PRAGMA table_info(bet_notifications)")
+        bn_cols = {row[1] for row in cur.fetchall()}
+
+        required_bn = ['condition_id', 'minutes_before_deadline', 'is_gap1']
+        missing_bn = [c for c in required_bn if c not in bn_cols]
+        if missing_bn:
+            result['status'] = 'WARN'
+            result['warnings'].append(f'bet_notifications にカラム未追加: {missing_bn}（DBマイグレーション未実行）')
+            result['metrics']['bn_missing_columns'] = missing_bn
+        else:
+            # 直近N日の confirmed レコードで各フィールドのNULL件数を確認
+            cur.execute("""
+                SELECT
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN condition_id IS NULL OR condition_id = '' THEN 1 ELSE 0 END) AS null_cid,
+                    SUM(CASE WHEN minutes_before_deadline IS NULL THEN 1 ELSE 0 END) AS null_min,
+                    SUM(CASE WHEN is_gap1 IS NULL THEN 1 ELSE 0 END) AS null_gap1
+                FROM bet_notifications
+                WHERE notification_type = 'confirmed'
+                  AND DATE(notified_at) >= ?
+            """, (bn_cutoff,))
+            row = cur.fetchone()
+            total_bn, null_cid, null_min, null_gap1 = (v or 0 for v in row)
+
+            result['metrics']['bn_confirmed_total'] = total_bn
+            result['metrics']['bn_null_condition_id'] = null_cid
+            result['metrics']['bn_null_minutes_before_deadline'] = null_min
+            result['metrics']['bn_null_is_gap1'] = null_gap1
+
+            if total_bn == 0:
+                result['details'].append(f'直近{days}日に confirmed 記録なし（チェックスキップ）')
+            else:
+                warns = []
+                if null_cid > 0:
+                    warns.append(f'condition_id が未設定の購入: {null_cid}/{total_bn}件')
+                if null_min > 0:
+                    warns.append(f'minutes_before_deadline が未設定: {null_min}/{total_bn}件')
+                if null_gap1 > 0:
+                    warns.append(f'is_gap1 が未設定: {null_gap1}/{total_bn}件')
+
+                if warns:
+                    result['status'] = 'WARN'
+                    result['warnings'].extend(warns)
+                else:
+                    result['details'].append(
+                        f'bet_notifications 直近{days}日 {total_bn}件: '
+                        f'condition_id/minutes_before_deadline/is_gap1 全件設定済み [OK]'
+                    )
+
+        # ── reconcile_log ──────────────────────────────────────────
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='reconcile_log'")
+        if not cur.fetchone():
+            result['details'].append('reconcile_log未作成（reconcile未実行）')
+            return result
+
+        cur.execute("PRAGMA table_info(reconcile_log)")
+        rl_col_rows = cur.fetchall()
+        rl_cols = {row[1] for row in rl_col_rows}
+
+        required_rl = ['hit_count', 'total_bet', 'total_return']
+        missing_rl = [c for c in required_rl if c not in rl_cols]
+        if missing_rl:
+            result['status'] = 'WARN'
+            result['warnings'].append(f'reconcile_log にカラム未追加: {missing_rl}（DBマイグレーション未実行）')
+            result['metrics']['rl_missing_columns'] = missing_rl
+        else:
+            # 日付絞り込みカラムを動的に選択（reconcile_logは'date'カラムを使用）
+            date_col = 'race_date' if 'race_date' in rl_cols else (
+                'inserted_at' if 'inserted_at' in rl_cols else (
+                    'date' if 'date' in rl_cols else None
+                )
+            )
+
+            if date_col:
+                cur.execute(f"""
+                    SELECT
+                        COUNT(*) AS total,
+                        SUM(CASE WHEN hit_count IS NULL THEN 1 ELSE 0 END) AS null_hc,
+                        SUM(CASE WHEN total_bet IS NULL THEN 1 ELSE 0 END) AS null_tb,
+                        SUM(CASE WHEN total_return IS NULL THEN 1 ELSE 0 END) AS null_tr
+                    FROM reconcile_log
+                    WHERE DATE({date_col}) >= ?
+                """, (rl_cutoff,))
+            else:
+                cur.execute("""
+                    SELECT
+                        COUNT(*) AS total,
+                        SUM(CASE WHEN hit_count IS NULL THEN 1 ELSE 0 END) AS null_hc,
+                        SUM(CASE WHEN total_bet IS NULL THEN 1 ELSE 0 END) AS null_tb,
+                        SUM(CASE WHEN total_return IS NULL THEN 1 ELSE 0 END) AS null_tr
+                    FROM reconcile_log
+                """)
+            row = cur.fetchone()
+            total_rl, null_hc, null_tb, null_tr = (v or 0 for v in row)
+
+            result['metrics']['rl_total'] = total_rl
+            result['metrics']['rl_null_hit_count'] = null_hc
+            result['metrics']['rl_null_total_bet'] = null_tb
+            result['metrics']['rl_null_total_return'] = null_tr
+
+            if total_rl == 0:
+                result['details'].append(f'直近{days}日に reconcile_log 記録なし（reconcile未実行）')
+            else:
+                rl_warns = []
+                if null_hc > 0:
+                    rl_warns.append(f'reconcile_log hit_count が未設定: {null_hc}/{total_rl}件')
+                if null_tb > 0:
+                    rl_warns.append(f'reconcile_log total_bet が未設定: {null_tb}/{total_rl}件')
+                if null_tr > 0:
+                    rl_warns.append(f'reconcile_log total_return が未設定: {null_tr}/{total_rl}件')
+
+                if rl_warns:
+                    result['status'] = 'WARN'
+                    result['warnings'].extend(rl_warns)
+                else:
+                    result['details'].append(
+                        f'reconcile_log 直近{days}日 {total_rl}件: '
+                        f'hit_count/total_bet/total_return 全件設定済み [OK]'
+                    )
+
+    finally:
+        conn.close()
+
+    return result
+
+
+def check_oos_rolling_roi():
+    """実運用OOS ROIの継続監視（kill criteria チェック）
+
+    kill基準（Opusレビュー 2026-07-13 制度化）:
+      WARN : 全期間OOS ROI < 120% かつ N >= 30件
+      KILL : 全期間OOS ROI < 100% かつ N >= 30件  → 条件レビュー必須
+    """
+    WARN_THRESHOLD = 120.0
+    KILL_THRESHOLD = 100.0
+    MIN_BETS = 30  # 判定に最低限必要なベット数（件数不足は参考値扱い）
+
+    result = {'status': 'OK', 'details': [], 'warnings': [], 'metrics': {}}
+    conn = sqlite3.connect(DATABASE_PATH)
+    cur = conn.cursor()
+    try:
+        today = datetime.now().date()
+
+        # --- 全期間集計 ---
+        cur.execute("""
+            SELECT SUM(total_bet), SUM(total_return), SUM(hit_count), COUNT(*), MIN(date), MAX(date)
+            FROM reconcile_log
+            WHERE total_bet IS NOT NULL AND total_bet > 0
+        """)
+        row = cur.fetchone()
+        all_bet   = row[0] or 0
+        all_ret   = row[1] or 0
+        all_hits  = row[2] or 0
+        all_days  = row[3] or 0
+        date_from = row[4] or '-'
+        date_to   = row[5] or '-'
+        n_all     = int(all_bet // 100)  # 概算件数（100円/件）
+        roi_all   = all_ret / all_bet * 100 if all_bet > 0 else None
+
+        # --- 直近30日集計 ---
+        cutoff_30 = str(today - timedelta(days=30))
+        cur.execute("""
+            SELECT SUM(total_bet), SUM(total_return), SUM(hit_count)
+            FROM reconcile_log
+            WHERE total_bet IS NOT NULL AND total_bet > 0 AND date >= ?
+        """, (cutoff_30,))
+        row30 = cur.fetchone()
+        bet30  = row30[0] or 0
+        ret30  = row30[1] or 0
+        hits30 = row30[2] or 0
+        n30    = int(bet30 // 100)
+        roi30  = ret30 / bet30 * 100 if bet30 > 0 else None
+
+        result['metrics'] = {
+            'all_time_n':    n_all,
+            'all_time_roi':  round(roi_all, 1) if roi_all is not None else None,
+            'all_time_hits': int(all_hits or 0),
+            'all_time_days': all_days,
+            'date_from':     date_from,
+            'date_to':       date_to,
+            'last30d_n':     n30,
+            'last30d_roi':   round(roi30, 1) if roi30 is not None else None,
+            'last30d_hits':  int(hits30 or 0),
+            'kill_threshold': KILL_THRESHOLD,
+            'warn_threshold': WARN_THRESHOLD,
+            'min_bets':       MIN_BETS,
+        }
+
+        if all_days == 0:
+            result['details'].append('reconcile_log に有効データなし（OOS追跡未開始）')
+            return result
+
+        if n_all < MIN_BETS:
+            result['details'].append(
+                f'OOS蓄積中（{n_all}件/{MIN_BETS}件以上で本格判定） '
+                f'| 全期間: {n_all}件 / ROI={roi_all:.1f}% / 的中{int(all_hits or 0)}件'
+            )
+            result['details'].append(
+                f'観測期間: {date_from} 〜 {date_to}（{all_days}日分）'
+            )
+            return result
+
+        # --- 判定 ---
+        roi_str = f'{roi_all:.1f}%' if roi_all is not None else 'N/A'
+        result['details'].append(
+            f'全期間: {n_all}件 / ROI={roi_str} / 的中{int(all_hits or 0)}件 '
+            f'({date_from}〜{date_to})'
+        )
+        roi30_str = f'{roi30:.1f}%' if roi30 is not None else 'N/A'
+        result['details'].append(
+            f'直近30日: {n30}件 / ROI={roi30_str} / 的中{int(hits30 or 0)}件'
+        )
+
+        if roi_all is not None and roi_all < KILL_THRESHOLD:
+            result['status'] = 'WARN'
+            result['warnings'].append(
+                f'🔴 OOS ROI {roi_all:.1f}% < {KILL_THRESHOLD}% → 条件レビュー必須'
+            )
+        elif roi_all is not None and roi_all < WARN_THRESHOLD:
+            result['status'] = 'WARN'
+            result['warnings'].append(
+                f'⚠️ OOS ROI {roi_all:.1f}% < {WARN_THRESHOLD}%（注意水準）'
+            )
+        else:
+            result['details'].append(
+                f'OOS ROI {roi_str} ≥ {WARN_THRESHOLD}% ✓（kill基準クリア）'
+            )
+
+    finally:
+        conn.close()
+
+    return result
+
+
 def main():
     print("# 異常チェック結果レポート", flush=True)
     print(f"# 実行日時: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", flush=True)
@@ -649,6 +919,8 @@ def main():
         ('condition_fire',  '条件別発火率',              check_condition_fire_rate),
         ('dismissal_rate',  '見送り率',                  check_dismissal_rate),
         ('log_errors',      'ログERROR/WARN件数',        check_scheduler_log_errors),
+        ('log_fields',      '新規ログフィールド品質',    check_new_log_fields),
+        ('oos_roi',         'OOS ROI（kill基準監視）',   check_oos_rolling_roi),
     ]
 
     overall_status = 'OK'

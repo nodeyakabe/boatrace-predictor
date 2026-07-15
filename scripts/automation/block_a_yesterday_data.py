@@ -187,7 +187,11 @@ class BlockARunner:
         if self._reconcile_result is not None:
             send_reconcile_notification(self._reconcile_result)
             db_path = getattr(self, '_db_path', str(project_root / 'data' / 'boatrace.db'))
-            log_reconcile_sent(db_path, self._reconcile_result['date'], self._reconcile_result['target_count'])
+            r = self._reconcile_result
+            log_reconcile_sent(
+                db_path, r['date'], r['target_count'],
+                hit_count=r.get('hit_count'), total_bet=r.get('total_bet'), total_return=r.get('total_return'),
+            )
 
         # キャッチアップ: PC スリープ等で reconcile が飛んだ日を検出して送信
         self._catchup_missed_reconciles()
@@ -211,7 +215,10 @@ class BlockARunner:
                     result = reconcile_yesterday_bets(db_path=db_path, target_date=target_date)
                     print(f"  [キャッチアップ] {target_date}: {result['target_count']}件")
                     send_reconcile_notification(result)
-                    log_reconcile_sent(db_path, target_date, result['target_count'])
+                    log_reconcile_sent(
+                        db_path, target_date, result['target_count'],
+                        hit_count=result.get('hit_count'), total_bet=result.get('total_bet'), total_return=result.get('total_return'),
+                    )
                 except Exception as e:
                     print(f"  [キャッチアップ] {target_date} エラー: {e}")
         except Exception as e:

@@ -48,8 +48,9 @@ class FastPredictionGenerator:
                 - 'advance': 事前予測（直前情報なし）- バックテスト用
                 - 'before': 直前予測（直前情報あり）- 実運用用
         """
-        # キャッシュ有効モードでRacePredictorを初期化
-        self.predictor = create_standard_predictor(use_cache=True)
+        # キャッシュ有効モードでRacePredictorを初期化（絶対パスを明示指定）
+        # スケジューラ長期稼働中に_pool globalが別パスで上書きされる問題を防ぐ
+        self.predictor = create_standard_predictor(use_cache=True, db_path=DATABASE_PATH)
         self.data_manager = DataManager()
         self.db_path = DATABASE_PATH
         self.prediction_type = prediction_type

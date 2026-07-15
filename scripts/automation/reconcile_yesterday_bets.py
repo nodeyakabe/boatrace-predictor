@@ -319,14 +319,14 @@ def _get_dismissed_bets(cursor, target_date: str) -> List[Dict]:
     """
     cursor.execute("""
         SELECT bn.race_id, bn.combinations, bn.odds_at_notification,
-               bn.condition_id, bn.notified_at, bn.bet_amounts
+               bn.condition_id, bn.notified_at, bn.bet_amounts, bn.bet_amount
         FROM bet_notifications bn
         JOIN races r ON bn.race_id = r.id
         WHERE r.race_date = ? AND bn.notification_type = 'dismissed'
         ORDER BY bn.notified_at
     """, (target_date,))
     return [dict(zip(
-        ['race_id', 'combinations', 'odds_at_notification', 'condition_id', 'notified_at', 'bet_amounts'],
+        ['race_id', 'combinations', 'odds_at_notification', 'condition_id', 'notified_at', 'bet_amounts', 'bet_amount'],
         row
     )) for row in cursor.fetchall()]
 
@@ -346,12 +346,14 @@ def _get_dismissed_detail(cursor, notif: Dict) -> Optional[Dict]:
     cond_id = notif.get('condition_id') or '?'
 
     # 組合せごとの投資額を復元（パターンH: "200,100,100" 等）
+    bet_amount = notif.get('bet_amount') or 100
     raw_amounts = notif.get('bet_amounts') or ''
     amount_parts = [int(a.strip()) for a in raw_amounts.split(',') if a.strip().isdigit()]
     if len(amount_parts) == len(stored_combos) and stored_combos:
         combo_amount_map = dict(zip(stored_combos, amount_parts))
     else:
-        combo_amount_map = {c: 100 for c in stored_combos}
+        per_each = (bet_amount // len(stored_combos)) if stored_combos else 100
+        combo_amount_map = {c: per_each for c in stored_combos}
 
     # 実際の着順を取得
     cursor.execute(
@@ -398,6 +400,7 @@ def _get_dismissed_detail(cursor, notif: Dict) -> Optional[Dict]:
     payout_str = f" +{payout:,}円" if is_hit else ""
     print(f"  {hit_str} [見送] {venue_name}{race_number}R [{cond_id}] "
           f"買={combos_str} 実={actual_combo or 'N/A'} {odds_str}{payout_str}")
+    total_bet = sum(combo_amount_map.values()) if combo_amount_map else 100
     return {
         'venue': venue_name,
         'race_num': race_number,
@@ -407,6 +410,7 @@ def _get_dismissed_detail(cursor, notif: Dict) -> Optional[Dict]:
         'actual': actual_combo or 'N/A',
         'is_hit': is_hit,
         'payout': payout,
+        'total_bet': total_bet,
         'status': status,
     }
 
@@ -544,11 +548,14 @@ def reconcile_yesterday_bets(db_path: str, target_date: str = None) -> Dict:
         if _bet_notifications_table_exists(cursor):
             # カラム追加マイグレーション（既存カラムはALTER TABLE失敗で無視）
             for _col_def in [
+                "ADD COLUMN condition_id TEXT",
                 "ADD COLUMN bet_amounts TEXT",
                 "ADD COLUMN is_hit INTEGER",
                 "ADD COLUMN actual_payout INTEGER",
                 "ADD COLUMN actual_result TEXT",
                 "ADD COLUMN reconciled_at TEXT",
+                "ADD COLUMN minutes_before_deadline INTEGER",
+                "ADD COLUMN is_gap1 INTEGER",
             ]:
                 try:
                     cursor.execute(f"ALTER TABLE bet_notifications {_col_def}")
@@ -789,9 +796,12 @@ def format_reconcile_message(result: Dict) -> str:
     # 見送りレース（最終オッズ確認で範囲外になったもの）
     if dismissed_details:
         dismissed_hit = [d for d in dismissed_details if d.get('is_hit')]
+        # 機会損失 = 的中した見送りレースの純利益（payout - そのレースの投資額）
+        dismissed_opp_cost = sum(d.get('payout', 0) - d.get('total_bet', 100) for d in dismissed_hit) if dismissed_hit else 0
         header = f"⚪ 見送り {len(dismissed_details)}件（最終確認でオッズ範囲外）"
         if dismissed_hit:
-            header += f"  ※{len(dismissed_hit)}件的中"
+            sign = '+' if dismissed_opp_cost >= 0 else ''
+            header += f"  ※{len(dismissed_hit)}件的中 機会損失{sign}{dismissed_opp_cost:,}円"
         lines.append("")
         lines.append(header)
         for d in dismissed_details:
@@ -846,6 +856,36 @@ def format_reconcile_message(result: Dict) -> str:
             lines.append(f"👁 **shadow（見送り分）** {sh_hit}/{len(dismissed_shadow)}的中")
             _render_shadow_rows(dismissed_shadow)
 
+    # 条件別サマリー（condition_id別 hit/total）
+    if result.get('details'):
+        try:
+            _active = get_active_conditions()
+            _id_set = {c['id'] for c in _active}
+            _name_to_id = {c['name']: c['id'] for c in _active}
+        except Exception:
+            _id_set = set()
+            _name_to_id = {}
+        _cond_stats = {}
+        for d in result['details']:
+            raw_cid = d.get('condition_id', '?')
+            # 新形式（短いID）→そのまま / 旧形式（日本語reason）→name→idで変換 / 不明→先頭20文字
+            if raw_cid in _id_set:
+                cid = raw_cid
+            else:
+                cid = _name_to_id.get(raw_cid, raw_cid[:20])
+            if cid not in _cond_stats:
+                _cond_stats[cid] = {'hit': 0, 'total': 0}
+            _cond_stats[cid]['total'] += 1
+            if d['status'] == '的中':
+                _cond_stats[cid]['hit'] += 1
+        if _cond_stats:
+            parts = []
+            for cid, s in sorted(_cond_stats.items(), key=lambda x: -x[1]['total']):
+                icon = '✅' if s['hit'] > 0 else '❌'
+                parts.append(f"{icon}{cid}:{s['hit']}/{s['total']}")
+            lines.append("")
+            lines.append("条件別: " + "  ".join(parts))
+
     return "\n".join(lines)
 
 
@@ -858,20 +898,41 @@ def _ensure_reconcile_log(conn):
         CREATE TABLE IF NOT EXISTS reconcile_log (
             date TEXT PRIMARY KEY,
             sent_at TEXT NOT NULL,
-            target_count INTEGER
+            target_count INTEGER,
+            hit_count INTEGER,
+            total_bet INTEGER,
+            total_return INTEGER
         )
     """)
+    # 旧スキーマ（hit_count等なし）のDBへの移行対応
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(reconcile_log)").fetchall()}
+    for col, ddl in [
+        ('hit_count', 'ADD COLUMN hit_count INTEGER'),
+        ('total_bet', 'ADD COLUMN total_bet INTEGER'),
+        ('total_return', 'ADD COLUMN total_return INTEGER'),
+    ]:
+        if col not in existing_cols:
+            conn.execute(f"ALTER TABLE reconcile_log {ddl}")
 
 
-def log_reconcile_sent(db_path: str, target_date: str, target_count: int) -> None:
+def log_reconcile_sent(
+    db_path: str,
+    target_date: str,
+    target_count: int,
+    hit_count: int = None,
+    total_bet: int = None,
+    total_return: int = None,
+) -> None:
     """reconcile 送信完了を DB に記録（block_a から呼ぶ）"""
     conn = None
     try:
         conn = sqlite3.connect(db_path)
         _ensure_reconcile_log(conn)
         conn.execute(
-            "INSERT OR REPLACE INTO reconcile_log (date, sent_at, target_count) VALUES (?, ?, ?)",
-            (target_date, datetime.now().isoformat(), target_count)
+            """INSERT OR REPLACE INTO reconcile_log
+               (date, sent_at, target_count, hit_count, total_bet, total_return)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (target_date, datetime.now().isoformat(), target_count, hit_count, total_bet, total_return)
         )
         conn.commit()
     except Exception as e:

@@ -38,6 +38,7 @@ class BetTarget:
     bet_amount: int                      # 推奨賭け金
     reason: str                          # 判定理由
     needs_beforeinfo: bool = False       # 直前情報が必要か
+    condition_id: str = ''               # 条件ID（config/bet_conditions.pyのid）
     bet_type: str = 'trifecta'           # 賭け式 (trifecta/exacta)
     multi_bet_result: Optional[MultiBetResult] = None  # 複数点買い情報
     venue_course_adjustment: Optional[AdjustmentResult] = None  # 会場コース調整情報
@@ -164,6 +165,7 @@ class BetTargetEvaluator:
         """
         # 必須フィールド
         result = {
+            'id': cond.get('id', ''),
             'method': '両方式',  # 固定
             'odds_min': cond['odds_min'],
             'odds_max': cond['odds_max'],
@@ -559,6 +561,7 @@ class BetTargetEvaluator:
                             bet_amount=cond['bet_amount'],
                             reason='展示ST未取得。beforeinfo取得後に判定',
                             needs_beforeinfo=True,
+                            condition_id=cond.get('id', ''),
                         )
                     continue
                 if 'pit1_st_min' in cond:
@@ -628,7 +631,8 @@ class BetTargetEvaluator:
                         expected_roi=cond['expected_roi'],
                         bet_amount=cond['bet_amount'],
                         reason=f'オッズ未取得。{odds_range}なら購入対象',
-                        needs_beforeinfo=True
+                        needs_beforeinfo=True,
+                        condition_id=cond.get('id', ''),
                     )
                 # 他の条件もチェックするためcontinue
                 continue
@@ -673,6 +677,7 @@ class BetTargetEvaluator:
                     bet_amount=cond['bet_amount'],
                     reason=reason,
                     use_pattern_h=False,
+                    condition_id=cond.get('id', ''),
                 )
 
             # p1-p3-p2 パターン（2-3着入れ替わり穴狙い）の処理（2026-04-17追加）
@@ -713,6 +718,7 @@ class BetTargetEvaluator:
                     bet_amount=cond['bet_amount'],
                     reason=reason,
                     use_pattern_h=False,
+                    condition_id=cond.get('id', ''),
                 )
 
             # p1-p4-p2 パターン（穴狙い）の処理（2026-04-17追加）
@@ -753,6 +759,7 @@ class BetTargetEvaluator:
                     bet_amount=cond['bet_amount'],
                     reason=reason,
                     use_pattern_h=False,
+                    condition_id=cond.get('id', ''),
                 )
 
             # p1-p2-p4 パターン（3着に4位が台頭する穴狙い）の処理（2026-04-20追加）
@@ -793,6 +800,7 @@ class BetTargetEvaluator:
                     bet_amount=cond['bet_amount'],
                     reason=reason,
                     use_pattern_h=False,
+                    condition_id=cond.get('id', ''),
                 )
 
             # パターンH条件だが4位までの予測がない場合は対象外（Tier 2のINNER JOINと同じ動作）
@@ -885,6 +893,7 @@ class BetTargetEvaluator:
                 odds_min=odds_min,
                 odds_max=odds_max,
                 pattern_h_require_p123=require_p123_flag,
+                condition_id=cond.get('id', ''),
             )
 
         # オッズ未取得でCANDIDATE候補がある場合（全条件確認済み）
@@ -909,8 +918,8 @@ class BetTargetEvaluator:
                     reason=f'{race_month}月は除外月（GLOBAL_MONTH_EXCLUDES）'
                 )
         if not has_beforeinfo and (old_odds or new_odds):
-            # 最も近い条件を探す
-            best_cond = conditions[0]
+            # 最も近い条件を探す（優先度順で先頭）
+            best_cond = sorted_conditions[0]
             method = best_cond['method']
             combo = old_combo if method == '従来' else new_combo
             odds = old_odds if method == '従来' else new_odds
@@ -928,7 +937,8 @@ class BetTargetEvaluator:
                     expected_roi=best_cond['expected_roi'],
                     bet_amount=best_cond['bet_amount'],
                     reason=f'オッズ{odds:.1f}倍（{odds_range}で対象）。直前情報で変動の可能性',
-                    needs_beforeinfo=True
+                    needs_beforeinfo=True,
+                    condition_id=best_cond.get('id', ''),
                 )
 
         # 条件を満たさない

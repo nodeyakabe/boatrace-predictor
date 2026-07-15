@@ -25,9 +25,10 @@ import sqlite3
 import sys
 import os
 import json
+import csv
 import argparse
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, PROJECT_ROOT)
@@ -480,6 +481,219 @@ def analyze_assigned_races(
         'investment': 0, 'payout': 0, 'roi': 0, 'profit': 0,
     }
 
+def get_all_race_bets(
+    cursor: sqlite3.Cursor,
+    cond: Dict,
+    race_ids: List[int]
+) -> List[Tuple]:
+    """全購入レースの (race_id, race_date, investment_yen, payout_yen) を返す。
+    Bootstrap CI・スコア帯分析用。--save-bets-csv から呼ばれる。
+    analyze_assigned_races と同じ SQL だが per-row 出力に変更。
+    """
+    if not race_ids:
+        return []
+
+    use_pattern_h    = cond.get('use_pattern_h', False)
+    pattern_h_require_p123 = cond.get('pattern_h_require_p123', False)
+    use_pattern_p142 = cond.get('use_pattern_p142', False)
+    use_pattern_p143 = cond.get('use_pattern_p143', False)
+    use_pattern_p132 = cond.get('use_pattern_p132', False)
+    use_pattern_p124 = cond.get('use_pattern_p124', False)
+    use_market_diverge = cond.get('use_market_diverge', False)
+    if use_market_diverge:
+        md_extra = """
+        AND CAST(p1 AS TEXT)||'-'||CAST(p2 AS TEXT)||'-'||CAST(p3 AS TEXT) !=
+            COALESCE((SELECT combination FROM trifecta_odds t WHERE t.race_id = race_bets.race_id AND t.odds > 0 ORDER BY t.odds ASC LIMIT 1), '')"""
+    else:
+        md_extra = ""
+    placeholders = ','.join(['?'] * len(race_ids))
+
+    if use_pattern_p143:
+        query = f"""
+        WITH race_bets AS (
+            SELECT r.id as race_id, r.race_date,
+                   rp1.pit_number as p1, rp3.pit_number as p3, rp4.pit_number as p4,
+                   COALESCE((SELECT o.odds FROM trifecta_odds o WHERE o.race_id = r.id
+                    AND o.combination = CAST(rp1.pit_number AS TEXT)||'-'||CAST(rp4.pit_number AS TEXT)||'-'||CAST(rp3.pit_number AS TEXT)), 0) as odds_143,
+                   (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '1') as actual_1st,
+                   (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '2') as actual_2nd,
+                   (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '3') as actual_3rd
+            FROM races r
+            JOIN race_predictions rp1 ON r.id = rp1.race_id AND rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+            JOIN race_predictions rp3 ON r.id = rp3.race_id AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+            JOIN race_predictions rp4 ON r.id = rp4.race_id AND rp4.prediction_type = 'before' AND rp4.rank_prediction = 4
+            WHERE r.id IN ({placeholders})
+        ),
+        race_payouts AS (
+            SELECT *,
+                CASE WHEN odds_143 >= {cond['odds_min']} AND odds_143 < {cond['odds_max']} THEN 100 ELSE 0 END as bet_amount,
+                CASE WHEN actual_1st = p1 AND actual_2nd = p4 AND actual_3rd = p3
+                          AND odds_143 >= {cond['odds_min']} AND odds_143 < {cond['odds_max']}
+                     THEN odds_143 * 100 ELSE 0 END as payout
+            FROM race_bets
+        )
+        SELECT race_id, race_date, bet_amount, payout FROM race_payouts WHERE bet_amount > 0"""
+    elif use_pattern_p132:
+        query = f"""
+        WITH race_bets AS (
+            SELECT r.id as race_id, r.race_date,
+                   rp1.pit_number as p1, rp2.pit_number as p2, rp3.pit_number as p3,
+                   COALESCE((SELECT o.odds FROM trifecta_odds o WHERE o.race_id = r.id
+                    AND o.combination = CAST(rp1.pit_number AS TEXT)||'-'||CAST(rp3.pit_number AS TEXT)||'-'||CAST(rp2.pit_number AS TEXT)), 0) as odds_132,
+                   (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '1') as actual_1st,
+                   (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '2') as actual_2nd,
+                   (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '3') as actual_3rd
+            FROM races r
+            JOIN race_predictions rp1 ON r.id = rp1.race_id AND rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+            JOIN race_predictions rp2 ON r.id = rp2.race_id AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+            JOIN race_predictions rp3 ON r.id = rp3.race_id AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+            WHERE r.id IN ({placeholders})
+        ),
+        race_payouts AS (
+            SELECT *,
+                CASE WHEN odds_132 >= {cond['odds_min']} AND odds_132 < {cond['odds_max']} THEN 100 ELSE 0 END as bet_amount,
+                CASE WHEN actual_1st = p1 AND actual_2nd = p3 AND actual_3rd = p2
+                          AND odds_132 >= {cond['odds_min']} AND odds_132 < {cond['odds_max']}
+                     THEN odds_132 * 100 ELSE 0 END as payout
+            FROM race_bets
+        )
+        SELECT race_id, race_date, bet_amount, payout FROM race_payouts WHERE bet_amount > 0"""
+    elif use_pattern_p142:
+        query = f"""
+        WITH race_bets AS (
+            SELECT r.id as race_id, r.race_date,
+                   rp1.pit_number as p1, rp2.pit_number as p2, rp4.pit_number as p4,
+                   COALESCE((SELECT o.odds FROM trifecta_odds o WHERE o.race_id = r.id
+                    AND o.combination = CAST(rp1.pit_number AS TEXT)||'-'||CAST(rp4.pit_number AS TEXT)||'-'||CAST(rp2.pit_number AS TEXT)), 0) as odds_142,
+                   (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '1') as actual_1st,
+                   (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '2') as actual_2nd,
+                   (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '3') as actual_3rd
+            FROM races r
+            JOIN race_predictions rp1 ON r.id = rp1.race_id AND rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+            JOIN race_predictions rp2 ON r.id = rp2.race_id AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+            JOIN race_predictions rp4 ON r.id = rp4.race_id AND rp4.prediction_type = 'before' AND rp4.rank_prediction = 4
+            WHERE r.id IN ({placeholders})
+        ),
+        race_payouts AS (
+            SELECT *,
+                CASE WHEN odds_142 >= {cond['odds_min']} AND odds_142 < {cond['odds_max']} THEN 100 ELSE 0 END as bet_amount,
+                CASE WHEN actual_1st = p1 AND actual_2nd = p4 AND actual_3rd = p2
+                          AND odds_142 >= {cond['odds_min']} AND odds_142 < {cond['odds_max']}
+                     THEN odds_142 * 100 ELSE 0 END as payout
+            FROM race_bets
+        )
+        SELECT race_id, race_date, bet_amount, payout FROM race_payouts WHERE bet_amount > 0"""
+    elif use_pattern_p124:
+        query = f"""
+        WITH race_bets AS (
+            SELECT r.id as race_id, r.race_date,
+                   rp1.pit_number as p1, rp2.pit_number as p2, rp4.pit_number as p4,
+                   COALESCE((SELECT o.odds FROM trifecta_odds o WHERE o.race_id = r.id
+                    AND o.combination = CAST(rp1.pit_number AS TEXT)||'-'||CAST(rp2.pit_number AS TEXT)||'-'||CAST(rp4.pit_number AS TEXT)), 0) as odds_124,
+                   (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '1') as actual_1st,
+                   (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '2') as actual_2nd,
+                   (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '3') as actual_3rd
+            FROM races r
+            JOIN race_predictions rp1 ON r.id = rp1.race_id AND rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+            JOIN race_predictions rp2 ON r.id = rp2.race_id AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+            JOIN race_predictions rp4 ON r.id = rp4.race_id AND rp4.prediction_type = 'before' AND rp4.rank_prediction = 4
+            WHERE r.id IN ({placeholders})
+        ),
+        race_payouts AS (
+            SELECT *,
+                CASE WHEN odds_124 >= {cond['odds_min']} AND odds_124 < {cond['odds_max']} THEN 100 ELSE 0 END as bet_amount,
+                CASE WHEN actual_1st = p1 AND actual_2nd = p2 AND actual_3rd = p4
+                          AND odds_124 >= {cond['odds_min']} AND odds_124 < {cond['odds_max']}
+                     THEN odds_124 * 100 ELSE 0 END as payout
+            FROM race_bets
+        )
+        SELECT race_id, race_date, bet_amount, payout FROM race_payouts WHERE bet_amount > 0"""
+    elif use_pattern_h:
+        excl_p5 = cond.get('pattern_h_exclude_p5', False)
+        bet_125_expr    = '0' if excl_p5 else f"CASE WHEN odds_125 >= {cond['odds_min']} AND odds_125 < {cond['odds_max']} THEN 100 ELSE 0 END"
+        payout_125_expr = '0' if excl_p5 else f"""CASE WHEN actual_1st = p1 AND actual_2nd = p2 AND actual_3rd = p5
+                          AND odds_125 >= {cond['odds_min']} AND odds_125 < {cond['odds_max']}
+                     THEN odds_125 * 100 ELSE 0 END"""
+        where_cond = 'bet_123 > 0' if pattern_h_require_p123 else 'bet_123 > 0 OR bet_124 > 0 OR bet_125 > 0'
+        query = f"""
+        WITH race_bets AS (
+            SELECT r.id as race_id, r.race_date,
+                   rp1.pit_number as p1, rp2.pit_number as p2,
+                   rp3.pit_number as p3, rp4.pit_number as p4, rp5.pit_number as p5,
+                   COALESCE((SELECT o.odds FROM trifecta_odds o WHERE o.race_id = r.id
+                    AND o.combination = CAST(rp1.pit_number AS TEXT)||'-'||CAST(rp2.pit_number AS TEXT)||'-'||CAST(rp3.pit_number AS TEXT)), 0) as odds_123,
+                   COALESCE((SELECT o.odds FROM trifecta_odds o WHERE o.race_id = r.id
+                    AND o.combination = CAST(rp1.pit_number AS TEXT)||'-'||CAST(rp2.pit_number AS TEXT)||'-'||CAST(rp4.pit_number AS TEXT)), 0) as odds_124,
+                   COALESCE((SELECT o.odds FROM trifecta_odds o WHERE o.race_id = r.id
+                    AND o.combination = CAST(rp1.pit_number AS TEXT)||'-'||CAST(rp2.pit_number AS TEXT)||'-'||CAST(rp5.pit_number AS TEXT)), 0) as odds_125,
+                   (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '1') as actual_1st,
+                   (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '2') as actual_2nd,
+                   (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '3') as actual_3rd
+            FROM races r
+            JOIN race_predictions rp1 ON r.id = rp1.race_id AND rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+            JOIN race_predictions rp2 ON r.id = rp2.race_id AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+            JOIN race_predictions rp3 ON r.id = rp3.race_id AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+            JOIN race_predictions rp4 ON r.id = rp4.race_id AND rp4.prediction_type = 'before' AND rp4.rank_prediction = 4
+            JOIN race_predictions rp5 ON r.id = rp5.race_id AND rp5.prediction_type = 'before' AND rp5.rank_prediction = 5
+            WHERE r.id IN ({placeholders})
+        ),
+        race_payouts AS (
+            SELECT *,
+                CASE WHEN odds_123 >= {cond['odds_min']} AND odds_123 < {cond['odds_max']} THEN 200 ELSE 0 END as bet_123,
+                CASE WHEN odds_124 >= {cond['odds_min']} AND odds_124 < {cond['odds_max']} THEN 100 ELSE 0 END as bet_124,
+                {bet_125_expr} as bet_125,
+                CASE WHEN actual_1st = p1 AND actual_2nd = p2 AND actual_3rd = p3
+                          AND odds_123 >= {cond['odds_min']} AND odds_123 < {cond['odds_max']}
+                     THEN odds_123 * 200 ELSE 0 END as payout_123,
+                CASE WHEN actual_1st = p1 AND actual_2nd = p2 AND actual_3rd = p4
+                          AND odds_124 >= {cond['odds_min']} AND odds_124 < {cond['odds_max']}
+                     THEN odds_124 * 100 ELSE 0 END as payout_124,
+                {payout_125_expr} as payout_125
+            FROM race_bets
+        )
+        SELECT race_id, race_date,
+               bet_123 + bet_124 + bet_125 as investment,
+               payout_123 + payout_124 + payout_125 as payout
+        FROM race_payouts WHERE {where_cond}"""
+    else:
+        query = f"""
+        WITH race_bets AS (
+            SELECT r.id as race_id, r.race_date,
+                   rp1.pit_number as p1, rp2.pit_number as p2, rp3.pit_number as p3,
+                   COALESCE((SELECT o.odds FROM trifecta_odds o WHERE o.race_id = r.id
+                    AND o.combination = CAST(rp1.pit_number AS TEXT)||'-'||CAST(rp2.pit_number AS TEXT)||'-'||CAST(rp3.pit_number AS TEXT)), 0) as odds_123,
+                   (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '1') as actual_1st,
+                   (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '2') as actual_2nd,
+                   (SELECT pit_number FROM results WHERE race_id = r.id AND rank = '3') as actual_3rd
+            FROM races r
+            JOIN race_predictions rp1 ON r.id = rp1.race_id AND rp1.prediction_type = 'before' AND rp1.rank_prediction = 1
+            JOIN race_predictions rp2 ON r.id = rp2.race_id AND rp2.prediction_type = 'before' AND rp2.rank_prediction = 2
+            JOIN race_predictions rp3 ON r.id = rp3.race_id AND rp3.prediction_type = 'before' AND rp3.rank_prediction = 3
+            WHERE r.id IN ({placeholders})
+        ),
+        race_payouts AS (
+            SELECT *,
+                CASE WHEN odds_123 >= {cond['odds_min']} AND odds_123 < {cond['odds_max']}{md_extra}
+                     THEN 100 ELSE 0 END as bet_amount,
+                CASE WHEN actual_1st = p1 AND actual_2nd = p2 AND actual_3rd = p3
+                          AND odds_123 >= {cond['odds_min']} AND odds_123 < {cond['odds_max']}{md_extra}
+                     THEN odds_123 * 100 ELSE 0 END as payout
+            FROM race_bets
+        )
+        SELECT race_id, race_date, bet_amount, payout FROM race_payouts WHERE bet_amount > 0"""
+
+    BATCH_SIZE = 900
+    bets = []
+    for batch_start in range(0, len(race_ids), BATCH_SIZE):
+        batch = race_ids[batch_start:batch_start + BATCH_SIZE]
+        batch_ph = ','.join(['?'] * len(batch))
+        batch_query = query.replace(f'({placeholders})', f'({batch_ph})')
+        cursor.execute(batch_query, batch)
+        for race_id, race_date, investment, payout in cursor.fetchall():
+            bets.append((race_id, race_date, investment or 0, payout or 0))
+    return bets
+
+
 def get_hit_details(
     cursor: sqlite3.Cursor,
     cond: Dict,
@@ -728,7 +942,7 @@ def analyze_grade_breakdown(
     return grade_totals
 
 
-def run_unique_backtest(year: int = 2025, full_test: bool = False, enable_wind_filter: bool = True, grade_breakdown: bool = False, show_hits: bool = False) -> Dict:
+def run_unique_backtest(year: int = 2025, full_test: bool = False, enable_wind_filter: bool = True, grade_breakdown: bool = False, show_hits: bool = False, save_bets_csv: str = None) -> Dict:
     """ユニーク版バックテストを実行"""
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
@@ -772,6 +986,7 @@ def run_unique_backtest(year: int = 2025, full_test: bool = False, enable_wind_f
     print("-" * 90)
 
     all_hit_details = []
+    all_race_bets_rows = []  # --save-bets-csv 用
     for cond in active_conditions:
         assigned_races = condition_to_races.get(cond['id'], [])
         cond_result = analyze_assigned_races(cursor, cond, assigned_races)
@@ -788,6 +1003,10 @@ def run_unique_backtest(year: int = 2025, full_test: bool = False, enable_wind_f
         if show_hits and cond_result['hits'] > 0:
             for h in get_hit_details(cursor, cond, assigned_races):
                 all_hit_details.append({'cond_id': cond['id'], **h})
+
+        if save_bets_csv:
+            for race_id, race_date, inv, pay in get_all_race_bets(cursor, cond, assigned_races):
+                all_race_bets_rows.append((cond['id'], race_id, race_date, inv, pay))
 
     # STEP 3: 全体サマリー
     results['total'] = {
@@ -849,6 +1068,29 @@ def run_unique_backtest(year: int = 2025, full_test: bool = False, enable_wind_f
         print()
         results['grade_breakdown'] = grade_totals
 
+    # --save-bets-csv: Bootstrap CI・スコア帯分析用 per-race CSV 出力
+    if save_bets_csv and all_race_bets_rows:
+        # pred1_score を一括取得して付加
+        all_rids = [r[1] for r in all_race_bets_rows]
+        score_map = {}
+        BATCH = 900
+        for i in range(0, len(all_rids), BATCH):
+            ch = all_rids[i:i+BATCH]
+            ph = ','.join(['?']*len(ch))
+            cursor.execute(f"""
+                SELECT race_id, total_score FROM race_predictions
+                WHERE race_id IN ({ph}) AND rank_prediction=1 AND prediction_type='before'
+            """, ch)
+            for rid, sc in cursor.fetchall():
+                score_map[rid] = sc
+        os.makedirs(os.path.dirname(os.path.abspath(save_bets_csv)), exist_ok=True)
+        with open(save_bets_csv, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(['condition_id', 'race_id', 'race_date', 'investment', 'payout', 'pred1_score'])
+            for cond_id, race_id, race_date, inv, pay in all_race_bets_rows:
+                writer.writerow([cond_id, race_id, race_date, int(inv), round(pay), score_map.get(race_id)])
+        print(f"[OK] Bets CSV saved: {save_bets_csv} ({len(all_race_bets_rows):,}件)")
+
     conn.close()
     return results
 
@@ -857,6 +1099,7 @@ def main():
     parser.add_argument('--year', type=int, default=2025, help='Target year (default: 2025)')
     parser.add_argument('--full', action='store_true', help='Run 6-year full test')
     parser.add_argument('--save-json', type=str, help='Save results to JSON (for Tier 3 comparison)')
+    parser.add_argument('--save-bets-csv', type=str, help='Bootstrap CI・スコア帯分析用 per-race CSV を保存')
     parser.add_argument('--no-wind-filter', action='store_true', help='風速フィルター無効化（デフォルト: 有効）')
     parser.add_argument('--grade-breakdown', action='store_true', help='race_grade別パフォーマンスを追加表示')
     parser.add_argument('--show-hits', action='store_true', help='的中レースの詳細（日付・会場・買い目・オッズ）を表示')
@@ -874,7 +1117,7 @@ def main():
     print("=" * 90)
     print()
 
-    results = run_unique_backtest(args.year, args.full, enable_wind_filter=enable_wind_filter, grade_breakdown=args.grade_breakdown, show_hits=args.show_hits)
+    results = run_unique_backtest(args.year, args.full, enable_wind_filter=enable_wind_filter, grade_breakdown=args.grade_breakdown, show_hits=args.show_hits, save_bets_csv=args.save_bets_csv)
 
     print("\n[Overall Summary]")
     print("-" * 60)

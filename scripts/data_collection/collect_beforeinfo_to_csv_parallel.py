@@ -355,10 +355,12 @@ def main():
     parser.add_argument('--delay', type=float, default=0.1, help='リクエスト間隔（秒、デフォルト: 0.1）')
     parser.add_argument('--timeout', type=int, default=10, help='HTTPタイムアウト（秒、デフォルト: 10）')
     parser.add_argument('--batch-size', type=int, default=50, help='バッチサイズ')
+    parser.add_argument('--db', type=str, default=None,
+                        help='DBパス（デフォルト: data/boatrace.db）。holdout用は data/holdout_2017_2019.db を指定')
 
     args = parser.parse_args()
 
-    db_path = PROJECT_ROOT / "data" / "boatrace.db"
+    db_path = Path(args.db) if args.db else PROJECT_ROOT / "data" / "boatrace.db"
 
     fetcher = ParallelBeforeinfoCsvFetcher(
         db_path=db_path,
