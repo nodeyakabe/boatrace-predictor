@@ -1333,7 +1333,6 @@ class RaceMonitor:
                 bef_count = cursor.fetchone()[0]
                 if bef_count < 3:
                     print(f"  [SKIP] before予測未生成のため購入スキップ: {race_id}")
-                    import os
                     skip_log = os.path.join(os.path.dirname(__file__), '../../logs/before_missing_skips.log')
                     with open(skip_log, 'a', encoding='utf-8') as _sf:
                         _sf.write(f"{datetime.now().isoformat()}\trace_id={race_id}\tbefore予測未生成\n")
