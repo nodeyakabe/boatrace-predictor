@@ -319,12 +319,16 @@ def block_f_job():
 
 
 def _check_and_run_missed_f_block():
-    """起動時に当日Fブロックが未実行の場合は即時実行する（PC再起動対応）
+    """起動時に当日Fブロックが未実行の場合は別プロセスで起動する（PC再起動対応）
 
     PCが10:30のFブロック実行中に落ちて11:00以降に再起動すると、
     当日のFブロックがスキップされbefore予測が生成されない問題を防ぐ。
     判定基準: 現在時刻が10:30〜18:00 かつ before予測カバー率 < 50%
+    Fブロックは別プロセスで起動し、メインループ（レース監視）をブロックしない。
     """
+    import sqlite3
+    import subprocess
+
     now = datetime.now()
     # 10:30〜18:00 の範囲のみ対象
     after_f_time = now.hour > 10 or (now.hour == 10 and now.minute >= 30)
@@ -334,8 +338,8 @@ def _check_and_run_missed_f_block():
     today = now.strftime('%Y-%m-%d')
     print(f"[起動チェック] 当日Fブロック実行状況を確認中（{today}）...")
 
+    conn = None
     try:
-        import sqlite3
         db_path = project_root / 'data' / 'boatrace.db'
         conn = sqlite3.connect(str(db_path), timeout=10)
         cursor = conn.cursor()
@@ -344,8 +348,9 @@ def _check_and_run_missed_f_block():
         total_races = cursor.fetchone()[0]
 
         if total_races == 0:
-            print("[起動チェック] 当日レースなし → Fブロックスキップ")
-            conn.close()
+            msg = f"[起動チェック] 当日レースがDBに存在しません（{today}）。Cブロック未実行の可能性があります。"
+            print(msg)
+            send_error_notification("起動チェック警告: 当日レースなし", msg, severity='warning')
             return
 
         cursor.execute("""
@@ -355,19 +360,27 @@ def _check_and_run_missed_f_block():
             WHERE r.race_date = ? AND rp.prediction_type = 'before'
         """, (today,))
         before_count = cursor.fetchone()[0]
-        conn.close()
 
         coverage = before_count / total_races
         print(f"[起動チェック] before予測: {before_count}/{total_races}レース ({coverage:.0%})")
 
         if coverage < 0.5:
-            print(f"[起動チェック] カバー率が低い({coverage:.0%}) → Fブロックを即時実行します")
-            block_f_job()
+            print(f"[起動チェック] カバー率が低い({coverage:.0%}) → Fブロックを別プロセスで起動します")
+            block_f_script = project_root / 'scripts' / 'automation' / 'block_f_before_prediction.py'
+            subprocess.Popen(
+                [sys.executable, str(block_f_script)],
+                cwd=str(project_root),
+                creationflags=0x00000008,  # DETACHED_PROCESS (Windows)
+            )
+            print("[起動チェック] Fブロックを別プロセスで起動しました（レース監視は継続）")
         else:
             print(f"[起動チェック] カバー率OK({coverage:.0%}) → Fブロックスキップ")
 
     except Exception as e:
         print(f"[起動チェック] 確認中にエラー（無視して続行）: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 
 def refresh_race_times_job():
