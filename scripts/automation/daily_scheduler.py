@@ -318,6 +318,58 @@ def block_f_job():
         send_error_notification("Fブロックエラー", error_msg, severity='critical')
 
 
+def _check_and_run_missed_f_block():
+    """起動時に当日Fブロックが未実行の場合は即時実行する（PC再起動対応）
+
+    PCが10:30のFブロック実行中に落ちて11:00以降に再起動すると、
+    当日のFブロックがスキップされbefore予測が生成されない問題を防ぐ。
+    判定基準: 現在時刻が10:30〜18:00 かつ before予測カバー率 < 50%
+    """
+    now = datetime.now()
+    # 10:30〜18:00 の範囲のみ対象
+    after_f_time = now.hour > 10 or (now.hour == 10 and now.minute >= 30)
+    if not after_f_time or now.hour >= 18:
+        return
+
+    today = now.strftime('%Y-%m-%d')
+    print(f"[起動チェック] 当日Fブロック実行状況を確認中（{today}）...")
+
+    try:
+        import sqlite3
+        db_path = project_root / 'data' / 'boatrace.db'
+        conn = sqlite3.connect(str(db_path), timeout=10)
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT COUNT(*) FROM races WHERE race_date = ?", (today,))
+        total_races = cursor.fetchone()[0]
+
+        if total_races == 0:
+            print("[起動チェック] 当日レースなし → Fブロックスキップ")
+            conn.close()
+            return
+
+        cursor.execute("""
+            SELECT COUNT(DISTINCT r.id)
+            FROM races r
+            INNER JOIN race_predictions rp ON r.id = rp.race_id
+            WHERE r.race_date = ? AND rp.prediction_type = 'before'
+        """, (today,))
+        before_count = cursor.fetchone()[0]
+        conn.close()
+
+        coverage = before_count / total_races
+        print(f"[起動チェック] before予測: {before_count}/{total_races}レース ({coverage:.0%})")
+
+        if coverage < 0.5:
+            print(f"[起動チェック] カバー率が低い({coverage:.0%}) → Fブロックを即時実行します")
+            block_f_job()
+        else:
+            print(f"[起動チェック] カバー率OK({coverage:.0%}) → Fブロックスキップ")
+
+    except Exception as e:
+        print(f"[起動チェック] 確認中にエラー（無視して続行）: {e}")
+
+
 def refresh_race_times_job():
     """発走時刻再取得ジョブ（10:00 / 13:00 / 16:00）
 
@@ -477,6 +529,9 @@ def main():
     print("[OK] 毎週月曜・木曜 4:00 - racer_features / racer_venue_features 週2回更新")
 
     print("\nシステム稼働開始...\n")
+
+    # 起動時チェック: PCダウン後の再起動でFブロックがスキップされる問題を防ぐ
+    _check_and_run_missed_f_block()
 
     # メインループ
     try:
