@@ -211,7 +211,7 @@ def worker_generate(args_tuple):
     from src.database.data_manager import DataManager
 
     predictor = create_standard_predictor(use_cache=True)
-    data_manager = DataManager()
+    data_manager = DataManager(DATABASE_PATH)
 
     # 環境情報を一括プリロード（_apply_environmental_penalty のN+1回避）
     env_cache = _preload_env_data_for_dates(date_list)
@@ -311,7 +311,7 @@ def phase2_import_csv_to_db(csv_dir: str) -> dict:
     DataManager.import_predictions_from_csv() を使用。
     """
     from src.database.data_manager import DataManager
-    data_manager = DataManager()
+    data_manager = DataManager(DATABASE_PATH)
 
     csv_files = sorted(Path(csv_dir).glob('*.csv'))
     if not csv_files:

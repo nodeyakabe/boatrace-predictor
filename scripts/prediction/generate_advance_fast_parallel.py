@@ -245,7 +245,7 @@ def phase2_import_csv_to_db(csv_dir: str) -> dict:
     Phase 2: CSVファイルをDB UPSERT投入（シングルプロセス）
     """
     from src.database.data_manager import DataManager
-    data_manager = DataManager()
+    data_manager = DataManager(DATABASE_PATH)
 
     csv_files = sorted(Path(csv_dir).glob('*.csv'))
     if not csv_files:

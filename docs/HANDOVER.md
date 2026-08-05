@@ -1,6 +1,6 @@
 # 引継ぎ資料（HANDOVER）
 
-**最終更新**: 2026-05-25（v2.65.0: E_DIVERGE廃止・A_DIVERGE凍結・採用手順強化）
+**最終更新**: 2026-08-05（B-2/B-3 根本原因確定・案①修正実装・ライブ検証待ち）
 **目的**: セッション間の引継ぎ情報を一元管理（常に最新状態に上書き更新）
 
 ---
@@ -394,6 +394,89 @@ python scripts/check_prediction_health.py
 ---
 
 ## 📝 最近の作業
+
+### 2026-08-03 Invariant Watch v1 立ち上げ・B-2/B-3 根本原因確定
+
+#### Invariant Watch v1 (Phase 1-3 完了)
+
+監視スクリプト群を新規実装:
+- `scripts/monitoring/build_invariant_bands.py` — IS 2020-2025 帯域計算・`config/invariant_bands.json` 生成
+- `scripts/monitoring/invariant_watch.py` — 17チェック実行・週次レポート生成
+- `scripts/monitoring/invariant_watch_selftest.py` — Phase 3 破壊テスト (5/5 DETECTED)
+
+Phase 4（タスクスケジューラ登録）は B-2/B-3 根本原因修正待ち。
+
+#### C-3 finding（確定・閉）
+
+**2026-07-09 の advance フォールバック購入 (race_id=1026847)** は Invariant Watch C-3 が検知した。
+- 7/13の before評価修正より4日前の遺物 → force=True修正（6/26）単独では不十分で 7/13 まで穴が開いていたことの独立した物証
+- 前向き検証集計期間（7/13 起点）には含まれない（集計対象外確認済み）
+- C-3 検査窓 30d → 7d に修正済み。現在 C-3 = GREEN。
+
+#### B-2/B-3 根本原因（修正実装済み・🔴 RED → ライブ検証待ち）
+
+ホールドアウト 2019 vs ライブ直近4週の直接比較:
+
+| 期間 | P50 | B信頼度% |
+|:-----|:---:|:--------:|
+| holdout 2019 | 89.5 | 20.4% |
+| IS 2020-2025 | 88.5 | 19.1% |
+| 2026 全年 | 87.5 | 16.2% |
+| **ライブ直近4週** | **80.7** | **1.7%** |
+
+- holdout と IS がほぼ一致 → (c) IS基準の歪みは否定
+- 異常開始週: **2026-06-26**（`monitor_race_timing.py` の `force=True` 修正コミット ea1c8ae を含む週）
+- **バグ有効期間**: 2026-07-03 13:35（スケジューラー再起動・ea1c8ae 適用）〜 修正デプロイ日
+- サブスコア分解: course/racer/motor/kimarite/grade は安定。compound_buff 寄与が -6.6pt 低下。
+  - 正常期 6/19-25: sub合計=55.98, total=86.88, implied_buff=+30.9
+  - 異常期 6/26-7/2: sub合計=56.60, total=80.94, implied_buff=+24.3
+- 時刻帯別: 04h before（generate_yesterday_before 経由）は B=14.2%（正常）；10-19h before（monitor reeval 経由）は B≈0-3.6%（異常）
+
+**根本原因確定（2026-08-04）**: `extended_scorer` の展示スコア 3種（exhibition/chikusen/boaters）が fallback 値を返していた。
+
+| スコア要素 | 正常 | バグ時 | 差 |
+|:----------|:----:|:------:|:--:|
+| exhibition_time_score（rank=1艇） | 8.0pt | 4.0pt | -4.0pt |
+| chikusen_time_score（rank=1艇） | 3.2pt | 2.0pt | -1.2pt |
+| boaters_tenji_score（rank=1艇） | ~0.6pt | 0.0pt | -0.6pt |
+| **合計** | — | — | **-5〜-8pt** |
+
+**直接原因**: `prediction_updater.py` の `update_to_before_prediction(force=True)` パスで
+`bl._cache.get('race_details', {}).pop(race_id, None)` を実行していた。
+→ `extended_scorer` は `_cache_loaded=True` のまま race_details が空 → DB fallback に落ちずに max*0.5 を返す。
+→ `_reevaluate_after_beforeinfo` は `load_daily_data` を呼ばないため、キャッシュが stale（展示=NULL）でも pop と同じ結果になる。
+
+**修正内容（案① 実装済み・2026-08-05・ユーザー承認済み）**:
+- `src/database/batch_data_loader.py`: `refresh_race_details_cache(race_id)` メソッド追加
+  - race_details + exhibition_data を race_id 単位で DB から再取得してキャッシュを上書き
+  - 比較ログ内蔵: INFO（stale検出）/ DEBUG（キャッシュ最新）
+- `src/analysis/prediction_updater.py:472-482`: pop を refresh 呼び出しに置き換え
+
+**回帰テスト**: Phase 2.5 (72件) PASS 確認済み。
+
+**初日ログ合格基準（事前固定・2026-08-05 ユーザー確定）**:
+- ✅ 期待: 後半レースの reeval で `[cache_refresh] cache was stale` INFO が出る・全件 new_exh_count=6
+- ❌ 異常: refresh 呼び出し後 new_exh_count=0（DB書き込みと reeval の順序問題が別途存在）
+- ❌ 異常: refresh 後も B-2 相当のスコア低下が観測される（第2の経路が残存）
+- ⚪ stale ログが一度も出ない: 案①は保険として機能した（修正は維持・findings に記録のみ）
+
+**次のアクション**:
+1. ~~ユーザー承認後にスケジューラー再起動~~ → **2026-08-05 F-block 完了後に再起動実行**
+2. 初日: INFO ログで "cache was stale" の有無を合格基準と照合
+3. 翌週: Invariant Watch B-2/B-3 が帯域方向に回復していることを確認
+4. 回復確認日 = 前向き検証の正式起点（コード修正日ではなくライブ正常動作観測日）
+5. 起点確認後: 「第7バグ(reeval展示フラット化)」を HANDOVER と findings に正式登録
+   - 内容: 2026-07-03 13:35〜修正デプロイ / 検出: Invariant Watch 初回実行 / 遅延6週間
+
+**参考記録**: 7/3 13:35〜修正デプロイ日の購入20件（7/2-7/30確定分）は "バグ込み状態の参考記録" として保持。削除不要。
+**前向き検証 7/13〜**: バグ込み期間の参考記録として保持（起点はライブ正常動作確認日にリセット）。
+
+#### A-3 裏取り（確定・閉）
+
+7/28-31 のbefore予測欠落は 7/29 ウォッチドッグ無断蘇生インシデント（PID競合）による既知イベント。
+ログ証拠: `[2026-07-29 19:54:13] ウォッチドッグ起動` + `[ERROR] daily_schedulerは既に起動しています (PID: 7812)`。
+
+---
 
 ### 2026-05-25 v2.65.0: E_DIVERGE廃止・A_DIVERGE凍結・採用手順強化
 

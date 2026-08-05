@@ -1,0 +1,79 @@
+{
+  "_metadata": {
+    "built_at": "2026-08-03T14:51:01.339521",
+    "built_by": "build_invariant_bands.py",
+    "is_range": {
+      "start": "2020-01-01",
+      "end": "2025-12-31"
+    },
+    "holdout_note": "holdout DB (2017-2019) はこのマシンに存在しない。全帯域は IS 2020-2025 から算出（単一ソース）。外挿の精度は holdout 分離なしのため若干過大。",
+    "change_policy": "帯域変更はユーザー承認 + 変更履歴 + findings 記録が必須。実績が帯域に収まらないからと帯域を広げるのは禁止。",
+    "checks_coverage": {
+      "b1": "weekly fire rate",
+      "b2": "score distribution P10/P25/P50/P75/P90",
+      "b3": "confidence composition A-E %",
+      "b4": "trifecta hit rate (confidence=A, odds 30-300x)",
+      "c5": "adjusted_weight missing rate"
+    }
+  },
+  "b2_score_distribution": {
+    "description": "before rank=1 total_score の分位数 (IS 2020-2025)",
+    "source": "race_predictions (before, rank_prediction=1) + races, IS 2020-2025",
+    "n_samples": 330634,
+    "p10": 68.4,
+    "p25": 79.2,
+    "p50": 88.5,
+    "p75": 98.6,
+    "p90": 110.0,
+    "warn_tolerance_pt": 5.0,
+    "note": "P90 = P95 = 110.0 (total_score は 110.0 でキャップされる設計)。P50基準±5ptを目安にドリフト検知。"
+  },
+  "b3_confidence_composition": {
+    "description": "before rank=1 の信頼度構成比 (IS 2020-2025)",
+    "source": "race_predictions (before, rank_prediction=1) + races, IS 2020-2025",
+    "n_samples": 330634,
+    "composition_pct": {
+      "A": 22.65,
+      "B": 19.06,
+      "C": 44.56,
+      "D": 12.41,
+      "E": 1.31
+    },
+    "warn_tolerance_pt": 5.0,
+    "note": "特に A率 (22.7%) の急落 / 急騰はモデル or データ異常のシグナル。正常範囲: CLAUDE.md 定義 advance 2-6% / before 15-27% (A率 = before A%)。"
+  },
+  "b4_hit_rate": {
+    "description": "三連単的中率ベースライン (IS 2020-2025, confidence=A, odds 30-300x)",
+    "source": "race_predictions + results + trifecta_odds, IS 2020-2025",
+    "n_samples": 2979,
+    "n_hits": 60,
+    "baseline_pct": 2.0141,
+    "n_min_to_alert": 50,
+    "ci_confidence": 0.9,
+    "note": "正規近似 90%CI を使用。ライブデータ (2026-05-19〜現在) は 0 hits / 19 confirmed — n<50 のためベースライン構築から除外。confidence=A & odds 30-300x のフィルターを揃えているが、条件別オッズレンジの差異は捨象している。"
+  },
+  "b1_weekly_fire_rate": {
+    "description": "週次発火率ベースライン (confirmed bet_notifications)",
+    "source": "IS 2020-2025 バックテスト実績 4906件/6年 = 818件/年 / 52週 = 15.7件/週; Poisson σ = sqrt(μ)。dismissed 比率は live 2026-05-19〜07-30 より 0.85 を使用。",
+    "confirmed_weekly_mu": 15.72,
+    "confirmed_weekly_sigma": 3.97,
+    "confirmed_band_lo": 7.8,
+    "confirmed_band_hi": 23.7,
+    "dismissed_ratio": 0.85,
+    "total_weekly_expected": 29.0,
+    "warn_absolute_lo": 4,
+    "warn_absolute_hi": 40,
+    "note": "バックテスト実績を μ 推計に使用。条件ポートフォリオが変わった場合は再構築が必要。直近4週の weekly confirmed 件数が帯域外で3週連続した場合 RED。"
+  },
+  "c5_adjusted_weight_missing": {
+    "description": "race_details.adjusted_weight 欠損率ベースライン (IS 2020-2025)",
+    "source": "race_details + races, IS 2020-2025",
+    "n_rows": 2004882,
+    "n_nulls": 145655,
+    "baseline_null_pct": 7.27,
+    "warn_threshold_pct": 15.0,
+    "red_threshold_pct": 25.0,
+    "note": "直近30日の欠損率と比較。直近欠損率が著増した場合はデータ収集問題のシグナル。"
+  },
+  "_content_hash": "52d9242e6b67a5e9221ee88e54d6eb14faad81286c995567c6e3c7670d8444e2"
+}

@@ -8,6 +8,7 @@ from .race_scraper_v2 import RaceScraperV2
 from .result_scraper import ResultScraper
 from .beforeinfo_scraper import BeforeInfoScraper
 from src.database.data_manager import DataManager
+from config.settings import DATABASE_PATH
 import time
 import random
 
@@ -23,7 +24,7 @@ class SafeHistoricalScraper:
         self.race_scraper = RaceScraperV2()
         self.result_scraper = ResultScraper()
         self.beforeinfo_scraper = BeforeInfoScraper()
-        self.data_manager = DataManager()
+        self.data_manager = DataManager(DATABASE_PATH)
         self.safe_mode = safe_mode
 
         # 待機時間設定

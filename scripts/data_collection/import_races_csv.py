@@ -595,7 +595,13 @@ def main():
                         help='CSVが格納されたディレクトリ（複数指定可）')
     parser.add_argument('--dry-run', action='store_true',
                         help='DB投入せず件数確認のみ')
+    parser.add_argument('--db', type=str, default=None,
+                        help='DBパス（デフォルト: data/boatrace.db）。holdout用は data/holdout_2017_2019.db を指定')
     args = parser.parse_args()
+
+    global DB_PATH
+    if args.db:
+        DB_PATH = args.db
 
     if not args.dirs:
         parser.print_help()

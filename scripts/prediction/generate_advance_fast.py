@@ -287,7 +287,7 @@ def phase2_import_csv_to_db(csv_files: set) -> dict:
     Returns:
         {'total_rows': int, 'failed_files': list}
     """
-    data_manager = DataManager()
+    data_manager = DataManager(DATABASE_PATH)
     total_rows = 0
     failed_files = []
 
@@ -313,7 +313,7 @@ def import_only_mode(csv_dir: str) -> int:
     """
     --import-only モード: 指定ディレクトリ配下のCSVをまとめてDB投入
     """
-    data_manager = DataManager()
+    data_manager = DataManager(DATABASE_PATH)
     csv_files = sorted(Path(csv_dir).rglob('*.csv'))
     if not csv_files:
         print(f"[!] CSVファイルが見つかりません: {csv_dir}")

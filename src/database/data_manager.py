@@ -21,7 +21,27 @@ REQUIRED_RESULT_FIELDS = ['pit_number', 'rank']
 class DataManager:
     """データ管理クラス"""
 
-    def __init__(self, db_path: str = "data/boatrace.db") -> None:
+    # holdout系スクリプトが書き込みを禁止したいパスを登録するクラス変数
+    _write_guarded_paths: set = set()
+
+    @classmethod
+    def guard_against_write(cls, db_path: str) -> None:
+        """
+        指定パスへの書き込み接続を禁止する（holdout系スクリプト用安全装置）。
+        登録後は DataManager(db_path) を呼ぶと RuntimeError になる。
+        """
+        import os
+        cls._write_guarded_paths.add(os.path.abspath(db_path))
+
+    def __init__(self, db_path: str) -> None:
+        import os
+        abs_path = os.path.abspath(db_path)
+        if abs_path in DataManager._write_guarded_paths:
+            raise RuntimeError(
+                f"[HOLDOUT WRITE GUARD] 本番DBへの書き込み接続を阻止しました。\n"
+                f"  path: {db_path}\n"
+                f"  DataManager({db_path}) はこのスクリプトでは使用禁止です。"
+            )
         self.db = Database(db_path)
         self._env_cache = {}  # _get_race_environment のキャッシュ（race_id -> dict）
         self._env_penalty_system = None  # EnvironmentalPenaltySystem のシングルトン

@@ -51,7 +51,7 @@ class FastPredictionGenerator:
         # キャッシュ有効モードでRacePredictorを初期化（絶対パスを明示指定）
         # スケジューラ長期稼働中に_pool globalが別パスで上書きされる問題を防ぐ
         self.predictor = create_standard_predictor(use_cache=True, db_path=DATABASE_PATH)
-        self.data_manager = DataManager()
+        self.data_manager = DataManager(DATABASE_PATH)
         self.db_path = DATABASE_PATH
         self.prediction_type = prediction_type
 

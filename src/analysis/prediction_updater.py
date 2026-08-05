@@ -472,10 +472,18 @@ class PredictionUpdater:
             # force=True: 最新DBデータで再生成するためキャッシュを無効化
             if force:
                 self.predictor.race_data_cache.invalidate_race(race_id)
-                # batch_loaderのrace_detailsスナップショットも無効化（展示データの鮮度保証）
+                # race_details / race_conditions をDBから読み直してキャッシュ上書き
+                # _reevaluate_after_beforeinfo は load_daily_data を呼ばないため、
+                # F-block 収集後の展示データ・気象データがキャッシュに反映されていない。
+                # pop（削除）ではなくリフレッシュ（上書き）にすることで、
+                # extended_scorer が穴なしで最新データを参照できるようにする。
                 bl = self.predictor.batch_loader
                 if bl and bl._cache_loaded:
-                    bl._cache.get('race_details', {}).pop(race_id, None)
+                    try:
+                        bl.refresh_race_details_cache(race_id)
+                        bl.refresh_race_conditions_cache(race_id)
+                    except Exception as e:
+                        logger.warning(f"Race {race_id}: cache refresh failed ({e}), continuing")
 
             # 予想を生成
             logger.info(f"Race {race_id}: 直前予想を生成中...")

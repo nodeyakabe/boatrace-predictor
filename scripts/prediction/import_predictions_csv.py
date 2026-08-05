@@ -41,6 +41,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 sys.path.insert(0, PROJECT_ROOT)
 
 from src.database.data_manager import DataManager
+from config.settings import DATABASE_PATH
 
 
 def count_csv_rows(csv_path: str) -> int:
@@ -118,7 +119,7 @@ def main():
         return
 
     # 実投入
-    data_manager = DataManager()
+    data_manager = DataManager(DATABASE_PATH)
     start_time = datetime.now()
     total_rows = 0
     success_files = 0

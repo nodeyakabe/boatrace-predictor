@@ -1469,6 +1469,99 @@ class BatchDataLoader:
         """レース詳細データを取得"""
         return self._cache.get('race_details', {}).get(race_id, {}).get(pit_number)
 
+    def refresh_race_details_cache(self, race_id: int) -> None:
+        """
+        指定 race_id の race_details エントリを DB から読み直してキャッシュを上書きする。
+
+        force=True パスで呼び出される。pop でエントリを消すと extended_scorer が
+        _cache_loaded=True のまま DB fallback に落ちず max*0.5 を返すバグがあったため、
+        代わりにリフレッシュを使う（鮮度保証と穴なし更新を両立）。
+        """
+        old_entry = self._cache.get('race_details', {}).get(race_id, {})
+        old_exh_count = sum(1 for d in old_entry.values() if d.get('exhibition_time') is not None)
+
+        conn = self._connect()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT pit_number, exhibition_time, tilt_angle, st_time, actual_course, chikusen_time
+            FROM race_details
+            WHERE race_id = ?
+        """, [race_id])
+
+        new_entry = {}
+        for row in cursor.fetchall():
+            new_entry[row['pit_number']] = {
+                'exhibition_time': row['exhibition_time'],
+                'tilt_angle': row['tilt_angle'],
+                'st_time': row['st_time'],
+                'actual_course': row['actual_course'],
+                'chikusen_time': row['chikusen_time'],
+            }
+
+        cursor.execute("""
+            SELECT pit_number, chikusen_time, exhibition_time, isshu_time, mawariashi_time
+            FROM exhibition_data
+            WHERE race_id = ?
+        """, [race_id])
+
+        for row in cursor.fetchall():
+            pit = row['pit_number']
+            if pit not in new_entry:
+                new_entry[pit] = {}
+            if not new_entry[pit].get('chikusen_time') and row['chikusen_time']:
+                new_entry[pit]['chikusen_time'] = row['chikusen_time']
+            if not new_entry[pit].get('exhibition_time') and row['exhibition_time']:
+                new_entry[pit]['exhibition_time'] = row['exhibition_time']
+            if row['isshu_time']:
+                new_entry[pit]['isshu_time'] = row['isshu_time']
+            if row['mawariashi_time']:
+                new_entry[pit]['mawariashi_time'] = row['mawariashi_time']
+
+        cursor.close()
+
+        new_exh_count = sum(1 for d in new_entry.values() if d.get('exhibition_time') is not None)
+        if old_exh_count != new_exh_count:
+            print(
+                f"[cache_refresh] race_id={race_id}: exhibition_time count"
+                f" {old_exh_count}→{new_exh_count} (cache was stale)",
+                flush=True,
+            )
+
+        if 'race_details' not in self._cache:
+            self._cache['race_details'] = {}
+        self._cache['race_details'][race_id] = new_entry
+
+    def refresh_race_conditions_cache(self, race_id: int) -> None:
+        """
+        指定 race_id の race_conditions エントリを DB から読み直してキャッシュを上書きする。
+
+        beforeinfo スクレイプ時に wind_speed / wave_height / wind_direction 等が
+        UPSERT されるため、朝の load_daily_data スナップショットは stale になりうる。
+        refresh_race_details_cache と同じ force=True ブロックで呼ぶ。
+        """
+        conn = self._connect()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT wind_speed, wave_height, wind_direction,
+                   temperature, water_temperature, weather
+            FROM race_conditions WHERE race_id = ?
+        """, [race_id])
+        row = cursor.fetchone()
+        cursor.close()
+        if row is None:
+            return
+        if 'race_conditions' not in self._cache:
+            self._cache['race_conditions'] = {}
+        self._cache['race_conditions'][race_id] = {
+            'wind_speed': row['wind_speed'],
+            'wave_height': row['wave_height'],
+            'wind_direction': row['wind_direction'],
+            'temperature': row['temperature'],
+            'water_temperature': row['water_temperature'],
+            'weather': row['weather'],
+        }
+
     def get_racer_features(self, racer_number: int) -> Optional[Dict]:
         """選手特徴データを取得"""
         return self._cache.get('racer_features', {}).get(racer_number)
