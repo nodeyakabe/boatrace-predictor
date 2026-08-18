@@ -42,62 +42,39 @@ def check_scheduler_pipeline():
     """1. schedulerログの稼働確認"""
     result = {'status': 'OK', 'details': [], 'warnings': []}
 
-    # scheduler_YYYYMMDD.log を日付昇順で取得
+    # scheduler_YYYYMMDD.log を取得（_err.log は除外）
     pattern = os.path.join(LOGS_DIR, 'scheduler_2026*.log')
-    files = sorted(glob.glob(pattern))
+    files = [f for f in glob.glob(pattern) if not f.endswith('_err.log')]
     if not files:
         result['status'] = 'WARN'
         result['warnings'].append('scheduler ログファイルが見つかりません')
         return result
 
-    # ファイル名から日付を抽出
-    dates = []
-    for f in files:
-        m = re.search(r'scheduler_(\d{8})\.log', os.path.basename(f))
-        if m:
-            try:
-                dates.append(datetime.strptime(m.group(1), '%Y%m%d').date())
-            except ValueError:
-                pass
+    # ファイル名ではなく mtime（実際の最終書き込み時刻）で判定する。
+    # ファイル名日付はスケジューラの「起動日」であり、長期稼働時は現在日と乖離するため
+    # 誤検知を生む（例: 8/15起動→8/18でも"3日前"と判定されWARNになる）。
+    latest_file = max(files, key=os.path.getmtime)
+    latest_mtime = datetime.fromtimestamp(os.path.getmtime(latest_file))
+    now = datetime.now()
+    hours_since_write = (now - latest_mtime).total_seconds() / 3600
+    days_since_write = hours_since_write / 24
 
-    if not dates:
-        result['status'] = 'WARN'
-        result['warnings'].append('ログ日付の解析失敗')
-        return result
+    result['last_log_date'] = latest_mtime.strftime('%Y-%m-%d')
+    result['days_since_last_log'] = round(days_since_write, 2)
+    result['total_log_days'] = len(files)
 
-    dates = sorted(dates)
-    last_date = dates[-1]
-    today = datetime.now().date()
-    gap_from_today = (today - last_date).days
-
-    result['last_log_date'] = str(last_date)
-    result['days_since_last_log'] = gap_from_today
-    result['total_log_days'] = len(dates)
-
-    if gap_from_today > NORMAL['scheduler_gap_warn_days']:
+    warn_days = NORMAL['scheduler_gap_warn_days']
+    if days_since_write > warn_days:
         result['status'] = 'WARN'
         result['warnings'].append(
-            f'最終schedulerログが {gap_from_today}日前 ({last_date})。'
-            f'パイプライン停止の可能性あり。'
+            f'最終schedulerログが {round(hours_since_write, 1)}時間前 '
+            f'({latest_mtime.strftime("%Y-%m-%d %H:%M")})。パイプライン停止の可能性あり。'
         )
     else:
-        result['details'].append(f'最終schedulerログ: {last_date} ({gap_from_today}日前) [OK]')
-
-    # 直近14日でのログ欠損日数チェック
-    recent_days = set()
-    check_start = today - timedelta(days=14)
-    for d in dates:
-        if d >= check_start:
-            recent_days.add(d)
-    missing_days = []
-    for i in range(14):
-        d = check_start + timedelta(days=i + 1)
-        if d <= today and d not in recent_days:
-            missing_days.append(str(d))
-    if missing_days:
-        result['details'].append(f'直近14日でログなし: {missing_days}')
-    else:
-        result['details'].append('直近14日: ログ欠損なし [OK]')
+        result['details'].append(
+            f'最終schedulerログ書き込み: {latest_mtime.strftime("%Y-%m-%d %H:%M")} '
+            f'({round(hours_since_write, 1)}時間前) [OK]'
+        )
 
     return result
 
