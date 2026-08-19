@@ -402,9 +402,11 @@ python scripts/check_prediction_health.py
 監視スクリプト群を新規実装:
 - `scripts/monitoring/build_invariant_bands.py` — IS 2020-2025 帯域計算・`config/invariant_bands.json` 生成
 - `scripts/monitoring/invariant_watch.py` — 17チェック実行・週次レポート生成
-- `scripts/monitoring/invariant_watch_selftest.py` — Phase 3 破壊テスト (5/5 DETECTED)
+- `scripts/monitoring/invariant_watch_selftest.py` — Phase 3 破壊テスト (6/6 DETECTED・TEST-6 B-1 0件週補完 追加 2026-08-19)
 
-Phase 4（タスクスケジューラ登録）は B-2/B-3 根本原因修正待ち。
+**2026-08-19 修正**: B-1チェック SQL を ISO週ベースに変更（0件週補完・進行中週「(暫定)」ラベル付与）。anomaly_check パイプライン判定をファイル名日付 → mtime ベースに修正（コミット 72c4ac5）。
+
+Phase 4（タスクスケジューラ登録）は Invariant Watch GREEN 確認後。
 
 #### C-3 finding（確定・閉）
 
@@ -426,7 +428,8 @@ Phase 4（タスクスケジューラ登録）は B-2/B-3 根本原因修正待�
 
 - holdout と IS がほぼ一致 → (c) IS基準の歪みは否定
 - 異常開始週: **2026-06-26**（`monitor_race_timing.py` の `force=True` 修正コミット ea1c8ae を含む週）
-- **バグ有効期間**: 2026-07-03 13:35（スケジューラー再起動・ea1c8ae 適用）〜 修正デプロイ日
+- **バグ有効期間**: 2026-07-03 13:35（コミット ea1c8aef 適用・スケジューラー再起動）〜 **2026-08-05**（コミット 7789845a デプロイ）
+- **影響期間確定**: 34日間
 - サブスコア分解: course/racer/motor/kimarite/grade は安定。compound_buff 寄与が -6.6pt 低下。
   - 正常期 6/19-25: sub合計=55.98, total=86.88, implied_buff=+30.9
   - 異常期 6/26-7/2: sub合計=56.60, total=80.94, implied_buff=+24.3
@@ -447,10 +450,10 @@ Phase 4（タスクスケジューラ登録）は B-2/B-3 根本原因修正待�
 → `_reevaluate_after_beforeinfo` は `load_daily_data` を呼ばないため、キャッシュが stale（展示=NULL）でも pop と同じ結果になる。
 
 **修正内容（案① 実装済み・2026-08-05・ユーザー承認済み）**:
-- `src/database/batch_data_loader.py`: `refresh_race_details_cache(race_id)` メソッド追加
-  - race_details + exhibition_data を race_id 単位で DB から再取得してキャッシュを上書き
-  - 比較ログ内蔵: INFO（stale検出）/ DEBUG（キャッシュ最新）
-- `src/analysis/prediction_updater.py:472-482`: pop を refresh 呼び出しに置き換え
+- `src/database/batch_data_loader.py`: `refresh_race_details_cache()` + `refresh_race_conditions_cache()` メソッド追加
+  - race_details + exhibition_data / race_conditions を race_id 単位で DB から再取得してキャッシュを上書き
+  - stale検出時に `print("[cache_refresh] ... cache was stale", flush=True)` でログ（logger→print: basicConfig未設定のためTeeStream経由でschedulerログに届く）
+- `src/analysis/prediction_updater.py:472-485`: pop を refresh_race_details_cache + refresh_race_conditions_cache 呼び出しに置き換え
 
 **回帰テスト**: Phase 2.5 (72件) PASS 確認済み。
 
@@ -466,7 +469,11 @@ Phase 4（タスクスケジューラ登録）は B-2/B-3 根本原因修正待�
 3. 翌週: Invariant Watch B-2/B-3 が帯域方向に回復していることを確認
 4. 回復確認日 = 前向き検証の正式起点（コード修正日ではなくライブ正常動作観測日）
 5. 起点確認後: 「第7バグ(reeval展示フラット化)」を HANDOVER と findings に正式登録
-   - 内容: 2026-07-03 13:35〜修正デプロイ / 検出: Invariant Watch 初回実行 / 遅延6週間
+   - 導入コミット: ea1c8aef 2026-07-02
+   - ライブ有効化: 2026-07-03 13:35（スケジューラー再起動）
+   - 修正デプロイ: 2026-08-05（コミット 7789845a）
+   - 影響期間: 34日間 / 検出: Invariant Watch 初回実行（2026-08-18 W34手動）/ 遅延6週間
+   - 参考記録区間: 7/3 13:35〜8/5
 
 **参考記録**: 7/3 13:35〜修正デプロイ日の購入20件（7/2-7/30確定分）は "バグ込み状態の参考記録" として保持。削除不要。
 **前向き検証 7/13〜**: バグ込み期間の参考記録として保持（起点はライブ正常動作確認日にリセット）。

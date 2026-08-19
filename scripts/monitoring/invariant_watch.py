@@ -135,16 +135,22 @@ def load_history():
     return records
 
 def count_consecutive_yellows(check_id, history):
-    """直近の history から check_id の連続 YELLOW 数を返す（最新から遡る）"""
+    """直近の history から check_id の連続 YELLOW 数を返す（最新から遡る）。
+    check_id が週のレコードに存在しない場合（--category 限定実行など）はストリーク断絶とみなす。
+    """
     count = 0
     for rec in reversed(history):
+        found = False
         for r in rec.get("results", []):
             if r.get("id") == check_id:
+                found = True
                 if r.get("status") == YELLOW:
                     count += 1
                 else:
                     return count
                 break
+        if not found:
+            break  # 該当週に check_id なし → 連続YELLOWではない
     return count
 
 
@@ -159,12 +165,13 @@ def check_a1(conn):
         cutoff = (date.today() - timedelta(days=7)).isoformat()
         cur.execute("""
             SELECT COUNT(*) as total,
-                   SUM(CASE WHEN rp.race_id IS NOT NULL THEN 1 ELSE 0 END) as has_pred
+                   SUM(CASE WHEN EXISTS (
+                       SELECT 1 FROM race_predictions rp
+                       WHERE rp.race_id = bn.race_id
+                         AND rp.prediction_type = 'before'
+                         AND rp.rank_prediction = 1
+                   ) THEN 1 ELSE 0 END) as has_pred
             FROM bet_notifications bn
-            LEFT JOIN race_predictions rp
-                ON bn.race_id = rp.race_id
-               AND rp.prediction_type = 'before'
-               AND rp.rank_prediction = 1
             WHERE bn.notification_type = 'confirmed'
               AND DATE(bn.notified_at) >= ?
         """, (cutoff,))
@@ -292,40 +299,66 @@ def check_b1(conn, bands):
     try:
         cur = conn.cursor()
         b = bands["b1_weekly_fire_rate"]
-        lo = b["warn_absolute_lo"]
-        hi = b["warn_absolute_hi"]
+        # 直近4週を ISO週(isocalendar)で生成 — 0件週も必ず含める
+        # SQLite STRFTIME('%W') は月曜起算の独自計算で Python isocalendar と1差ずれる場合があるため廃止
+        today_dt = date.today()
+        iso_weeks = []
+        for i in range(3, -1, -1):  # 3週前（古）→今週（新）
+            monday = today_dt - timedelta(days=today_dt.weekday() + 7 * i)
+            sunday = monday + timedelta(days=6)
+            iso_year, iso_week, _ = monday.isocalendar()
+            iso_weeks.append({
+                'label': f'{iso_year}-W{iso_week:02d}',
+                'start': monday.isoformat(),
+                'end':   min(sunday, today_dt).isoformat(),
+                'is_current': (i == 0),
+            })
 
-        # 直近4週の週ごとの confirmed 件数
-        cutoff = (date.today() - timedelta(days=28)).isoformat()
-        cur.execute("""
-            SELECT STRFTIME('%Y-W%W', notified_at) AS wk, COUNT(*) AS cnt
-            FROM bet_notifications
-            WHERE notification_type = 'confirmed'
-              AND DATE(notified_at) >= ?
-            GROUP BY wk ORDER BY wk
-        """, (cutoff,))
-        rows = cur.fetchall()
-        if not rows:
-            return skip("B-1", "週次発火率", "0件", "直近28日に confirmed データなし")
+        rows = []
+        for w in iso_weeks:
+            cur.execute("""
+                SELECT COUNT(*) AS cnt
+                FROM bet_notifications
+                WHERE notification_type = 'confirmed'
+                  AND DATE(notified_at) BETWEEN ? AND ?
+            """, (w['start'], w['end']))
+            cnt = cur.fetchone()['cnt']
+            label = w['label'] + ('(暫定)' if w['is_current'] else '')
+            rows.append({'wk': label, 'cnt': cnt})
 
-        week_cnts = [r["cnt"] for r in rows]
+        week_cnts = [r['cnt'] for r in rows]
         mu = b["confirmed_weekly_mu"]
         band_lo = b["confirmed_band_lo"]
         band_hi = b["confirmed_band_hi"]
+        abs_lo = b["warn_absolute_lo"]
+        abs_hi = b["warn_absolute_hi"]
 
-        out_of_band = [c for c in week_cnts if c < lo or c > hi]
-        val = f"週平均={sum(week_cnts)/len(week_cnts):.1f} (帯域μ={mu:.1f})"
+        val = f"週平均={sum(week_cnts)/len(week_cnts):.1f} (σ帯域 [{band_lo:.1f},{band_hi:.1f}] μ={mu:.1f})"
         detail = " | ".join([f"{r['wk']}:{r['cnt']}" for r in rows])
 
+        # 絶対安全フロア/シーリング（σ帯域より広い安全網。σ帯域がゆるい場合の補完）
+        floor_breach = [c for c in week_cnts if c < abs_lo]
+        ceil_breach  = [c for c in week_cnts if c > abs_hi]
+        if floor_breach:
+            return red("B-1", "週次発火率", val,
+                       f"{len(floor_breach)}週が最低件数({abs_lo})未満 — パイプライン停止疑い",
+                       detail=detail)
+        if ceil_breach:
+            return warn("B-1", "週次発火率", val,
+                        f"{len(ceil_breach)}週が最大件数({abs_hi})超過",
+                        detail=detail)
+
+        out_of_band = [c for c in week_cnts if c < band_lo or c > band_hi]
+
         if not out_of_band:
-            return ok("B-1", "週次発火率", val, f"全{len(rows)}週が帯域内", detail=detail)
+            return ok("B-1", "週次発火率", val, f"全{len(rows)}週がσ帯域内", detail=detail)
         elif len(out_of_band) <= 1:
             return warn("B-1", "週次発火率", val,
-                        f"{len(out_of_band)}/{len(rows)} 週が絶対帯域外 [lo={lo}, hi={hi}]",
+                        f"{len(out_of_band)}/{len(rows)} 週がσ帯域外 [lo={band_lo:.1f}, hi={band_hi:.1f}]",
                         detail=detail)
         else:
             return red("B-1", "週次発火率", val,
-                       f"{len(out_of_band)}/{len(rows)} 週が絶対帯域外",
+                       f"{len(out_of_band)}/{len(rows)} 週がσ帯域外",
                        detail=detail)
     except Exception as e:
         return red("B-1", "週次発火率", "ERROR", str(e), detail=traceback.format_exc())
@@ -430,7 +463,8 @@ def check_b4(conn, bands):
         p0 = b["baseline_pct"] / 100
         n_min = b["n_min_to_alert"]
         ci_conf = b["ci_confidence"]
-        z = 1.645  # 90% two-sided -> 5% each tail
+        _z_table = {0.90: 1.645, 0.95: 1.960, 0.99: 2.576}
+        z = _z_table.get(round(ci_conf, 2), 1.645)
 
         cutoff = (date.today() - timedelta(days=90)).isoformat()
         cur.execute("""
@@ -439,6 +473,7 @@ def check_b4(conn, bands):
             FROM bet_notifications
             WHERE notification_type = 'confirmed'
               AND is_hit IS NOT NULL
+              AND odds_at_notification BETWEEN 30 AND 300
               AND DATE(notified_at) >= ?
         """, (cutoff,))
         row = cur.fetchone()
@@ -564,7 +599,7 @@ def check_c3(conn):
             return ok("C-3", "advanceフォールバック率", val, "フォールバック購入なし (before予測が使われている)")
         else:
             return red("C-3", "advanceフォールバック率", val,
-                       f"before予測なしの advance 購入 {fallback} 件 (直近30日)")
+                       f"before予測なしの advance 購入 {fallback} 件 (直近7日)")
     except Exception as e:
         return red("C-3", "advanceフォールバック率", "ERROR", str(e), detail=traceback.format_exc())
 
@@ -575,23 +610,27 @@ def check_c4(conn):
         cur = conn.cursor()
         cutoff = (date.today() - timedelta(days=30)).isoformat()
         cur.execute("""
-            SELECT COUNT(*) AS no_ex,
-                   (SELECT COUNT(*) FROM bet_notifications
-                    WHERE notification_type='confirmed' AND DATE(notified_at) >= ?) AS total
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN had_exhibition = 0 THEN 1 ELSE 0 END) AS real_bug,
+                SUM(CASE WHEN had_exhibition IS NULL THEN 1 ELSE 0 END) AS legacy
             FROM bet_notifications
             WHERE notification_type = 'confirmed'
               AND DATE(notified_at) >= ?
-              AND (had_exhibition = 0 OR had_exhibition IS NULL)
-        """, (cutoff, cutoff))
+        """, (cutoff,))
         row = cur.fetchone()
-        no_ex = row["no_ex"]
-        total = row["total"]
-        val = f"{no_ex}/{total} 件が展示なし"
-        if no_ex == 0:
+        total    = row["total"]
+        real_bug = row["real_bug"] or 0
+        legacy   = row["legacy"]  or 0
+        val = f"展示なし={real_bug}件 / 旧レコード(NULL)={legacy}件 / 計{total}件"
+        if real_bug == 0 and legacy == 0:
             return ok("C-4", "展示データ充足", f"0/{total}", "展示なし購入 0件")
-        else:
+        elif real_bug > 0:
             return red("C-4", "展示データ充足", val,
-                       f"had_exhibition=0 の確定購入 {no_ex} 件 (force=True 修正が機能していない可能性)")
+                       f"had_exhibition=0 の確定購入 {real_bug} 件 (force=True 修正が機能していない可能性)")
+        else:
+            return warn("C-4", "展示データ充足", val,
+                        f"旧レコード(had_exhibition=NULL) {legacy} 件: 時間経過で自然消滅予定")
     except Exception as e:
         return red("C-4", "展示データ充足", "ERROR", str(e), detail=traceback.format_exc())
 
@@ -691,22 +730,30 @@ def check_d2():
 
         stuck = []
         now = datetime.now()
+        _wmi_date_re = re.compile(r'(\d{14}\.\d+[+-]\d+)')
         for line in out.strip().splitlines():
-            parts = line.split(",")
-            # CSV: Node, CommandLine, CreationDate, ProcessId
-            if len(parts) < 4:
+            # WMI CSV ヘッダ行 or 空行をスキップ
+            if not line or line.startswith('Node,'):
                 continue
-            creation_str = parts[2].strip() if len(parts) > 2 else ""
-            cmd_str = parts[1].strip()
-            # WMI CreationDate: YYYYMMDDHHmmss.ffffff+offset
-            if len(creation_str) >= 14 and creation_str[:8].isdigit():
-                try:
-                    created = datetime.strptime(creation_str[:14], "%Y%m%d%H%M%S")
-                    hours = (now - created).total_seconds() / 3600
-                    if hours > 12 and "boatrace" in cmd_str.lower():
-                        stuck.append(f"PID={parts[-1].strip()}: {cmd_str[:60]} ({hours:.0f}h)")
-                except Exception:
-                    pass
+            # CreationDate は固定フォーマット（YYYYMMDDHHmmss.ffffff+offset）なのでregexで確定
+            date_m = _wmi_date_re.search(line)
+            if not date_m:
+                continue
+            creation_str = date_m.group(1)
+            # CommandLine は最初のカンマ〜CreationDate開始位置の間（カンマ含む場合も安全）
+            first_comma = line.index(',')
+            cmd_str = line[first_comma + 1 : date_m.start()].rstrip(',').strip()
+            try:
+                created = datetime.strptime(creation_str[:14], "%Y%m%d%H%M%S")
+                hours = (now - created).total_seconds() / 3600
+                # ProcessId は CreationDate の後の最後フィールド
+                after_date = line[date_m.end():]
+                pid_m = re.match(r',(\d+)\s*$', after_date)
+                pid = pid_m.group(1) if pid_m else "?"
+                if hours > 12 and "boatrace" in cmd_str.lower():
+                    stuck.append(f"PID={pid}: {cmd_str[:60]} ({hours:.0f}h)")
+            except Exception:
+                pass
 
         if not stuck:
             return ok("D-2", "停滞プロセス検知", "なし", "12h超の Python プロセスなし")
@@ -986,6 +1033,15 @@ def run_checks(category_filter, bands, history):
                 print(f"  {tag.get(r['status'], r['status'])} {r['id']:4s} {r['name']}: {r['message']}")
             except Exception as e:
                 results_list.append(red("??", "不明チェック", "EXCEPTION", str(e)))
+
+        # 3週連続 YELLOW → RED エスカレーション
+        for i, r in enumerate(results_list):
+            if r["status"] == YELLOW:
+                streak = count_consecutive_yellows(r["id"], history)
+                if streak >= 2:  # 過去2週 YELLOW + 今週 YELLOW = 3週連続
+                    results_list[i] = dict(r, status=RED,
+                                           message=f"[3週連続WARN→RED] {r['message']}")
+                    print(f"  ↑ {r['id']}: 3週連続 WARN のため RED に昇格")
     finally:
         conn.close()
     return results_list

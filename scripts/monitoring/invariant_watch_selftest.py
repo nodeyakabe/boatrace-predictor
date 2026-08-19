@@ -262,6 +262,50 @@ def test_4_d4_db_shrink():
         return False, f"テスト実行エラー: {traceback.format_exc()}"
 
 
+def test_6_b1_zero_week_detected():
+    """
+    テスト6: B-1 — 0件週（完全停止週）の検知
+    修正前の SQL（GROUP BY のみ）では0件週が行ごと消えて検知されなかった。
+    修正後は cnt=0 として補完し、floor_breach（< abs_lo=4）で RED になることを確認。
+    """
+    print("[TEST-6] B-1 0件週（完全停止週）検知...")
+    conn, db_path = make_empty_db()
+    try:
+        bands = load_bands()
+        today = date.today()
+
+        # 直近4週のうち「1週前（先週）」だけ bet なし（停止週）
+        # 今週・2週前・3週前には 5件ずつ挿入（abs_lo=4 を超えておく）
+        for week_offset in [0, 2, 3]:
+            monday = today - timedelta(days=today.weekday() + 7 * week_offset)
+            for j in range(5):
+                race_id = week_offset * 10 + j + 1
+                race_dt = f"{monday.isoformat()}T{10 + j:02d}:00:00"
+                _insert_race(conn, race_id, monday.isoformat())
+                _insert_bet(conn, race_id, ntype="confirmed", dt=race_dt)
+        conn.commit()
+
+        r = iw_mod.check_b1(conn, bands)
+
+        # 0件週が detail に含まれることを確認（例: "2026-W33:0" のような形式）
+        detail_str = r.get("detail", "")
+        zero_week_in_detail = ":0" in detail_str
+
+        # floor_breach で RED になるはず（0件週が abs_lo=4 未満）
+        is_red = r["status"] == RED
+
+        detected = zero_week_in_detail and is_red
+        return detected, (
+            f"status={r['status']} detail=[{detail_str}] "
+            f"(0件週補完={zero_week_in_detail} RED={is_red})"
+        )
+    except Exception as e:
+        return False, f"テスト実行エラー: {traceback.format_exc()}"
+    finally:
+        conn.close()
+        Path(db_path).unlink(missing_ok=True)
+
+
 def test_5_b2_score_drift():
     """
     テスト5: B-2 — スコア分布ドリフトの検知
@@ -319,6 +363,7 @@ def render_selftest_report(test_results):
         ("TEST-3", "C-3 advanceフォールバック", "pred_type_used='advance' で確定購入"),
         ("TEST-4", "D-4 DBサイズ縮小", "前回 DB サイズを 100GB に偽装"),
         ("TEST-5", "B-2 スコア分布ドリフト", "全予測スコアを 50.0 (ベースライン-38pt) に設定"),
+        ("TEST-6", "B-1 0件週（完全停止週）補完", "先週 bet を0件にして 0件週が補完・RED 検知されることを確認"),
     ]
     for (tid, tname, tbr), (_, detected, detail) in zip(test_names, test_results):
         verdict = "DETECTED" if detected else "NOT_DETECTED"
@@ -357,6 +402,7 @@ def main():
         ("TEST-3", test_3_c3_advance_fallback),
         ("TEST-4", test_4_d4_db_shrink),
         ("TEST-5", test_5_b2_score_drift),
+        ("TEST-6", test_6_b1_zero_week_detected),
     ]
 
     test_results = []
